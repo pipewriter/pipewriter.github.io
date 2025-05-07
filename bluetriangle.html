@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<!-- saved from url=(0063)https://immersive-web.github.io/webxr-samples/ar-barebones.html -->
+<html>
+  <object
+    id="jnobgabnnbdhjompaagbfbjiimplamll"
+    width="0"
+    height="0"
+    style="display: none"
+  ></object
+  ><head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, user-scalable=no"
+    />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="32x32"
+      href="https://immersive-web.github.io/webxr-samples/favicon-32x32.png"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="96x96"
+      href="https://immersive-web.github.io/webxr-samples/favicon-96x96.png"
+    />
+    <link rel="stylesheet" href="./Barebones AR_files/common.css" />
+
+    <title>Barebones AR</title>
+  </head>
+  <body>
+    <div id="overlay">
+      <header>
+        <details open="">
+          <summary>Barebones WebXR DOM Overlay</summary>
+          <p>
+            This sample demonstrates extremely simple use of an "immersive-ar"
+            session with no library dependencies, with an optional DOM overlay.
+            It doesn't render anything exciting, just draws a rectangle with a
+            slowly changing color to prove it's working.
+            <a
+              class="back"
+              href="https://immersive-web.github.io/webxr-samples/index.html"
+              >Back</a
+            >
+          </p>
+          <div id="session-info"></div>
+          <div id="pose"></div>
+          <div id="warning-zone"></div>
+          <button id="xr-button" class="barebones-button">ar</button>
+        </details>
+      </header>
+    </div>
+    <main style="text-align: center">
+      <p>Click 'Enter AR' to see content</p>
+    </main>
+    <script type="module">
+      // XR globals.
+      let xrButton = document.getElementById("xr-button");
+      let xrSession = null;
+      let xrRefSpace = null;
+
+      // WebGL scene globals.
+      let gl = null;
+
+      function initXR() {
+        if (!window.isSecureContext) {
+          let message = "WebXR unavailable due to insecure context";
+          document.getElementById("warning-zone").innerText = message;
+        }
+
+        if (navigator.xr) {
+          xrButton.addEventListener("click", onButtonClicked);
+        }
+      }
+
+      function onButtonClicked() {
+        if (!xrSession) {
+          // Ask for an optional DOM Overlay, see https://immersive-web.github.io/dom-overlays/
+          navigator.xr
+            .requestSession("immersive-ar", {
+              optionalFeatures: ["dom-overlay"],
+              domOverlay: { root: document.getElementById("overlay") },
+            })
+            .then(onSessionStarted, onRequestSessionError);
+        } else {
+          xrSession.end();
+        }
+      }
+
+      function onSessionStarted(session) {
+        xrSession = session;
+        // xrButton.innerHTML = 'Exit AR';
+
+        // Show which type of DOM Overlay got enabled (if any)
+        if (session.domOverlayState) {
+          document.getElementById("session-info").innerHTML =
+            "DOM Overlay type: " + session.domOverlayState.type;
+        }
+
+        // session.addEventListener('end', onSessionEnded);
+        let canvas = document.createElement("canvas");
+        gl = canvas.getContext("webgl", {
+          xrCompatible: true,
+        });
+        console.log("hey");
+        parkerfunction(gl);
+        session.updateRenderState({ baseLayer: new XRWebGLLayer(session, gl) });
+        session.requestReferenceSpace("local").then((refSpace) => {
+          xrRefSpace = refSpace;
+          session.requestAnimationFrame(onXRFrame);
+        });
+      }
+      var vertices = [-0.5, 0.5, -0.5, -0.5, -0.5, -0.5, 0.5, -0.5, -0.5];
+
+      let indices = [0, 1, 2];
+      function parkerfunction(gl) {
+        // Create an empty buffer object to store vertex buffer
+        console.log(gl);
+        console.log("ho");
+        var vertex_buffer = gl.createBuffer();
+
+        // Bind appropriate array buffer to it
+        gl.bindBuffer(gl.ARRAY_BUFFER, vertex_buffer);
+
+        // Pass the vertex data to the buffer
+        gl.bufferData(
+          gl.ARRAY_BUFFER,
+          new Float32Array(vertices),
+          gl.STATIC_DRAW
+        );
+
+        // Unbind the buffer
+        gl.bindBuffer(gl.ARRAY_BUFFER, null);
+
+        // Create an empty buffer object to store Index buffer
+        var Index_Buffer = gl.createBuffer();
+
+        // Bind appropriate array buffer to it
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, Index_Buffer);
+
+        // Pass the vertex data to the buffer
+        gl.bufferData(
+          gl.ELEMENT_ARRAY_BUFFER,
+          new Uint16Array(indices),
+          gl.STATIC_DRAW
+        );
+
+        // Unbind the buffer
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+
+        /*================ Shaders ====================*/
+
+        // Vertex shader source code
+        var vertCode =
+          "attribute vec3 coordinates;" +
+          "void main(void) {" +
+          " gl_Position = vec4(coordinates, 1.0);" +
+          "}";
+
+        // Create a vertex shader object
+        var vertShader = gl.createShader(gl.VERTEX_SHADER);
+
+        // Attach vertex shader source code
+        gl.shaderSource(vertShader, vertCode);
+
+        // Compile the vertex shader
+        gl.compileShader(vertShader);
+
+        //fragment shader source code
+        var fragCode =
+          "void main(void) {" +
+          " gl_FragColor = vec4(1.0, 1.0, 0.0, 1.0);" +
+          "}";
+
+        // Create fragment shader object
+        var fragShader = gl.createShader(gl.FRAGMENT_SHADER);
+
+        // Attach fragment shader source code
+        gl.shaderSource(fragShader, fragCode);
+
+        // Compile the fragmentt shader
+        gl.compileShader(fragShader);
+
+        // Create a shader program object to store
+        // the combined shader program
+        var shaderProgram = gl.createProgram();
+
+        // Attach a vertex shader
+        gl.attachShader(shaderProgram, vertShader);
+
+        // Attach a fragment shader
+        gl.attachShader(shaderProgram, fragShader);
+
+        // Link both the programs
+        gl.linkProgram(shaderProgram);
+
+        // Use the combined shader program object
+        gl.useProgram(shaderProgram);
+
+        /*======= Associating shaders to buffer objects =======*/
+
+        // Bind vertex buffer object
+        gl.bindBuffer(gl.ARRAY_BUFFER, vertex_buffer);
+
+        // Bind index buffer object
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, Index_Buffer);
+
+        // Get the attribute location
+        var coord = gl.getAttribLocation(shaderProgram, "coordinates");
+
+        // Point an attribute to the currently bound VBO
+        gl.vertexAttribPointer(coord, 3, gl.FLOAT, false, 0, 0);
+
+        // Enable the attribute
+        gl.enableVertexAttribArray(coord);
+
+        /*=========Drawing the triangle===========*/
+
+        // Clear the canvas
+        // gl.clearColor(0.5, 0.5, 0.5, 0.9);
+
+        // Enable the depth test
+        gl.enable(gl.DEPTH_TEST);
+        console.log("done");
+      }
+
+      function onRequestSessionError(ex) {
+        alert("Failed to start immersive AR session.");
+        console.error(ex.message);
+      }
+
+      function onEndSession(session) {
+        session.end();
+      }
+
+      function onSessionEnded(event) {
+        xrSession = null;
+        xrButton.innerHTML = "Enter AR";
+        document.getElementById("session-info").innerHTML = "";
+        gl = null;
+      }
+
+      function onXRFrame(t, frame) {
+        let session = frame.session;
+        session.requestAnimationFrame(onXRFrame);
+
+        gl.bindFramebuffer(
+          gl.FRAMEBUFFER,
+          session.renderState.baseLayer.framebuffer
+        );
+
+        // Update the clear color so that we can observe the color in the
+        // headset changing over time. Use a scissor rectangle to keep the AR
+        // scene visible.
+        const width = session.renderState.baseLayer.framebufferWidth;
+        const height = session.renderState.baseLayer.framebufferHeight;
+        // gl.enable(gl.SCISSOR_TEST);
+        // gl.scissor(width / 4, height / 4, width / 2, height / 2);
+        let time = Date.now();
+        // gl.clearColor(Math.cos(time / 2000), Math.cos(time / 4000), Math.cos(time / 6000), 0.5);
+        gl.clearColor(0,1,1, 0.5);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+        gl.enable(gl.DEPTH_TEST);
+
+        let pose = frame.getViewerPose(xrRefSpace);
+        if (pose) {
+          for (let view of pose.views) {
+            let viewport = session.renderState.baseLayer.getViewport(view);
+            console.log(
+              "yo",
+              pose.views.length,
+              viewport.x,
+              viewport.y,
+              viewport.width,
+              viewport.height
+            );
+            gl.enable(gl.SCISSOR_TEST);
+            gl.scissor(
+              viewport.x,
+              viewport.y,
+              viewport.width,
+              viewport.height);
+            gl.viewport(
+              viewport.x,
+              viewport.y,
+              viewport.width,
+              viewport.height
+            );
+            gl.drawElements(gl.TRIANGLES, indices.length, gl.UNSIGNED_SHORT, 0);
+            gl.disable(gl.SCISSOR_TEST);
+            //break
+          }
+          const p = pose.transform.position;
+          document.getElementById("pose").innerText =
+            "Position: " +
+            p.x.toFixed(3) +
+            ", " +
+            p.y.toFixed(3) +
+            ", " +
+            p.z.toFixed(3);
+        }
+      }
+
+      initXR();
+    </script>
+    Hello
+
+    <div style="position: static !important"></div>
+  </body>
+</html>
+
