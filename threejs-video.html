@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Three.js Video Texture</title>
+  <style>
+    body { margin: 0; overflow: hidden; }
+    #video { display: none; } /* hide the raw video element */
+  </style>
+</head>
+<body>
+  <!-- 1) Your MP4 file; put video.mp4 alongside this HTML -->
+  <video id="video" src="trailer.webm" loop muted playsinline></video>
+
+  <!-- 2) Three.js from CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
+  <script type="module">
+  import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.module.js';
+
+  const video = document.createElement('video');
+  video.src = 'trailer.webm';
+  video.loop = true;
+  video.muted = true;
+  video.playsInline = true;
+  video.crossOrigin = 'anonymous';
+  video.play().catch(() =>
+    window.addEventListener('click', () => video.play())
+  );
+
+  // wait until the first frame’s loaded
+  video.addEventListener('loadeddata', () => {
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(50, innerWidth/innerHeight, .1, 100);
+    camera.position.z = 2;
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(innerWidth, innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    // **No manual format override** – Three.js picks RGBA automatically
+    const texture = new THREE.VideoTexture(video);
+
+    const geo = new THREE.PlaneGeometry(16,9).scale(0.1,0.1,0.1);
+    const mat = new THREE.MeshBasicMaterial({ map: texture });
+    scene.add(new THREE.Mesh(geo, mat));
+
+    window.addEventListener('resize', () => {
+      camera.aspect = innerWidth/innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+
+    (function animate() {
+      requestAnimationFrame(animate);
+      renderer.render(scene, camera);
+    })();
+  });
+  </script>
+</body>
+</html>

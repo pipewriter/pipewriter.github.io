@@ -1,0 +1,26 @@
+<body>
+  <h1>My pages</h1>
+  <ul id="auto-list"></ul>
+  <script>
+    (async()=>{
+      const user = 'pipewriter';
+      const repo = `${user}.github.io`;
+      const folder = '';  // your subfolder
+      let res = await fetch(
+        `https://api.github.com/repos/${user}/${repo}/contents/${folder}`
+      );
+      let files = await res.json();
+      let ul = document.getElementById('auto-list');
+      files
+        .filter(f=> f.name.endsWith('.html'))
+        .forEach(f=>{
+          let li = document.createElement('li');
+          let a  = document.createElement('a');
+          a.href = `${window.location.origin}/${folder}/${f.name}`;
+          a.textContent = f.name.replace('.html','');
+          li.appendChild(a);
+          ul.appendChild(li);
+        });
+    })();
+  </script>
+</body>
