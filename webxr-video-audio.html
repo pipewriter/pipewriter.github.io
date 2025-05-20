@@ -42,7 +42,7 @@ function init() {
   const sound = new THREE.Audio(listener);
   const audioLoader = new THREE.AudioLoader();
   audioLoader.load(
-    'song.mp3',                       // your song file
+    'https://attentionfocus.s3.us-east-1.amazonaws.com/song.mp3',                       // your song file
     buffer => {
       sound.setBuffer(buffer);
       sound.setLoop(true);
@@ -220,7 +220,7 @@ function init() {
   // ─────────── Floating Video Quad ───────────
   // 1. create & hide a DOM video
   const video = document.createElement('video');
-  video.src = 'trailer.webm';           // your video file
+  video.src = 'https://attentionfocus.s3.us-east-1.amazonaws.com/yourfile.ext';           // your video file
   video.loop = true;
   video.muted = true;
   video.playsInline = true;

@@ -47,7 +47,7 @@
     const loader = new THREE.AudioLoader();
 
     // Pre-load buffer but don’t auto-play (to satisfy browser gesture policy)
-    loader.load('song.mp3',
+    loader.load('https://attentionfocus.s3.us-east-1.amazonaws.com/song.mp3',
       buffer => sound.setBuffer(buffer),
       xhr    => console.log(`Audio ${ (xhr.loaded/xhr.total*100).toFixed(1) }% loaded`),
       err    => console.error('Audio load error:', err)
