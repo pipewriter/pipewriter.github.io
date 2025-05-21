@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <title>WebXR Orbiting UI Demo</title>
+  <style>
+    body { margin: 0; overflow: hidden; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+<script type="module">
+import * as THREE from 'https://unpkg.com/three@0.153.0/build/three.module.js';
+import { VRButton } from 'https://unpkg.com/three@0.153.0/examples/jsm/webxr/VRButton.js';
+
+let scene, camera, renderer, sphere, uiPivot;
+const clock = new THREE.Clock();
+const rotationSpeed = 0.5; // radians per second
+
+init();
+renderer.setAnimationLoop(render);
+
+function init() {
+  // ─── Scene & Camera ─────────────────────────────────────────────────────
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.1, 100);
+  camera.position.set(0, 0, 0);
+
+  // ─── Renderer & WebXR ────────────────────────────────────────────────────
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.xr.enabled = true;
+  document.body.appendChild(renderer.domElement);
+  document.body.appendChild(VRButton.createButton(renderer));
+
+  // ─── Audio Setup ─────────────────────────────────────────────────────────
+  const listener = new THREE.AudioListener();
+  camera.add(listener);
+
+  const sound = new THREE.Audio(listener);
+  const audioLoader = new THREE.AudioLoader();
+  audioLoader.load(
+    'https://attentionfocus.s3.us-east-1.amazonaws.com/song.mp3',
+    buffer => {
+      sound.setBuffer(buffer);
+      sound.setLoop(true);
+      sound.setVolume(0.5);
+    },
+    xhr => console.log(`Audio ${(xhr.loaded/xhr.total*100).toFixed(1)}% loaded`),
+    err => console.error('Audio load error:', err)
+  );
+  renderer.xr.addEventListener('sessionstart', async () => {
+    try { await sound.context.resume(); } catch(e) { console.warn(e); }
+    if (!sound.isPlaying) sound.play();
+  });
+  renderer.xr.addEventListener('sessionend', () => {
+    if (sound.isPlaying) sound.stop();
+  });
+
+  // ─── Inverted Lava-Lamp Sphere ───────────────────────────────────────────
+  const sphereGeo = new THREE.SphereGeometry(5, 64, 64);
+  const sphereUniforms = { time: { value: 0 } };
+  const sphereMat = new THREE.ShaderMaterial({
+    uniforms: sphereUniforms,
+    side: THREE.BackSide,
+    vertexShader: `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      // 2D Simplex Noise
+      vec3 mod289(vec3 x){return x - floor(x * (1.0 / 289.0)) * 289.0;}
+      vec2 mod289(vec2 x){return x - floor(x * (1.0 / 289.0)) * 289.0;}
+      vec3 permute(vec3 x){return mod289(((x*34.0)+1.0)*x);}
+      float snoise(vec2 v) {
+        const vec4 C = vec4(0.2113248654,0.3660254038,-0.5773502692,0.0243902439);
+        vec2 i = floor(v + dot(v, C.yy));
+        vec2 x0 = v - i + dot(i, C.xx);
+        vec2 i1 = x0.x > x0.y ? vec2(1.0,0.0) : vec2(0.0,1.0);
+        vec4 x12 = x0.xyxy + C.xxzz;
+        x12.xy -= i1;
+        i = mod289(i);
+        vec3 p = permute(permute(i.y + vec3(0.0, i1.y, 1.0))
+                   + i.x + vec3(0.0, i1.x, 1.0));
+        vec3 m = max(0.5 - vec3(dot(x0,x0), dot(x12.xy,x12.xy), dot(x12.zw,x12.zw)), 0.0);
+        m = m*m*m*m;
+        vec3 x = 2.0 * fract(p * C.www) - 1.0;
+        vec3 h = abs(x) - 0.5;
+        vec3 ox = floor(x + 0.5);
+        vec3 a0 = x - ox;
+        m *= 1.79284291400159 - 0.85373472095314 * (a0*a0 + h*h);
+        vec3 g;
+        g.x = a0.x * x0.x + h.x * x0.y;
+        g.yz = a0.yz * x12.xz + h.yz * x12.yw;
+        return 130.0 * dot(m, g);
+      }
+      varying vec2 vUv;
+      uniform float time;
+      void main() {
+        vec2 uv = vUv * 2.0 - 1.0;
+        float speed = 0.8;
+        float rotSpeed = 0.2;
+        float angle = time * rotSpeed;
+        mat2 rot = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
+        vec2 p = rot * uv;
+        p.y += time * speed;
+        p.y = mod(p.y + 2.0, 4.0) - 2.0;
+        float swirl = snoise(vec2(p.y * 0.3, time * 0.4));
+        p.x += swirl * 0.5;
+        float n1 = snoise(p * 1.5);
+        float n2 = snoise((p + vec2(6.0,-4.0)) * 2.5);
+        float blob = smoothstep(0.25, 0.6, n1 + n2 * 0.6);
+        vec3 col = mix(vec3(0.2,0.0,0.0), vec3(1.0,0.8,0.1), blob);
+        gl_FragColor = vec4(col,1.0);
+      }
+    `
+  });
+  sphere = new THREE.Mesh(sphereGeo, sphereMat);
+  scene.add(sphere);
+
+  // ─── Pivot for Orbiting UI ───────────────────────────────────────────────
+  uiPivot = new THREE.Group();
+  camera.add(uiPivot);
+  scene.add(camera);
+
+  // ─── Floating Image Quad ────────────────────────────────────────────────
+  const texLoader = new THREE.TextureLoader();
+  texLoader.load('profile_pic.jpg', texture => {
+    const aspect = texture.image.width / texture.image.height;
+    const quad = new THREE.Mesh(
+      new THREE.PlaneGeometry(aspect, 1),
+      new THREE.MeshBasicMaterial({ map: texture, transparent: true })
+    );
+    quad.position.set(Math.cos(0) * 1.5, 0, -Math.sin(0) * 1.5);
+    uiPivot.add(quad);
+  });
+
+  // ─── Floating Topo-Map Quad ─────────────────────────────────────────────
+  const mapSeg = 64, mapSize = 1.2;
+  const terrainGeo = new THREE.PlaneGeometry(mapSize, mapSize, mapSeg, mapSeg);
+  const terrainMat = new THREE.ShaderMaterial({
+    side: THREE.DoubleSide,
+    vertexShader: `
+      varying float vHeight;
+      varying vec2 vUv;
+      // 2D Simplex Noise
+      vec3 mod289(vec3 x){return x - floor(x*(1.0/289.0))*289.0;}
+      vec2 mod289(vec2 x){return x - floor(x*(1.0/289.0))*289.0;}
+      vec3 permute(vec3 x){return mod289(((x*34.0)+1.0)*x);}
+      float snoise(vec2 v){
+        const vec4 C = vec4(0.2113248654,0.3660254038,-0.5773502692,0.0243902439);
+        vec2 i = floor(v + dot(v, C.yy));
+        vec2 x0 = v - i + dot(i, C.xx);
+        vec2 i1 = x0.x > x0.y ? vec2(1.0,0.0) : vec2(0.0,1.0);
+        vec4 x12 = x0.xyxy + C.xxzz; x12.xy -= i1;
+        i = mod289(i);
+        vec3 p = permute(permute(i.y + vec3(0.0,i1.y,1.0))
+                   + i.x + vec3(0.0,i1.x,1.0));
+        vec3 m = max(0.5 - vec3(dot(x0,x0), dot(x12.xy,x12.xy),
+                   dot(x12.zw,x12.zw)), 0.0);
+        m = m*m*m*m;
+        vec3 x = 2.0 * fract(p * C.www) - 1.0;
+        vec3 h = abs(x) - 0.5;
+        vec3 ox = floor(x + 0.5);
+        vec3 a0 = x - ox;
+        m *= 1.79284291400159 - 0.85373472095314 * (a0*a0 + h*h);
+        vec3 g; 
+        g.x = a0.x * x0.x + h.x * x0.y;
+        g.yz = a0.yz * x12.xz + h.yz * x12.yw;
+        return 130.0 * dot(m, g);
+      }
+      void main() {
+        vUv = uv;
+        float scale = 3.0;
+        float amp   = 0.3;
+        vec2 p = uv * scale;
+        float h = snoise(p);
+        vHeight = h;
+        vec3 displaced = position + normal * h * amp;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(displaced,1.0);
+      }
+    `,
+    fragmentShader: `
+      varying float vHeight;
+      varying vec2 vUv;
+      void main() {
+        vec3 color;
+        if(vHeight < -0.1) color = vec3(0.0,0.2,0.6);
+        else if(vHeight < 0.0) color = mix(vec3(0.0,0.2,0.6),
+                                           vec3(0.1,0.5,0.1),
+                                           smoothstep(-0.1,0.0,vHeight));
+        else if(vHeight < 0.2) color = mix(vec3(0.1,0.5,0.1),
+                                           vec3(0.5,0.4,0.2),
+                                           smoothstep(0.0,0.2,vHeight));
+        else color = mix(vec3(0.5,0.4,0.2),
+                         vec3(1.0,1.0,1.0),
+                         smoothstep(0.2,0.5,vHeight));
+        gl_FragColor = vec4(color,1.0);
+      }
+    `
+  });
+  const terrain = new THREE.Mesh(terrainGeo, terrainMat);
+  terrain.position.set(Math.cos(2*Math.PI/3)*1.5, 0, -Math.sin(2*Math.PI/3)*1.5);
+  uiPivot.add(terrain);
+
+  // ─── Floating Video Quad ────────────────────────────────────────────────
+  const video = document.createElement('video');
+  video.src = 'https://attentionfocus.s3.us-east-1.amazonaws.com/yourfile.ext';
+  video.loop = true; video.muted = true; video.playsInline = true; video.crossOrigin = 'anonymous';
+  video.style.display = 'none';
+  document.body.appendChild(video);
+
+  video.play().catch(() =>
+    window.addEventListener('click', () => video.play())
+  );
+  video.addEventListener('loadeddata', () => {
+    const videoTex = new THREE.VideoTexture(video);
+    const vidMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.6, 0.9),
+      new THREE.MeshBasicMaterial({ map: videoTex })
+    );
+    vidMesh.position.set(Math.cos(4*Math.PI/3)*1.5, 0, -Math.sin(4*Math.PI/3)*1.5);
+    uiPivot.add(vidMesh);
+  });
+
+  window.addEventListener('resize', onWindowResize);
+}
+
+function onWindowResize() {
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+function render() {
+  // update sphere shader time
+  sphere.material.uniforms.time.value = clock.getElapsedTime();
+
+  // spin the pivot group
+  const delta = clock.getDelta();
+  uiPivot.rotation.y += rotationSpeed * delta;
+
+  // billboard each child at eye-level
+  const camPos = new THREE.Vector3();
+  camera.getWorldPosition(camPos);
+  uiPivot.children.forEach(child => {
+    child.position.y = 0;        // lock to eye-height
+    child.lookAt(camPos);        // face the camera
+  });
+
+  renderer.render(scene, camera);
+}
+</script>
+</body>
+</html>
