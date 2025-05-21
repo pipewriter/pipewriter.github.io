@@ -1,0 +1,143 @@
+<script type="module">
+import * as THREE from 'https://unpkg.com/three@0.153.0/build/three.module.js';
+import { VRButton } from 'https://unpkg.com/three@0.153.0/examples/jsm/webxr/VRButton.js';
+
+let scene, camera, renderer, sphere;
+const clock = new THREE.Clock();
+
+init();
+animate();
+
+function init() {
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.1, 100);
+  camera.position.set(0,0,0);
+  scene.add(camera);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.xr.enabled = true;
+  document.body.appendChild(renderer.domElement);
+  document.body.appendChild(VRButton.createButton(renderer));
+
+  // add a random seed each time (0.0–1.0)
+  const uniforms = {
+    time: { value: 0.0 },
+    seed: { value: Math.random() }
+  };
+
+  const mat = new THREE.ShaderMaterial({
+    uniforms,
+    side: THREE.BackSide,
+    vertexShader: `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);
+      }
+    `,
+    fragmentShader: `
+      // ---- Simplex noise (Ashima) ----
+      vec3 mod289(vec3 x){return x - floor(x*(1.0/289.0))*289.0;}
+      vec2 mod289(vec2 x){return x - floor(x*(1.0/289.0))*289.0;}
+      vec3 permute(vec3 x){return mod289(((x*34.0)+1.0)*x);}
+      float snoise(vec2 v) {
+        const vec4 C = vec4(0.2113248654,0.3660254038,-0.5773502692,0.0243902439);
+        vec2 i = floor(v + dot(v, C.yy));
+        vec2 x0 = v - i + dot(i, C.xx);
+        vec2 i1 = (x0.x > x0.y) ? vec2(1.0,0.0) : vec2(0.0,1.0);
+        vec4 x12 = x0.xyxy + C.xxzz;
+        x12.xy -= i1;
+        i = mod289(i);
+        vec3 p = permute(permute(i.y + vec3(0.0, i1.y, 1.0))
+                      + i.x + vec3(0.0, i1.x, 1.0));
+        vec3 m = max(0.5 - vec3(dot(x0,x0), dot(x12.xy,x12.xy), dot(x12.zw,x12.zw)), 0.0);
+        m = m*m*m*m;
+        vec3 x = 2.0 * fract(p * C.www) - 1.0;
+        vec3 h = abs(x) - 0.5;
+        vec3 ox = floor(x + 0.5);
+        vec3 a0 = x - ox;
+        m *= 1.79284291400159 - 0.85373472095314 * (a0*a0 + h*h);
+        vec3 g;
+        g.x  = a0.x * x0.x + h.x  * x0.y;
+        g.yz = a0.yz * x12.xz + h.yz * x12.yw;
+        return 130.0 * dot(m, g);
+      }
+
+      // ---- HSV → RGB helper ----
+      vec3 hsv2rgb(vec3 c){
+        vec3 p = abs(mod(c.x*6.0 + vec3(0.0,4.0,2.0), 6.0) - 3.0) - 1.0;
+        p = clamp(p, 0.0, 1.0);
+        return c.z * mix(vec3(1.0), p, c.y);
+      }
+
+      varying vec2 vUv;
+      uniform float time;
+      uniform float seed;
+
+      void main(){
+        // map uv to -1..1
+        vec2 uv = vUv * 2.0 - 1.0;
+
+        // pulsate factor, 0..1
+        float pulse = sin(time * 2.5 + seed * 6.28) * 0.5 + 0.5;
+
+        // two lava hues from seed
+        vec3 color1 = hsv2rgb(vec3(seed,      1.0, 0.5 + 0.4 * pulse));
+        vec3 color2 = hsv2rgb(vec3(fract(seed + 0.3), 1.0, 0.7 + 0.3 * pulse));
+
+        // swirling motion
+        float angle = time * (0.1 + seed*0.3);
+        mat2 rot = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
+        vec2 p = rot * uv;
+        p.y += time * (0.6 + seed*0.6);
+
+        // add seed offset into noise coords
+        p += seed * 10.0;
+
+        // two noise octaves
+        float n1 = snoise(p * (1.5 + seed*1.0));
+        float n2 = snoise((p + vec2(6.0, -4.0)) * (2.0 + seed*1.0));
+
+        // threshold shifts with pulse
+        float low  = mix(0.2, 0.4, pulse);
+        float high = mix(0.6, 0.8, pulse);
+
+        float blob = smoothstep(low, high, n1 + 0.6*n2);
+
+        // final color
+        vec3 col = mix(color1, color2, blob);
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `
+  });
+
+  const sphereGeo = new THREE.SphereGeometry(5, 64, 64);
+  sphere = new THREE.Mesh(sphereGeo, mat);
+  scene.add(sphere);
+
+  // Floating quad
+  const loader = new THREE.TextureLoader();
+  loader.load('profile_pic.jpg', tex => {
+    const aspect = tex.image.width/tex.image.height;
+    const quad = new THREE.Mesh(
+      new THREE.PlaneGeometry(aspect,1),
+      new THREE.MeshBasicMaterial({ map: tex, transparent:true })
+    );
+    quad.position.set(0.5,-0.3,-1.2);
+    camera.add(quad);
+  });
+
+  window.addEventListener('resize', ()=> {
+    camera.aspect = window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth,window.innerHeight);
+  });
+}
+
+function animate(){
+  sphere.material.uniforms.time.value = clock.getElapsedTime();
+  renderer.setAnimationLoop(()=> renderer.render(scene, camera));
+}
+</script>

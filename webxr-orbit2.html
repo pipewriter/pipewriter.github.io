@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>WebXR Orbiting UI Demo</title>
+  <style>
+    body { margin: 0; overflow: hidden; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+<script type="module">
+import * as THREE from 'https://unpkg.com/three@0.153.0/build/three.module.js';
+import { VRButton } from 'https://unpkg.com/three@0.153.0/examples/jsm/webxr/VRButton.js';
+
+let scene, camera, renderer;
+const clock = new THREE.Clock();
+
+// For orbiting
+const orbitItems = [];
+const orbitRadius = 2.0;      // how far out from the camera
+const orbitSpeed = 0.5;       // radians per second
+const camWorldPos = new THREE.Vector3();
+
+init();
+animate();
+
+function init() {
+  // ─── Scene & Camera ─────────────────────
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 100);
+  scene.add(camera);
+
+  // ─── Renderer & XR setup ─────────────────
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.xr.enabled = true;
+  document.body.appendChild(renderer.domElement);
+  document.body.appendChild(VRButton.createButton(renderer));
+
+  // ─── Audio (unchanged) ────────────────────
+  const listener = new THREE.AudioListener();
+  camera.add(listener);
+  const sound = new THREE.Audio(listener);
+  const audioLoader = new THREE.AudioLoader();
+  audioLoader.load(
+    'https://attentionfocus.s3.us-east-1.amazonaws.com/song.mp3',
+    buffer => {
+      sound.setBuffer(buffer);
+      sound.setLoop(true);
+      sound.setVolume(0.5);
+    },
+    xhr => console.log(`Audio ${(xhr.loaded/xhr.total*100).toFixed(1)}% loaded`),
+    err => console.error('Audio load error:', err)
+  );
+  renderer.xr.addEventListener('sessionstart', async () => {
+    try { await sound.context.resume(); } catch(e){ console.warn(e); }
+    if (!sound.isPlaying) sound.play();
+  });
+  renderer.xr.addEventListener('sessionend', () => {
+    if (sound.isPlaying) sound.stop();
+  });
+
+  // ─── Lava Lamp Sphere (unchanged) ────────
+  const sphereGeo = new THREE.SphereGeometry(5, 64, 64);
+  const sphereUniforms = { time: { value: 0.0 } };
+  const sphereMat = new THREE.ShaderMaterial({
+    uniforms: sphereUniforms,
+    vertexShader: `...`,   // your existing vertex shader
+    fragmentShader: `...`, // your existing fragment shader
+    side: THREE.BackSide
+  });
+  scene.add(new THREE.Mesh(sphereGeo, sphereMat));
+
+  // ─── Floating Image Quad ─────────────────
+  const loader = new THREE.TextureLoader();
+  loader.load('profile_pic.jpg', texture => {
+    const aspect = texture.image.width / texture.image.height;
+    const quad = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.0 * aspect, 1.0),
+      new THREE.MeshBasicMaterial({ map: texture, transparent: true })
+    );
+    scene.add(quad);
+    orbitItems.push(quad);
+  });
+
+  // ─── Floating Topo Map ────────────────────
+  const mapSegments = 64, mapSize = 1.2;
+  const terrainGeo = new THREE.PlaneGeometry(mapSize, mapSize, mapSegments, mapSegments);
+  const terrainMat = new THREE.ShaderMaterial({
+    vertexShader: `...`,   // your existing terrain vertex shader
+    fragmentShader: `...`, // your existing terrain fragment shader
+    side: THREE.DoubleSide
+  });
+  const terrain = new THREE.Mesh(terrainGeo, terrainMat);
+  terrain.rotation.x = -Math.PI / 2;
+  scene.add(terrain);
+  orbitItems.push(terrain);
+
+  // ─── Floating Video Quad ─────────────────
+  const video = document.createElement('video');
+  video.src = 'https://attentionfocus.s3.us-east-1.amazonaws.com/yourfile.ext';
+  video.loop = video.muted = video.playsInline = true;
+  video.crossOrigin = 'anonymous';
+  video.style.display = 'none';
+  document.body.appendChild(video);
+
+  video.play().catch(() =>
+    window.addEventListener('click', () => video.play())
+  );
+
+  video.addEventListener('loadeddata', () => {
+    const videoTex = new THREE.VideoTexture(video);
+    const vidMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.6, 0.9),
+      new THREE.MeshBasicMaterial({ map: videoTex })
+    );
+    scene.add(vidMesh);
+    orbitItems.push(vidMesh);
+  });
+
+  window.addEventListener('resize', onWindowResize);
+}
+
+function onWindowResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+function animate() {
+  renderer.setAnimationLoop(render);
+}
+
+function render() {
+  // update lava time
+  scene.traverse(obj => {
+    if (obj.material && obj.material.uniforms && obj.material.uniforms.time)
+      obj.material.uniforms.time.value = clock.getElapsedTime();
+  });
+
+  // orbit & billboard each item
+  const t = clock.getElapsedTime();
+  camera.getWorldPosition(camWorldPos);
+  orbitItems.forEach((item, i) => {
+    const angle = t * orbitSpeed + i * (2 * Math.PI / orbitItems.length);
+    item.position.set(
+      camWorldPos.x + orbitRadius * Math.cos(angle),
+      camWorldPos.y,
+      camWorldPos.z + orbitRadius * Math.sin(angle)
+    );
+    item.lookAt(camWorldPos);
+  });
+
+  renderer.render(scene, camera);
+}
+</script>
+</body>
+</html>
