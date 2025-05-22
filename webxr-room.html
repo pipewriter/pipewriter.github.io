@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>WebXR Orbiting Lava & UI Demo (JSON-driven)</title>
+  <style>
+    body { margin: 0; overflow: hidden; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+<script type="module">
+import * as THREE from 'https://unpkg.com/three@0.153.0/build/three.module.js';
+import { VRButton } from 'https://unpkg.com/three@0.153.0/examples/jsm/webxr/VRButton.js';
+
+let scene, camera, renderer;
+const clock = new THREE.Clock();
+const orbitItems = [];
+const orbitRadius = 2.0;
+const orbitSpeed = 0.5;
+const camWorldPos = new THREE.Vector3();
+
+await init();
+console.log(renderer)
+animate();
+
+async function init() {
+  // ─── load your JSON settings ─────────────────────
+  const resp = await fetch('https://attentionfocus.s3.us-east-1.amazonaws.com/webxr-room-settings.json');
+  const settings = await resp.json();
+  const { seed, song, objects } = settings;
+  console.log('settings:', settings);
+
+  // ─── Scene & Camera ─────────────────────
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.1, 100);
+  scene.add(camera);
+
+  // ─── Renderer & XR setup ─────────────────
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(devicePixelRatio);
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.xr.enabled = true;
+  document.body.append(renderer.domElement, VRButton.createButton(renderer));
+    console.log(renderer)
+  // ─── Audio (from JSON) ───────────────────
+  const listener = new THREE.AudioListener();
+  camera.add(listener);
+  const sound = new THREE.Audio(listener);
+  new THREE.AudioLoader().load(
+    song,
+    buffer => {
+      sound.setBuffer(buffer);
+      sound.setLoop(true);
+      sound.setVolume(0.5);
+    },
+    xhr => console.log(`Audio ${(xhr.loaded/xhr.total*100).toFixed(1)}% loaded`),
+    err => console.error(err)
+  );
+  renderer.xr.addEventListener('sessionstart', async () => {
+    await sound.context.resume().catch(()=>{});
+    if (!sound.isPlaying) sound.play();
+  });
+  renderer.xr.addEventListener('sessionend', () => sound.isPlaying && sound.stop());
+
+  
+  // ─── Inverted Lava-Lamp Sphere ───────────
+  const sphereGeo = new THREE.SphereGeometry(5, 64, 64);
+  const sphereUniforms = { time: { value: 0.0 } };
+  const sphereMat = new THREE.ShaderMaterial({
+    uniforms: sphereUniforms,
+    vertexShader: `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      // 2D Simplex Noise
+      vec3 mod289(vec3 x){return x - floor(x * (1.0 / 289.0)) * 289.0;}
+      vec2 mod289(vec2 x){return x - floor(x * (1.0 / 289.0)) * 289.0;}
+      vec3 permute(vec3 x){return mod289(((x*34.0)+1.0)*x);}
+      float snoise(vec2 v) {
+        const vec4 C = vec4(0.2113248654,0.3660254038,-0.5773502692,0.0243902439);
+        vec2 i = floor(v + dot(v, C.yy));
+        vec2 x0 = v - i + dot(i, C.xx);
+        vec2 i1 = x0.x> x0.y? vec2(1.0,0.0): vec2(0.0,1.0);
+        vec4 x12 = x0.xyxy + C.xxzz;
+        x12.xy -= i1;
+        i = mod289(i);
+        vec3 p = permute(permute(i.y + vec3(0.0, i1.y, 1.0)) + i.x + vec3(0.0, i1.x, 1.0));
+        vec3 m = max(0.5 - vec3(dot(x0,x0), dot(x12.xy,x12.xy), dot(x12.zw,x12.zw)), 0.0);
+        m = m*m*m*m;
+        vec3 x = 2.0 * fract(p * C.www) - 1.0;
+        vec3 h = abs(x) - 0.5;
+        vec3 ox = floor(x + 0.5);
+        vec3 a0 = x - ox;
+        m *= 1.79284291400159 - 0.85373472095314 * (a0*a0 + h*h);
+        vec3 g;
+        g.x = a0.x * x0.x + h.x * x0.y;
+        g.yz = a0.yz * x12.xz + h.yz * x12.yw;
+        return 130.0 * dot(m, g);
+      }
+      varying vec2 vUv;
+      uniform float time;
+      void main() {
+        vec2 uv = vUv * 2.0 - 1.0;
+        float speed = 0.8;
+        float rotSpeed = 0.2;
+        float angle = time * rotSpeed;
+        mat2 rot = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
+        vec2 p = rot * uv;
+        p.y += time * speed;
+        p.y = mod(p.y + 2.0, 4.0) - 2.0;
+        float swirl = snoise(vec2(p.y * 0.3, time * 0.4));
+        p.x += swirl * 0.5;
+        float n1 = snoise(p * 1.5);
+        float n2 = snoise((p + vec2(6.0,-4.0)) * 2.5);
+        float blob = smoothstep(0.25, 0.6, n1 + n2 * 0.6);
+        vec3 col = mix(vec3(0.2,0.0,0.0), vec3(1.0,0.8,0.1), blob);
+        gl_FragColor = vec4(col,1.0);
+      }
+    `,
+    side: THREE.BackSide
+  });
+  scene.add(new THREE.Mesh(sphereGeo, sphereMat));
+
+  // ─── Load first image URL from JSON ─────────
+  const imgURLs = objects.filter(u => /\.(jpe?g|png)$/i.test(u));
+  console.log(imgURLs)
+  imgURLs.forEach(imgURL => {
+    
+    new THREE.TextureLoader().load(imgURL, tex => {
+      const aspect = tex.image.width / tex.image.height;
+      const imgMesh = new THREE.Mesh(
+        new THREE.PlaneGeometry(aspect * 1, 1),
+        new THREE.MeshBasicMaterial({ map: tex, transparent: true })
+      );
+      scene.add(imgMesh);
+      console.log("nice!")
+      orbitItems.push(imgMesh);
+    });
+  });
+
+  // ─── Load first video URL from JSON ─────────
+  const vidURLs = objects.filter(u => /\.(mp4|webm)$/i.test(u));
+    vidURLs.forEach(vidURL => {
+    const video = document.createElement('video');
+    video.src = vidURL;
+    video.loop = video.muted = video.playsInline = true;
+    video.crossOrigin = 'anonymous';
+    video.style.display = 'none';
+    document.body.appendChild(video);
+
+    // some browsers require play triggered by user-interaction
+    video.play().catch(() => 
+      window.addEventListener('click', () => video.play())
+    );
+
+    video.addEventListener('loadeddata', () => {
+      const tex = new THREE.VideoTexture(video);
+      const vidMesh = new THREE.Mesh(
+        new THREE.PlaneGeometry(1.6, 0.9),
+        new THREE.MeshBasicMaterial({ map: tex })
+      );
+      scene.add(vidMesh);
+      orbitItems.push(vidMesh);
+    });
+  });
+
+  window.addEventListener('resize', onWindowResize);
+}
+
+function onWindowResize(){
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+}
+
+function animate(){
+  renderer.setAnimationLoop(render);
+}
+
+function render(){
+  const t = clock.getElapsedTime();
+  camera.getWorldPosition(camWorldPos);
+  orbitItems.forEach((item,i) => {
+    const ang = t * orbitSpeed + i * (2 * Math.PI / orbitItems.length);
+    item.position.set(
+      camWorldPos.x + orbitRadius * Math.cos(ang),
+      camWorldPos.y,
+      camWorldPos.z + orbitRadius * Math.sin(ang)
+    );
+    item.lookAt(camWorldPos);
+  });
+  renderer.render(scene, camera);
+}
+</script>
+</body>
+</html>
