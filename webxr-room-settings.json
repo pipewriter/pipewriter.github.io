@@ -1,5 +1,5 @@
 {
-    "seed": 123,
+    "seed": 1.23,
     "song": "https://attentionfocus.s3.us-east-1.amazonaws.com/song.mp3",
     "objects":[
         "https://attentionfocus.s3.us-east-1.amazonaws.com/trailer.webm",
