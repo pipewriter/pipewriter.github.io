@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Three.js WebXR: Joystick + A/B Buttons</title>
+  <style>
+    body { margin: 0; overflow: hidden; }
+    #info { position: absolute; top: 0; left: 0; padding: 10px; color: white; font-family: monospace; background: rgba(0,0,0,0.5); }
+  </style>
+</head>
+<body>
+  <div id="info">Move joystick or press A/B and watch the console.</div>
+  <script type="module">
+    import * as THREE from 'https://unpkg.com/three@0.153.0/build/three.module.js';
+    import { VRButton } from 'https://unpkg.com/three@0.153.0/examples/jsm/webxr/VRButton.js';
+
+    let camera, scene, renderer;
+    const controllers = [];
+
+    init();
+    animate();
+
+    function init() {
+      // basic scene + camera
+      scene = new THREE.Scene();
+      camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.1, 100);
+
+      // three.js renderer with XR enabled
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(innerWidth, innerHeight);
+      renderer.xr.enabled = true;
+      document.body.appendChild(renderer.domElement);
+      document.body.appendChild(VRButton.createButton(renderer));
+
+      // set up two controller slots (0=left, 1=right)
+      for (let i = 0; i < 2; i++) {
+        const ctrl = renderer.xr.getController(i);
+        ctrl.userData.index = i;
+        ctrl.userData.gamepad = null;
+        ctrl.userData.prevButtons = [];
+        ctrl.addEventListener('connected', e => {
+          ctrl.userData.gamepad = e.data.gamepad;
+          console.log(`controller ${i} connected:`, e.data);
+        });
+        ctrl.addEventListener('disconnected', () => {
+          ctrl.userData.gamepad = null;
+          ctrl.userData.prevButtons = [];
+          console.log(`controller ${i} disconnected`);
+        });
+        scene.add(ctrl);
+        controllers.push(ctrl);
+      }
+
+      window.addEventListener('resize', () => {
+        camera.aspect = innerWidth/innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(innerWidth, innerHeight);
+      });
+    }
+
+    function animate() {
+      renderer.setAnimationLoop(render);
+    }
+
+    function render() {
+      // for each controller, poll axes + A/B buttons
+      controllers.forEach(ctrl => {
+        const gp = ctrl.userData.gamepad;
+        if (gp) {
+          // *joystick* – most XR thumbsticks live at axes[2]/[3], fall back to [0]/[1]
+          const x = gp.axes[2] !== undefined ? gp.axes[2] : gp.axes[0];
+          const y = gp.axes[3] !== undefined ? gp.axes[3] : gp.axes[1];
+          if (Math.abs(x) > 0.01 || Math.abs(y) > 0.01) {
+            console.log(`controller ${ctrl.userData.index} stick:`, x.toFixed(2), y.toFixed(2));
+          }
+
+          // *A/B buttons* – on Quest these usually land at buttons[4] (A) & [5] (B)
+          [
+            { name: 'A', idx: 4 },
+            { name: 'B', idx: 5 }
+          ].forEach(btn => {
+            const pressed = gp.buttons[btn.idx]?.pressed;
+            const prev    = ctrl.userData.prevButtons[btn.idx] || false;
+            if (pressed && !prev)      console.log(`${btn.name} pressed`);
+            else if (!pressed && prev) console.log(`${btn.name} released`);
+            ctrl.userData.prevButtons[btn.idx] = pressed;
+          });
+        }
+      });
+
+      renderer.render(scene, camera);
+    }
+  </script>
+</body>
+</html>
