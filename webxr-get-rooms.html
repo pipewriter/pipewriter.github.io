@@ -23,6 +23,8 @@ import * as THREE from 'https://unpkg.com/three@0.153.0/build/three.module.js';
 import { VRButton } from 'https://unpkg.com/three@0.153.0/examples/jsm/webxr/VRButton.js';
 
 let scene, camera, renderer;
+    const controllers = [];
+
 const clock = new THREE.Clock();
 let sound, listener;
 let sphereUniforms;
@@ -68,6 +70,25 @@ async function init() {
   renderer.xr.enabled = true;
   document.body.append(renderer.domElement, VRButton.createButton(renderer));
 
+    // set up two controller slots (0=left, 1=right)
+    for (let i = 0; i < 2; i++) {
+    const ctrl = renderer.xr.getController(i);
+    ctrl.userData.index = i;
+    ctrl.userData.gamepad = null;
+    ctrl.userData.prevButtons = [];
+    ctrl.addEventListener('connected', e => {
+        ctrl.userData.gamepad = e.data.gamepad;
+        console.log(`controller ${i} connected:`, e.data);
+    });
+    ctrl.addEventListener('disconnected', () => {
+        ctrl.userData.gamepad = null;
+        ctrl.userData.prevButtons = [];
+        console.log(`controller ${i} disconnected`);
+    });
+    scene.add(ctrl);
+    controllers.push(ctrl);
+    }
+    
   listener = new THREE.AudioListener();
   camera.add(listener);
   sound = new THREE.Audio(listener);
@@ -268,6 +289,34 @@ function render(){
     );
     item.lookAt(camWorldPos);
   });
+    // console.log('hi')
+    // for each controller, poll axes + A/B buttons
+      controllers.forEach(ctrl => {
+        const gp = ctrl.userData.gamepad;
+        if (gp) {
+          // *joystick* – most XR thumbsticks live at axes[2]/[3], fall back to [0]/[1]
+          const x = gp.axes[2] !== undefined ? gp.axes[2] : gp.axes[0];
+          const y = gp.axes[3] !== undefined ? gp.axes[3] : gp.axes[1];
+          if (Math.abs(x) > 0.01 || Math.abs(y) > 0.01) {
+            console.log(`controller ${ctrl.userData.index} stick:`, x.toFixed(2), y.toFixed(2));
+          }
+
+          // *A/B buttons* – on Quest these usually land at buttons[4] (A) & [5] (B)
+          [
+            { name: 'A', idx: 4 },
+            { name: 'B', idx: 5 }
+          ].forEach(btn => {
+            const pressed = gp.buttons[btn.idx]?.pressed;
+            const prev    = ctrl.userData.prevButtons[btn.idx] || false;
+            if (pressed && !prev){
+                console.log(`${btn.name} pressed`);
+                loadRoom((currentIndex+1)%rooms.length);
+            }     
+            else if (!pressed && prev) console.log(`${btn.name} released`);
+            ctrl.userData.prevButtons[btn.idx] = pressed;
+          });
+        }
+    });
   renderer.render(scene, camera);
 }
 </script>
