@@ -222,16 +222,19 @@ async function loadRoom(indexOrName) {
   // update the lava seed
   sphereUniforms.seed.value = seed;
 
+
   // reload audio
   if (sound.isPlaying) sound.stop();
   new THREE.AudioLoader().load(song, buf=>{
     sound.setBuffer(buf);
     sound.setLoop(true);
     sound.setVolume(0.5);
-    // auto-play in XR
-    renderer.xr.addEventListener('sessionstart', () => {
-      sound.context.resume().then(()=>!sound.isPlaying&&sound.play());
-    });
+    // if we’re already in an XR session, resume+play immediately
+    if (renderer.xr.getSession()) {
+        sound.context.resume().then(() => {
+        if (!sound.isPlaying) sound.play();
+        });
+    }
   });
 
   // load images & videos into orbitItems just like before
