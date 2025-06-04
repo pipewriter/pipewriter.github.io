@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Three.js Scene with Posterize + Dither</title>
+  <style>
+    body { margin: 0; overflow: hidden; }
+    canvas { display: block; }
+  </style>
+  <!-- 1) Import map: map bare specifiers to full URLs on unpkg.com -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.153.0/build/three.module.js",
+      "three/examples/jsm/postprocessing/EffectComposer.js":
+        "https://unpkg.com/three@0.153.0/examples/jsm/postprocessing/EffectComposer.js",
+      "three/examples/jsm/postprocessing/RenderPass.js":
+        "https://unpkg.com/three@0.153.0/examples/jsm/postprocessing/RenderPass.js",
+      "three/examples/jsm/postprocessing/ShaderPass.js":
+        "https://unpkg.com/three@0.153.0/examples/jsm/postprocessing/ShaderPass.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <script type="module">
+    import * as THREE from 'three';
+    import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+    import { RenderPass    } from 'three/examples/jsm/postprocessing/RenderPass.js';
+    import { ShaderPass    } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+
+    // 2) SET UP SCENE, CAMERA, RENDERER
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1e1e1e);
+
+    const camera = new THREE.PerspectiveCamera(
+      45,
+      window.innerWidth / window.innerHeight,
+      0.1,
+      1000
+    );
+    camera.position.set(0, 5, 12);
+    camera.lookAt(0, 1, 0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    // 3) ADD LIGHTING
+    // 3a) Point Light
+    const pointLight = new THREE.PointLight(0xffffff, 1.1);
+    pointLight.position.set(5, 8, 5);
+    scene.add(pointLight);
+
+    // (Optional) Helper sphere for the point light
+    const lightHelper = new THREE.Mesh(
+      new THREE.SphereGeometry(0.1, 8, 8),
+      new THREE.MeshBasicMaterial({ color: 0xffffff })
+    );
+    lightHelper.position.copy(pointLight.position);
+    scene.add(lightHelper);
+
+    // 3b) Ambient Light
+    const ambient = new THREE.AmbientLight(0x404040, 0.3);
+    scene.add(ambient);
+
+    // 4) CREATE GROUND PLANE
+    const planeMat = new THREE.MeshLambertMaterial({ color: 0x444444 });
+    const planeGeo = new THREE.PlaneGeometry(50, 50);
+    const ground = new THREE.Mesh(planeGeo, planeMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = 0;
+    scene.add(ground);
+
+    // 5) CREATE COLORFUL GEOMETRIES
+    // 5.1 Blue Cube
+    const cubeGeo = new THREE.BoxGeometry(2, 2, 2);
+    const cubeMat = new THREE.MeshLambertMaterial({ color: 0x3366ff });
+    const cube = new THREE.Mesh(cubeGeo, cubeMat);
+    cube.position.set(-4, 1, -2);
+    scene.add(cube);
+
+    // 5.2 Red Sphere
+    const sphereGeo = new THREE.SphereGeometry(1.2, 32, 32);
+    const sphereMat = new THREE.MeshLambertMaterial({ color: 0xff3333 });
+    const sphere = new THREE.Mesh(sphereGeo, sphereMat);
+    sphere.position.set(2, 1.2, 0);
+    scene.add(sphere);
+
+    // 5.3 Green Cone
+    const coneGeo = new THREE.ConeGeometry(1, 2.5, 32);
+    const coneMat = new THREE.MeshLambertMaterial({ color: 0x33ff33 });
+    const cone = new THREE.Mesh(coneGeo, coneMat);
+    cone.position.set(-1, 1.25, 3);
+    scene.add(cone);
+
+    // 5.4 Yellow Torus Knot
+    const torusGeo = new THREE.TorusKnotGeometry(0.8, 0.3, 100, 16);
+    const torusMat = new THREE.MeshLambertMaterial({ color: 0xffff66 });
+    const torus = new THREE.Mesh(torusGeo, torusMat);
+    torus.position.set(4, 1, -1);
+    scene.add(torus);
+
+    // 5.5 Magenta Cylinder
+    const cylGeo = new THREE.CylinderGeometry(0.7, 0.7, 2.5, 32);
+    const cylMat = new THREE.MeshLambertMaterial({ color: 0xff33ff });
+    const cylinder = new THREE.Mesh(cylGeo, cylMat);
+    cylinder.position.set(0, 1.25, -4);
+    scene.add(cylinder);
+
+    // 5.6 Cyan Octahedron
+    const octaGeo = new THREE.OctahedronGeometry(1.2);
+    const octaMat = new THREE.MeshLambertMaterial({ color: 0x33ffff });
+    const octa = new THREE.Mesh(octaGeo, octaMat);
+    octa.position.set(-3, 1.2, 3);
+    scene.add(octa);
+
+    // 5.7 Orange Torus
+    const torGeo = new THREE.TorusGeometry(1.5, 0.4, 16, 100);
+    const torMat = new THREE.MeshLambertMaterial({ color: 0xff9933 });
+    const torus2 = new THREE.Mesh(torGeo, torMat);
+    torus2.position.set(3.5, 1.5, 3);
+    scene.add(torus2);
+
+    // 6) SET UP POST-PROCESSING: POSTERIZE + DITHER SHADER
+    const PosterizeDitherShader = {
+      uniforms: {
+        tDiffuse: { value: null },
+        levels:   { value: 8.0 },
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D tDiffuse;
+        uniform float levels;
+        varying vec2 vUv;
+
+        // Simple pseudo-random based on pixel coords
+        float rand(vec2 co) {
+          return fract(sin(dot(co.xy, vec2(12.9898, 78.233))) * 43758.5453);
+        }
+
+        void main() {
+          vec4 color = texture2D(tDiffuse, vUv);
+
+          // Generate noise in [-0.5, +0.5]
+          float noise = rand(gl_FragCoord.xy) - 0.5;
+
+          // Add small offset before quantizing
+          vec3 c = color.rgb + (noise / levels);
+
+          // Quantize each channel into 'levels' steps
+          c = floor(c * levels) / levels;
+
+          gl_FragColor = vec4(c, color.a);
+        }
+      `
+    };
+
+    // Create the composer and passes
+    const composer = new EffectComposer(renderer);
+    const renderPass = new RenderPass(scene, camera);
+    composer.addPass(renderPass);
+
+    const posterizePass = new ShaderPass(PosterizeDitherShader);
+    posterizePass.uniforms.levels.value = 8.0; // try 4.0, 8.0, 16.0, etc.
+    composer.addPass(posterizePass);
+
+    // 7) HANDLE WINDOW RESIZE
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      composer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // 8) ANIMATION LOOP
+    function animate() {
+      requestAnimationFrame(animate);
+
+      // Rotate each object at its own speed
+      cube.rotation.x    += 0.005;
+      cube.rotation.y    += 0.008;
+      sphere.rotation.y  += 0.01;
+      sphere.rotation.x  += 0.005;
+      cone.rotation.y    += 0.007;
+      torus.rotation.x   += 0.006;
+      torus.rotation.z   += 0.009;
+      cylinder.rotation.y += 0.005;
+      octa.rotation.x    += 0.008;
+      octa.rotation.y    += 0.004;
+      torus2.rotation.y  += 0.01;
+      torus2.rotation.x  += 0.005;
+
+      // Render through the composer so the posterize+dither pass is applied
+      composer.render();
+    }
+
+    animate();
+  </script>
+</body>
+</html>

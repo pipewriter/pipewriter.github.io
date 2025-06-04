@@ -29,7 +29,7 @@ const clock = new THREE.Clock();
 let sound, listener;
 let sphereUniforms;
 const orbitItems = [];
-const orbitRadius = 2.0;
+let orbitRadius = 2.0;
 const orbitSpeed = 0.5;
 const camWorldPos = new THREE.Vector3();
 let rooms = [], currentIndex = 0;
@@ -68,6 +68,7 @@ async function init() {
   renderer.setPixelRatio(devicePixelRatio);
   renderer.setSize(innerWidth, innerHeight);
   renderer.xr.enabled = true;
+  // camera = renderer.xr.getCamera();
   document.body.append(renderer.domElement, VRButton.createButton(renderer));
 
     // set up two controller slots (0=left, 1=right)
@@ -278,20 +279,23 @@ function onWindowResize(){
 function animate(){
   renderer.setAnimationLoop(render);
 }
+let orbitang = 0;
 
 function render(){
   const t = clock.getElapsedTime();
 //   (sphereUniforms.time.value = clock.getElapsedTime());
   camera.getWorldPosition(camWorldPos);
   orbitItems.forEach((item,i)=>{
-    const ang = t * orbitSpeed + i * (2*Math.PI/orbitItems.length);
+    const ang = orbitang + i * (2*Math.PI/orbitItems.length);
     item.position.set(
       camWorldPos.x + orbitRadius*Math.cos(ang),
-      camWorldPos.y,
+      camWorldPos.y+1,
       camWorldPos.z + orbitRadius*Math.sin(ang)
     );
-    item.lookAt(camWorldPos);
+    console.log(camera)
+    item.lookAt(0,1,0);
   });
+  console.log(renderer.xr)
     // console.log('hi')
     // for each controller, poll axes + A/B buttons
       controllers.forEach(ctrl => {
@@ -301,6 +305,8 @@ function render(){
           const x = gp.axes[2] !== undefined ? gp.axes[2] : gp.axes[0];
           const y = gp.axes[3] !== undefined ? gp.axes[3] : gp.axes[1];
           if (Math.abs(x) > 0.01 || Math.abs(y) > 0.01) {
+            orbitang += x/30;
+            orbitRadius -= y/30;
             console.log(`controller ${ctrl.userData.index} stick:`, x.toFixed(2), y.toFixed(2));
           }
 
@@ -311,10 +317,18 @@ function render(){
           ].forEach(btn => {
             const pressed = gp.buttons[btn.idx]?.pressed;
             const prev    = ctrl.userData.prevButtons[btn.idx] || false;
-            if (pressed && !prev){
+            // if (pressed && !prev){
+            //     console.log(`${btn.name} pressed`);
+            //     loadRoom((currentIndex+1)%rooms.length);
+            // }     
+            if(pressed && !prev){
+              if(btn.idx == 4){
                 console.log(`${btn.name} pressed`);
                 loadRoom((currentIndex+1)%rooms.length);
-            }     
+              }else if(btn.idx == 5){
+                loadRoom((currentIndex-1 + rooms.length)%rooms.length);
+              }
+            }
             else if (!pressed && prev) console.log(`${btn.name} released`);
             ctrl.userData.prevButtons[btn.idx] = pressed;
           });

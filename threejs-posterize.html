@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Three.js Posterize + Dither (Import Map)</title>
+  <style>
+    body { margin: 0; overflow: hidden; }
+    canvas { display: block; }
+  </style>
+
+  <!-- 1) Import map: map bare specifiers to full URLs on unpkg.com -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.153.0/build/three.module.js",
+      "three/examples/jsm/postprocessing/EffectComposer.js":
+        "https://unpkg.com/three@0.153.0/examples/jsm/postprocessing/EffectComposer.js",
+      "three/examples/jsm/postprocessing/RenderPass.js":
+        "https://unpkg.com/three@0.153.0/examples/jsm/postprocessing/RenderPass.js",
+      "three/examples/jsm/postprocessing/ShaderPass.js":
+        "https://unpkg.com/three@0.153.0/examples/jsm/postprocessing/ShaderPass.js"
+    }
+  }
+  </script>
+</head>
+
+<body>
+  <!-- 2) Load our own module AFTER the import map above -->
+  <script type="module" src="./threejs-posterize.js"></script>
+</body>
+</html>
