@@ -286,15 +286,17 @@ function render(){
   const t = clock.getElapsedTime();
 //   (sphereUniforms.time.value = clock.getElapsedTime());
   camera.getWorldPosition(camWorldPos);
+  
   orbitItems.forEach((item,i)=>{
     const ang = orbitang + i * (2*Math.PI/orbitItems.length);
-    item.position.set(
-      camWorldPos.x + orbitRadius*Math.cos(ang),
-      camWorldPos.y+1,
-      camWorldPos.z + orbitRadius*Math.sin(ang)
+    // rotate around XZ by default (standing up)
+    const pos = new THREE.Vector3(
+      0,
+      orbitRadius * Math.sin(ang),
+      orbitRadius * Math.cos(ang)
     );
-    // console.log(camera)
-    item.lookAt(0,1,0);
+    item.position.copy(camWorldPos).add(pos);
+    item.lookAt(camWorldPos);
   });
   // console.log(renderer.xr)
     // console.log('hi')
@@ -302,6 +304,13 @@ function render(){
       controllers.forEach(ctrl => {
         const gp = ctrl.userData.gamepad;
         if (gp) {
+          // Trigger button (idx 1) to rotate ring "forward" while lying down
+          const pressed1 = gp.buttons[1]?.pressed;
+          const prev1 = ctrl.userData.prevButtons[1] || false;
+          if (pressed1 && !prev1) {
+            orbitang += Math.PI / 12; // rotate 15 degrees
+          }
+          ctrl.userData.prevButtons[1] = pressed1;
           // Trigger button (idx 0) to toggle hiding images
           const pressed0 = gp.buttons[0]?.pressed;
           const prev0 = ctrl.userData.prevButtons[0] || false;
