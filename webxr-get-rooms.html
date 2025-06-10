@@ -281,6 +281,7 @@ function animate(){
 }
 let orbitang = 0;
 let hideToggled = false;
+let viewingangle = 0;
 
 function render(){
   const t = clock.getElapsedTime();
@@ -298,7 +299,7 @@ function render(){
     
   });
   const axis = new THREE.Vector3(1, 0, 0);
-  const angle = Math.PI / 4;
+  const angle = viewingangle;
 
   orbitItems.forEach(item => {
     // rotate the position
@@ -351,8 +352,19 @@ function render(){
           const y = gp.axes[3] !== undefined ? gp.axes[3] : gp.axes[1];
           if (Math.abs(x) > 0.01 || Math.abs(y) > 0.01) {
             orbitang += x/30;
-            orbitRadius -= y/30;
-            console.log(`controller ${ctrl.userData.index} stick:`, x.toFixed(2), y.toFixed(2));
+            // if lower trigger is held, adjust viewing angle instead of radius
+            const lowerPressed = gp.buttons[1]?.pressed;
+            if (lowerPressed) {
+              viewingangle -= y/30;
+            } else {
+              orbitRadius -= y/30;
+            }
+            console.log(
+              `controller ${ctrl.userData.index} stick:`,
+              x.toFixed(2),
+              y.toFixed(2),
+              lowerPressed ? '(adjusting view angle)' : '(adjusting radius)'
+            );
           }
 
           // *A/B buttons* – on Quest these usually land at buttons[4] (A) & [5] (B)
