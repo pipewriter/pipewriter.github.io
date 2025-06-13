@@ -271,35 +271,83 @@ async function loadRoom(indexOrName) {
   });
 
   // load images & videos into orbitItems just like before
-  objects.filter(u=>/\.(jpe?g|png)$/i.test(u))
-    .forEach(u => new THREE.TextureLoader().load(u, tex => {
-      const aspect = tex.image.width/tex.image.height;
-      const mesh = new THREE.Mesh(
-        new THREE.PlaneGeometry(aspect,1),
-        new THREE.MeshBasicMaterial({ map:tex, transparent:true })
-      );
-      scene.add(mesh);
-      orbitItems.push(mesh);
-    }));
+  // helper for a generic grey placeholder
+function makePlaceholderMesh(isVideo) {
+  const geom = isVideo
+      ? new THREE.PlaneGeometry(1.6, 0.9)   // default 16:9 card for videos
+      : new THREE.PlaneGeometry(1, 1);      // square for images until we know AR
+  const mat  = new THREE.MeshBasicMaterial({ color: 0x222222, opacity: 0.25, transparent: true });
+  return new THREE.Mesh(geom, mat);
+}
 
-  objects.filter(u=>/\.(mp4|webm)$/i.test(u))
-    .forEach(u => {
-      const video = document.createElement('video');
-      video.src = u; video.loop = video.muted = video.playsInline = true;
-      video.crossOrigin = 'anonymous';
-      video.style.display = 'none';
-      document.body.appendChild(video);
-      video.play().catch(()=>window.addEventListener('click',()=>video.play()));
-      video.addEventListener('loadeddata',()=>{
-        const tex = new THREE.VideoTexture(video);
-        const mesh = new THREE.Mesh(
-          new THREE.PlaneGeometry(1.6,0.9),
-          new THREE.MeshBasicMaterial({ map:tex })
-        );
-        scene.add(mesh);
-        orbitItems.push(mesh);
+  objects.forEach((url, i) => {
+    const isImg = /\.(jpe?g|png)$/i.test(url);
+    const isVid = /\.(mp4|webm)$/i.test(url);
+    if (!isImg && !isVid) return;                       // ignore unknown types
+
+    // 1) create the slot in the correct position
+    const mesh = makePlaceholderMesh(isVid);
+    scene.add(mesh);
+    orbitItems.push(mesh);                              // order is fixed here!
+
+    // 2) start loading the real asset
+    if (isImg) {
+      new THREE.TextureLoader().load(
+        url,
+        tex => {                                        // --- success ------------
+          // adjust geometry to actual aspect ratio
+          const ar = tex.image.width / tex.image.height;
+          mesh.geometry.dispose();
+          mesh.geometry = new THREE.PlaneGeometry(ar, 1);
+
+          // swap in the real texture
+          mesh.material.map       = tex;
+          mesh.material.opacity   = 1;
+          mesh.material.color.set(0xffffff);
+          mesh.material.needsUpdate = true;
+        },
+        undefined,
+        err => {                                        // --- error -------------
+          console.error('Image failed:', url, err);
+          mesh.material.color.set(0xff0000);            // mark the gap visibly
+        }
+      );
+    } else if (isVid) {
+      const vid = document.createElement('video');
+      vid.src         = url;
+      vid.loop        = true;
+      vid.muted       = true;
+      vid.playsInline = true;
+      vid.crossOrigin = 'anonymous';
+      vid.style.display = 'none';
+      document.body.appendChild(vid);
+
+      const onReady = () => {
+        const tex = new THREE.VideoTexture(vid);
+
+        // optional: compute real aspect ratio from metadata
+        const ar = vid.videoWidth / vid.videoHeight || 16/9;
+        mesh.geometry.dispose();
+        mesh.geometry = new THREE.PlaneGeometry(ar, 1);
+
+        mesh.material.map       = tex;
+        mesh.material.opacity   = 1;
+        mesh.material.color.set(0xffffff);
+        mesh.material.needsUpdate = true;
+      };
+
+      vid.addEventListener('loadeddata', onReady);
+      vid.addEventListener('error',       e => {
+        console.error('Video failed:', url, e);
+        mesh.material.color.set(0xff0000);
       });
-    });
+
+      // many browsers require a user gesture before playing
+      vid.play().catch(() =>
+        window.addEventListener('click', () => vid.play(), { once: true })
+      );
+    }
+  });
 }
 
 function onWindowResize(){
