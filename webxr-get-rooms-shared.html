@@ -42,10 +42,11 @@ ws.addEventListener('message', ({data}) => {
   if (type !== 'state') return;
 
   // Only apply if something actually differs.
-  if (s.orbitRadius  !== orbitRadius)  orbitRadius  = s.orbitRadius;
-  if (s.orbitang     !== orbitang)     orbitang     = s.orbitang;
-  if (s.viewingangle !== viewingangle) viewingangle = s.viewingangle;
-
+  
+  // Don’t snap – store as new targets; render() will interpolate toward them
+  if (s.orbitRadius  !== targetOrbitRadius)   targetOrbitRadius  = s.orbitRadius;
+  if (s.orbitang     !== targetOrbitang)      targetOrbitang     = s.orbitang;
+  if (s.viewingangle !== targetViewingangle)  targetViewingangle = s.viewingangle;
   if (s.hideToggled !== hideToggled) {
     hideToggled = s.hideToggled;
     // Re‑apply visibility when the flag arrived from someone else
@@ -362,11 +363,26 @@ function animate(){
 let orbitang = 0;
 let hideToggled = false;
 let viewingangle = 0;
-
+// === Network‑smoothing targets ===========================================
+// Incoming values are written here; render() eases the live variables
+let targetOrbitRadius   = orbitRadius;
+let targetOrbitang      = orbitang;
+let targetViewingangle  = viewingangle;
 function render(){
   const t = clock.getElapsedTime();
 //   (sphereUniforms.time.value = clock.getElapsedTime());
   camera.getWorldPosition(camWorldPos);
+  /* ---------- smooth remote state ---------- */
+  const SMOOTH = 0.15;                 // 0 = snap, 1 = freeze – tweak to taste
+  orbitRadius  += (targetOrbitRadius  - orbitRadius)  * SMOOTH;
+  viewingangle += (targetViewingangle - viewingangle) * SMOOTH;
+  {
+    // shortest‑path blend for the circular angle
+    let diff = targetOrbitang - orbitang;
+    diff = ((diff + Math.PI) % (2*Math.PI)) - Math.PI;
+    orbitang += diff * SMOOTH;
+  }
+
   orbitItems.forEach((item,i)=>{
     const ang = orbitang + i * (2*Math.PI/orbitItems.length);
     item.position.set(
@@ -440,12 +456,15 @@ function render(){
           const y = gp.axes[3] !== undefined ? gp.axes[3] : gp.axes[1];
           if (Math.abs(x) > 0.01 || Math.abs(y) > 0.01) {
             orbitang += x/30;
+            targetOrbitang = orbitang;          // keep target in lock‑step
             // if lower trigger is held, adjust viewing angle instead of radius
             const lowerPressed = gp.buttons[1]?.pressed;
             if (lowerPressed) {
               viewingangle -= y/30;
+              targetViewingangle = viewingangle;
             } else {
               orbitRadius -= y/30;
+              targetOrbitRadius = orbitRadius;
             }
             sendState(); 
             // sendState();        // every time the user moves something
@@ -496,7 +515,7 @@ function sendState(){
         k => payload[k] === lastSent[k]);
     if (!unchanged) {
       ws.send(JSON.stringify({ type: 'state', data: payload }));
-      lastSent = payload;
+      lastSent = { ...payload };
     }
     sendState.next = now + 50;
   }
