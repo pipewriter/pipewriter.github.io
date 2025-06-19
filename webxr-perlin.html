@@ -1,8 +1,6 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8" />
-<title>WebXR Gouraud‑shaded Perlin Terrain</title>
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"/>
+<title>WebXR Gouraud‑shaded Perlin Terrain (Quest 3 locomotion)</title>
 <style>
   html,body{margin:0;height:100%;overflow:hidden;}
   #info{position:absolute;top:0;width:100%;text-align:center;
@@ -10,155 +8,173 @@
         background:rgba(0,0,0,.4);color:#fff;}
 </style>
 
-<!-- 1️⃣  Map bare specifiers to real files on the CDN -->
 <script type="importmap">
 {
   "imports": {
-    "three"            : "https://unpkg.com/three@0.165.0/build/three.module.js",
-    "three/addons/"    : "https://unpkg.com/three@0.165.0/examples/jsm/"
+    "three":            "https://unpkg.com/three@0.165.0/build/three.module.js",
+    "three/addons/":    "https://unpkg.com/three@0.165.0/examples/jsm/"
   }
 }
 </script>
-
-<!-- (Optional) polyfill for browsers that do not yet support
-     native import‑maps (Safari ≤ 16, Firefox with the flag off). -->
 <script async
-        src="https://cdn.jsdelivr.net/npm/es-module-shims@1.10.0/dist/es-module-shims.min.js">
-</script>
-</head>
-
-<body>
+        src="https://cdn.jsdelivr.net/npm/es-module-shims@1.10.0/dist/es-module-shims.min.js"></script>
+</head><body>
 <div id="info">Toggle VR with the button · WASD + Mouse on desktop</div>
 
 <script type="module">
-import * as THREE        from 'three';
-import { VRButton }       from 'three/addons/webxr/VRButton.js';
-import { OrbitControls }  from 'three/addons/controls/OrbitControls.js';
-import {createNoise2D}       from 'https://unpkg.com/simplex-noise@4.0.1/dist/esm/simplex-noise.js';
+import * as THREE         from 'three';
+import { VRButton }        from 'three/addons/webxr/VRButton.js';
+import { OrbitControls }   from 'three/addons/controls/OrbitControls.js';
+import { createNoise2D }   from 'https://unpkg.com/simplex-noise@4.0.1/dist/esm/simplex-noise.js';
 
-  /* --- constants ---------------------------------------------------------- */
-  const SIZE        = 512;
-  const SEGMENTS    = 256;
-  const HEIGHT_MUL  = 40;
-  const WATER_LEVEL = -3;
-  const STEP        = 1.6;
-  const SPEED       = 25;
-    const noise2D = createNoise2D();
-  /* --- renderer & camera -------------------------------------------------- */
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setSize( window.innerWidth, window.innerHeight );
-  renderer.xr.enabled = true;
-  document.body.appendChild( renderer.domElement );
-  document.body.appendChild( VRButton.createButton( renderer ) );
+/* ────────── constants ────────── */
+const SIZE         = 512;
+const SEGMENTS     = 256;
+const HEIGHT_MUL   = 40;
+const WATER_LEVEL  = -3;
+const EYE_HEIGHT   = 1.6;              // metres above ground (head in real life)
+const VR_SPEED     = 3.0;              // metres per second in VR
+const DESKTOP_SPEED= 25;               // units / s on desktop
+const noise2D      = createNoise2D();
 
-  const scene  = new THREE.Scene();
-  scene.background = new THREE.Color( 0x87ceeb );
-  const camera = new THREE.PerspectiveCamera( 70, window.innerWidth / window.innerHeight, 0.1, 2000 );
-  camera.position.set( 0, 8, 20 );
+/* ────────── renderer & top‑level scene ────────── */
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.xr.enabled = true;
+document.body.append(renderer.domElement, VRButton.createButton(renderer));
 
-  /* --- lights ------------------------------------------------------------- */
-  scene.add( new THREE.AmbientLight( 0xffffff, 0.4 ) );
-  const sun = new THREE.DirectionalLight( 0xffffff, 0.8 );
-  sun.position.set( -0.5, 1, 0.2 ).normalize();
-  scene.add( sun );
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87ceeb);
 
-  /* --- controls ----------------------------------------------------------- */
-  const orbit = new OrbitControls( camera, renderer.domElement );
-  orbit.enablePan     = false;
-  orbit.enableDamping = true;
+/* ────────── player rig (camera + controllers live here) ────────── */
+const player = new THREE.Group();
+scene.add(player);
 
-  /* --- terrain generation ------------------------------------------------- */
-//   const simplex = new SimplexNoise();
-  function heightAt( x, z ) {
-    const nx = x / SIZE - 0.5, nz = z / SIZE - 0.5;
-    const e  = 1.00 * noise2D( nx * 1.5, nz * 1.5 )
-             + 0.50 * noise2D( nx * 3.0, nz * 3.0 );
-    return e * HEIGHT_MUL;
+const camera = new THREE.PerspectiveCamera(
+  70, window.innerWidth/window.innerHeight, 0.1, 2000);
+camera.position.set(0, 0, 0);          // local pose supplied by XR
+player.add(camera);
+
+/* ────────── lights ────────── */
+scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+const sun = new THREE.DirectionalLight(0xffffff, 0.8);
+sun.position.set(-0.5, 1, 0.2).normalize();
+scene.add(sun);
+
+/* ────────── desktop orbit control (ignored while in VR) ────────── */
+const orbit = new OrbitControls(camera, renderer.domElement);
+orbit.enablePan = false; orbit.enableDamping = true;
+
+/* ────────── terrain ---------------------------------------------------------------- */
+function heightAt(x,z){
+  const nx = x/SIZE - .5, nz = z/SIZE - .5;
+  return ( 1.0*noise2D(nx*1.5, nz*1.5)
+         + 0.5*noise2D(nx*3.0, nz*3.0) ) * HEIGHT_MUL;
+}
+
+const geom = new THREE.PlaneGeometry(SIZE, SIZE, SEGMENTS, SEGMENTS)
+                 .rotateX(-Math.PI/2);
+const colors=[];
+for(let i=0;i<geom.attributes.position.count;i++){
+  const v = new THREE.Vector3().fromBufferAttribute(geom.attributes.position,i);
+  const h = heightAt(v.x, v.z);
+  geom.attributes.position.setY(i,h);
+
+  const c = (h < WATER_LEVEL+0.5)      ? new THREE.Color(0x2e74d4)
+            : (h > HEIGHT_MUL*0.6)     ? new THREE.Color(0xffffff)
+            : (h > HEIGHT_MUL*0.25)    ? new THREE.Color(0x6d8b42)
+                                        : new THREE.Color(0x3a5f0b);
+  colors.push(c.r,c.g,c.b);
+}
+geom.setAttribute('color', new THREE.Float32BufferAttribute(colors,3));
+geom.computeVertexNormals();
+
+scene.add(new THREE.Mesh(
+  geom,
+  new THREE.MeshLambertMaterial({vertexColors:true, side:THREE.DoubleSide})
+));
+
+/* ────────── water plane ────────── */
+const water = new THREE.Mesh(
+  new THREE.PlaneGeometry(SIZE,SIZE).rotateX(-Math.PI/2),
+  new THREE.MeshPhongMaterial({color:0x1b4e9b,transparent:true,opacity:0.75})
+);
+water.position.y = WATER_LEVEL;
+scene.add(water);
+
+/* ────────── controllers ────────── */
+const controllerL     = renderer.xr.getController(0);      // left hand
+const controllerGripL = renderer.xr.getControllerGrip(0);
+const controllerR     = renderer.xr.getController(1);      // right hand (not used)
+const controllerGripR = renderer.xr.getControllerGrip(1);
+player.add(controllerL, controllerGripL, controllerR, controllerGripR);
+
+/* ────────── desktop WASD movement (moves the *player* rig) ────────── */
+const keyState = {};
+window.addEventListener('keydown',e=>keyState[e.code]=true);
+window.addEventListener('keyup',  e=>keyState[e.code]=false);
+function updateDesktopMove(dt){
+  const dir = new THREE.Vector3();
+  if(keyState['KeyW']) dir.z -= 1;
+  if(keyState['KeyS']) dir.z += 1;
+  if(keyState['KeyA']) dir.x -= 1;
+  if(keyState['KeyD']) dir.x += 1;
+  if(dir.lengthSq()>0){
+    dir.normalize().applyQuaternion(camera.quaternion); // same heading
+    dir.y = 0;                                          // stay horizontal
+    player.position.addScaledVector(dir, DESKTOP_SPEED*dt);
   }
+}
 
-  const geometry = new THREE.PlaneGeometry( SIZE, SIZE, SEGMENTS, SEGMENTS )
-                      .rotateX( -Math.PI / 2 );
-  const colors = [];
-  for ( let i = 0; i < geometry.attributes.position.count; i++ ) {
-    const v = new THREE.Vector3().fromBufferAttribute( geometry.attributes.position, i );
-    const h = heightAt( v.x, v.z );
-    geometry.attributes.position.setY( i, h );
-    let color;
-    if ( h < WATER_LEVEL + 0.5 )      color = new THREE.Color( 0x2e74d4 );
-    else if ( h > HEIGHT_MUL * 0.6 )  color = new THREE.Color( 0xffffff );
-    else if ( h > HEIGHT_MUL * 0.25 ) color = new THREE.Color( 0x6d8b42 );
-    else                               color = new THREE.Color( 0x3a5f0b );
-    colors.push( color.r, color.g, color.b );
-  }
-  geometry.setAttribute( 'color', new THREE.Float32BufferAttribute( colors, 3 ) );
-  geometry.computeVertexNormals();
+/* ────────── animation loop ────────── */
+let prevT = 0;
+renderer.setAnimationLoop((t,frame)=>{
+  const dt = (t - prevT)*0.001 || 0.016;  // seconds
+  prevT = t;
 
-  const terrainMat = new THREE.MeshLambertMaterial({
-    vertexColors: true,
-    side: THREE.DoubleSide
-  });
-  const terrain = new THREE.Mesh( geometry, terrainMat );
-  scene.add( terrain );
+  if(frame){                              // XR is active
+    for(const src of frame.session.inputSources){
+      if(src.handedness!=='left' || !src.gamepad) continue;
 
-  /* --- water plane -------------------------------------------------------- */
-  const waterGeom = new THREE.PlaneGeometry( SIZE, SIZE, 1, 1 ).rotateX( -Math.PI / 2 );
-  const waterMat  = new THREE.MeshPhongMaterial({
-    color: 0x1b4e9b, transparent: true, opacity: 0.75
-  });
-  const water = new THREE.Mesh( waterGeom, waterMat );
-  water.position.y = WATER_LEVEL;
-  scene.add( water );
+      /* Meta / Quest: primary thumb‑stick => axes[2] & [3]
+         Fallback to [0] & [1] for generic devices. */
+      const a = src.gamepad.axes;
+      const xAxis = (a.length>=4 ? a[2] : a[0]);
+      const yAxis = (a.length>=4 ? a[3] : a[1]);
 
-  /* --- VR locomotion ------------------------------------------------------ */
-  const controller     = renderer.xr.getController( 0 );
-  const controllerGrip = renderer.xr.getControllerGrip( 0 );
-  scene.add( controller, controllerGrip );
+      // dead‑zone
+      const dead = 0.15;
+      if(Math.hypot(xAxis,yAxis) > dead){
+        // forward vector (flattened)
+        const forward = new THREE.Vector3();
+        camera.getWorldDirection(forward);
+        forward.y = 0; forward.normalize();
 
-  /* --- desktop WASD move ------------------------------------------------- */
-  const keyState = {};
-  window.addEventListener( 'keydown', e => keyState[e.code] = true );
-  window.addEventListener( 'keyup',   e => keyState[e.code] = false );
-  function updateDesktopMove( dt ) {
-    const dir = new THREE.Vector3();
-    if (keyState['KeyW']) dir.z -= 1;
-    if (keyState['KeyS']) dir.z += 1;
-    if (keyState['KeyA']) dir.x -= 1;
-    if (keyState['KeyD']) dir.x += 1;
-    if (dir.lengthSq() > 0) {
-      dir.normalize().applyQuaternion( camera.quaternion );
-      camera.position.addScaledVector( dir, SPEED * dt );
-    }
-  }
+        const right = new THREE.Vector3().crossVectors(forward,new THREE.Vector3(0,1,0)).normalize();
+        const move  = forward.multiplyScalar(-yAxis).add(right.multiplyScalar(xAxis));
 
-  /* --- render loop -------------------------------------------------------- */
-  renderer.setAnimationLoop( ( timestamp, frame ) => {
-    const dt = renderer.xr.isPresenting
-             ? STEP
-             : ( renderer.clock?.getDelta?.() ?? 0.016 );
-
-    if ( frame ) {
-      for ( const source of frame.session.inputSources ) {
-        if ( source.gamepad && source.gamepad.axes.length >= 4 ) {
-          const [stickX, stickY] = source.gamepad.axes;
-          const moveVec = new THREE.Vector3( -stickX, 0, -stickY )
-                            .applyQuaternion( camera.quaternion );
-          camera.position.addScaledVector( moveVec, STEP );
-        }
+        player.position.addScaledVector(move, VR_SPEED*dt);
       }
-    } else {
-      updateDesktopMove( dt );
     }
+  }else{
+    updateDesktopMove(dt);
+  }
 
-    orbit.update();
-    renderer.render( scene, camera );
-  });
+  /* Keep rig floating */
+  const ground = heightAt(player.position.x, player.position.z);
+  const targetHeadY = Math.max(ground + EYE_HEIGHT, WATER_LEVEL + EYE_HEIGHT);
+  // camera.position.y is the headset height inside the rig:
+  player.position.y = targetHeadY - camera.position.y;
 
-  /* --- handle resize ----------------------------------------------------- */
-  window.addEventListener( 'resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize( window.innerWidth, window.innerHeight );
-  });
-  </script>
-</body>
-</html>
+  orbit.update();
+  renderer.render(scene, camera);
+});
+
+/* ────────── resize ────────── */
+window.addEventListener('resize',()=>{
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth,window.innerHeight);
+});
+</script>
+</body></html>

@@ -27,16 +27,28 @@ import { VRButton } from 'https://unpkg.com/three@0.153.0/examples/jsm/webxr/VRB
 // ----------  WEBSOCKET SYNC  ----------------------------------------------
 // Replace with your actual host:port or wss://domain
 const WS_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') +
-               'f522-2601-642-4c00-49d0-cd98-da8-f44a-9adb.ngrok-free.app';
+               location.hostname + ':8081';
 const ws = new WebSocket(WS_URL);
 
 // last values we sent – stops us flooding the wire with identical frames
-let lastSent = { orbitRadius: null, orbitang: null, viewingangle: null, hideToggled: null };
+let lastSent   = { orbitRadius: null, orbitang: null,
+                   viewingangle: null, hideToggled: null, focusIndex: null };
+
+let focusIndex = null;                       // NEW: which slot stays visible
 
 ws.addEventListener('open',   () => console.log('[sync] WS open'));
 ws.addEventListener('close',  () => console.warn('[sync] WS closed'));
 ws.addEventListener('error',  e  => console.error('[sync] WS error', e));
 
+//ws.addEventListener('message', ({data}) => {
+function applyFocusVisibility() {            // NEW helper (called from several places)
+  if (!orbitItems.length) return;            // room not ready yet
+  if (hideToggled && focusIndex != null) {
+    orbitItems.forEach((it, i) => it.visible = (i === focusIndex));
+  } else {
+    orbitItems.forEach(it => it.visible = true);
+  }
+}
 ws.addEventListener('message', ({data}) => {
   const { type, data: s } = JSON.parse(data);
   if (type !== 'state') return;
@@ -52,6 +64,13 @@ ws.addEventListener('message', ({data}) => {
     // Re‑apply visibility when the flag arrived from someone else
     orbitItems.forEach(item => item.visible = !hideToggled);
   }
+  // NEW: keep track of which item is focused remotely
+  if (s.focusIndex !== undefined && s.focusIndex !== focusIndex) {
+    focusIndex = s.focusIndex;
+  }
+
+  // Always (re)apply after state changes arrived
+  applyFocusVisibility();
 });
 
 
@@ -439,16 +458,11 @@ function render(){
                   frontIndex = idx;
                 }
               });
-              // Hide all except the front item
-              orbitItems.forEach((item, idx) => {
-                item.visible = (idx === frontIndex);
-              });
+              focusIndex  = frontIndex;                 // remember & share
             } else {
-              // Show all items again
-              orbitItems.forEach(item => {
-                item.visible = true;
-              });
+              focusIndex  = null;
             }
+            applyFocusVisibility();
           }
           ctrl.userData.prevButtons[0] = pressed0;
           // *joystick* – most XR thumbsticks live at axes[2]/[3], fall back to [0]/[1]
@@ -509,7 +523,7 @@ function sendState(){
   const now = performance.now();
   // 20 Hz throttle without setInterval
   if (!sendState.next || now >= sendState.next) {
-    const payload = { orbitRadius, orbitang, viewingangle, hideToggled };
+    const payload = { orbitRadius, orbitang, viewingangle, hideToggled, focusIndex };
     // Skip if nothing changed since last push
     const unchanged = Object.keys(payload).every(
         k => payload[k] === lastSent[k]);
