@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>MiniCraft WebXR</title>
+  <style>body{margin:0;overflow:hidden}</style>
+</head>
+<body>
+<!-- ───────────────────────────────────────────────────────────── -->
+<!--  Most‑basic Three.js + WebXR voxel world                     -->
+<!--  Save as index.html, then run: `npx http-server -S` (or any  -->
+<!--  https static server) and visit https://localhost:8080       -->
+<!--  © 2025                                                      -->
+<!-- ───────────────────────────────────────────────────────────── -->
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.178.0/build/three.module.js';
+import { VRButton } from 'https://cdn.jsdelivr.net/npm/three@0.178.0/examples/jsm/webxr/VRButton.js';
+
+let camera, scene, renderer;
+
+init();
+animate();
+
+// ──────────────────  Initialise scene  ─────────────────────────
+function init() {
+  // Scene & camera
+  scene  = new THREE.Scene();
+  scene.background = new THREE.Color(0x87ceeb);          // sky blue
+  camera = new THREE.PerspectiveCamera( 70, innerWidth/innerHeight, 0.1, 200 );
+  camera.position.set( 8, 10, 8 );                       // start above terrain
+
+  // Renderer with WebXR enabled
+  renderer = new THREE.WebGLRenderer( { antialias:true } );
+  renderer.setPixelRatio( devicePixelRatio );
+  renderer.setSize( innerWidth, innerHeight );
+  renderer.xr.enabled = true;
+  document.body.append( renderer.domElement, VRButton.createButton( renderer ) );
+
+  // Light
+  const sun = new THREE.DirectionalLight( 0xffffff, 1 );
+  sun.position.set( 10, 20, 10 );
+  scene.add( sun, new THREE.AmbientLight( 0xffffff, 0.3 ) );
+
+  // Very small “chunk” (16×16) of grass & dirt blocks
+  buildWorld( 16, 16 );
+
+  // Resize handling
+  addEventListener( 'resize', () => {
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize( innerWidth, innerHeight );
+  } );
+}
+
+// ───────────────  Simple procedural terrain  ───────────────────
+function buildWorld( w, h ) {
+  const cube     = new THREE.BoxGeometry( 1, 1, 1 );
+  const grassMat = new THREE.MeshStandardMaterial( { color:0x4caf50 } );
+  const dirtMat  = new THREE.MeshStandardMaterial( { color:0x8d5524 } );
+
+  for ( let x = 0; x < w; x ++ ) {
+    for ( let z = 0; z < h; z ++ ) {
+
+      // Border kept flat so you don’t fall off; interior gets 0‑2 block hills
+      const hgt = ( x === 0 || z === 0 || x === w-1 || z === h-1 )
+                  ? 0 : Math.floor( Math.random() * 3 );
+
+      // Top grass block
+      const grass = new THREE.Mesh( cube, grassMat );
+      grass.position.set( x, hgt, z );
+      scene.add( grass );
+
+      // Stack dirt underneath
+      for ( let y = 0; y < hgt; y ++ ) {
+        const dirt = new THREE.Mesh( cube, dirtMat );
+        dirt.position.set( x, y-1, z );
+        scene.add( dirt );
+      }
+    }
+  }
+}
+
+// ───────────────────  Animation loop  ───────────────────────────
+function animate() { renderer.setAnimationLoop( () => renderer.render( scene, camera ) ); }
+</script>
+</body>
+</html>

@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+  <!-- FIXES THE WEIRD IMPORT BUG -->
+  <script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.178.0/build/three.module.js" } }</script>
+<head>
+  <meta charset="utf-8" />
+  <title>Noda‑Lite • WebXR (one‑file version)</title>
+  <style>body{margin:0;overflow:hidden;font-family:system-ui}</style>
+</head>
+<body>
+<!-- ───────────────────────────────────────────────────────────────
+  Save as index.html, then launch any TLS‑served static host
+  (e.g. `npx http-server -S`) and open https://localhost:8080
+  Requires a WebXR‑capable browser (Quest Browser, Oculus, Chrome
+  desktop with flags, etc.).   © 2025
+─────────────────────────────────────────────────────────────── -->
+<script type="module">
+/* ───────────  CDN imports  ─────────── */
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.178.0/build/three.module.js';
+import { VRButton } from 'https://cdn.jsdelivr.net/npm/three@0.178.0/examples/jsm/webxr/VRButton.js';
+import { XRControllerModelFactory } from 'https://cdn.jsdelivr.net/npm/three@0.178.0/examples/jsm/webxr/XRControllerModelFactory.js';
+import SpriteText from 'https://cdn.jsdelivr.net/npm/three-spritetext@1.10.0/+esm';  /* tiny text sprites :contentReference[oaicite:0]{index=0} */
+
+/* ───────────  Helper classes  ─────────── */
+class Node extends THREE.Group {
+  constructor(label = 'Idea', color = 0x4098ff) {
+    super();
+    const sphere = new THREE.Mesh(
+      new THREE.SphereGeometry(0.12, 24, 24),
+      new THREE.MeshStandardMaterial({ color })
+    );
+    const text = new SpriteText(label, 0.08, 'white');
+    text.position.set(0, 0.22, 0);
+    this.add(sphere, text);
+  }
+}
+
+class Link extends THREE.Line {
+  constructor(a, b) {
+    super(
+      new THREE.BufferGeometry().setFromPoints([a.position, b.position]),
+      new THREE.LineBasicMaterial({ color: 0xffffff })
+    );
+    this.a = a; this.b = b;
+  }
+  update() {
+    this.geometry.setFromPoints([this.a.position, this.b.position]);
+  }
+}
+
+/* ───────────  Scene setup  ─────────── */
+const scene   = new THREE.Scene();
+scene.background = new THREE.Color(0x202030);
+
+const camera  = new THREE.PerspectiveCamera(65, innerWidth/innerHeight, 0.01, 50);
+camera.position.set(0, 1.6, 2);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(devicePixelRatio);
+renderer.setSize(innerWidth, innerHeight);
+renderer.xr.enabled = true;
+document.body.append(renderer.domElement, VRButton.createButton(renderer));
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 0.8));
+const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+dir.position.set(1, 2, 3);
+scene.add(dir, new THREE.GridHelper(10, 10));
+
+/* ───────────  Data containers  ─────────── */
+const nodes = [];
+const links = [];
+
+/* ───────────  Controller + pointer  ─────────── */
+const controller = renderer.xr.getController(0);
+scene.add(controller);
+
+const controllerGrip = renderer.xr.getControllerGrip(0);
+controllerGrip.add(new XRControllerModelFactory().createControllerModel(controllerGrip));
+scene.add(controllerGrip);
+
+const pointerLine = new THREE.Line(
+  new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1)]),
+  new THREE.LineBasicMaterial({ color: 0xffff00 })
+);
+pointerLine.name = 'pointer';
+pointerLine.scale.z = 5;
+controller.add(pointerLine);
+
+const raycaster = new THREE.Raycaster();
+const tmpMat    = new THREE.Matrix4();
+let grabbed = null, firstForLink = null;
+
+/* ───────────  Controller events  ─────────── */
+controller.addEventListener('selectstart', () => {
+  tmpMat.identity().extractRotation(controller.matrixWorld);
+  raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+  raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tmpMat);
+
+  const hits = raycaster.intersectObjects(nodes.map(n => n.children[0] /* sphere */), true);
+
+  if (hits.length) {
+    grabbed = hits[0].object.parent;      // existing node
+  } else {
+    // Create new node one metre out
+    const node = new Node('Node ' + (nodes.length + 1));
+    node.position.copy(raycaster.ray.origin).add(raycaster.ray.direction.clone().multiplyScalar(1));
+    scene.add(node);
+    nodes.push(node);
+    grabbed = node;
+  }
+});
+
+controller.addEventListener('selectend', () => {
+  if (firstForLink && grabbed && firstForLink !== grabbed) {
+    const link = new Link(firstForLink, grabbed);
+    scene.add(link);
+    links.push(link);
+    firstForLink = null;
+  } else if (grabbed) {
+    firstForLink = grabbed;   // mark first endpoint
+  }
+  grabbed = null;
+});
+
+/* ───────────  Render loop  ─────────── */
+renderer.setAnimationLoop(() => {
+  if (grabbed) {
+    tmpMat.identity().extractRotation(controller.matrixWorld);
+    const dir = new THREE.Vector3(0, 0, -1).applyMatrix4(tmpMat);
+    grabbed.position.copy(controller.position).add(dir.multiplyScalar(1));
+  }
+  links.forEach(l => l.update());
+  renderer.render(scene, camera);
+});
+
+/* ───────────  Resize  ─────────── */
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>
