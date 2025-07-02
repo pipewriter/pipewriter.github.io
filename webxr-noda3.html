@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Noda‑lite WebXR (single file)</title>
+  <style>
+    body { margin:0; overflow:hidden; font-family:sans-serif; }
+    .overlay { position:fixed; top:0; left:0; color:#fff; padding:.5em; pointer-events:none; }
+  </style>
+</head>
+<body>
+<div class="overlay">
+  Trigger = create / grab · Tap two bubbles = link
+</div>
+
+<script type="module">
+/* ──────────────────────────────────────────────────────────────
+ * External modules (CDN)
+ * ──────────────────────────────────────────────────────────── */
+import * as THREE   from 'https://cdn.jsdelivr.net/npm/three@0.178.0/build/three.module.js';
+import { VRButton } from 'https://cdn.jsdelivr.net/npm/three@0.178.0/examples/jsm/webxr/VRButton.js';
+
+/* ──────────────────────────────────────────────────────────────
+ * Basic scene setup
+ * ──────────────────────────────────────────────────────────── */
+const scene    = new THREE.Scene();
+scene.background = new THREE.Color(0x20232a);
+
+const camera   = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.1, 50);
+camera.position.set(0, 1.6, 3);          // standing height
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.xr.enabled = true;              // WebXR on :contentReference[oaicite:0]{index=0}
+document.body.appendChild(renderer.domElement);
+document.body.appendChild(VRButton.createButton(renderer));   // VR entry :contentReference[oaicite:1]{index=1}
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.2));
+
+/* ──────────────────────────────────────────────────────────────
+ *  Node helper class: coloured sphere + billboard text sprite
+ * ──────────────────────────────────────────────────────────── */
+class Node3D extends THREE.Group {
+  constructor(label = 'Idea') {
+    super();
+    // sphere
+    const ball = new THREE.Mesh(
+      new THREE.SphereGeometry(0.12, 24, 16),
+      new THREE.MeshStandardMaterial({ color: 0x55aaff })
+    );
+    this.ball = ball;      // keep for ray‑casting
+    // 2‑D canvas → texture → sprite
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;  canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    ctx.font = '48px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(label, 128, 64);
+    const tex = new THREE.Texture(canvas); tex.needsUpdate = true;
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthWrite: false }));
+    sprite.scale.set(0.6, 0.3, 1);
+    sprite.position.set(0, 0.25, 0);
+    // assemble
+    this.add(ball, sprite);
+    this.links = new Set();   // lines connected to this node
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────
+ *  Controller interaction: grab / create / link
+ * ──────────────────────────────────────────────────────────── */
+const nodes      = [];
+const raycaster  = new THREE.Raycaster();
+const tempMatrix = new THREE.Matrix4();
+let grabbed      = null;
+let firstNode    = null;
+
+function buildController(i) {
+  const controller = renderer.xr.getController(i);
+  controller.addEventListener('selectstart', onSelectStart);
+  controller.addEventListener('selectend',   onSelectEnd);
+  scene.add(controller);
+}
+buildController(0); buildController(1);
+
+function castFromController(controller) {
+  tempMatrix.identity().extractRotation(controller.matrixWorld);
+  raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+  raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+  return raycaster.intersectObjects(nodes.map(n => n.ball));
+}
+
+function onSelectStart() {
+  const hits = castFromController(this);
+  if (hits.length) {
+    // grab existing
+    grabbed = hits[0].object.parent;
+    this.attach(grabbed);
+  } else {
+    // create new node in front of hand
+    const n = new Node3D(`Idea ${nodes.length + 1}`);
+    n.position.set(0, 0, -0.8).applyMatrix4(this.matrixWorld);
+    scene.add(n); nodes.push(n);
+    grabbed = n; this.attach(n);
+  }
+}
+
+function onSelectEnd() {
+  if (grabbed) scene.attach(grabbed);   // drop
+  grabbed = null;
+
+  // check link‑tap
+  const hits = castFromController(this);
+  if (hits.length) {
+    const node = hits[0].object.parent;
+    if (!firstNode) {
+      firstNode = node;               // first endpoint
+    } else if (firstNode !== node) {
+      makeLink(firstNode, node);
+      firstNode = null;
+    }
+  } else {
+    firstNode = null;
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────
+ *  Lines (edges) between nodes
+ * ──────────────────────────────────────────────────────────── */
+function makeLink(a, b) {
+  // avoid duplicates
+  for (const l of a.links)
+    if ((l.a === a && l.b === b) || (l.a === b && l.b === a)) return;
+
+  const geom = new THREE.BufferGeometry().setFromPoints([a.position, b.position]);
+  const line = new THREE.Line(geom, new THREE.LineBasicMaterial({ color: 0xffffff }));
+  line.a = a; line.b = b;
+  scene.add(line);
+  a.links.add(line); b.links.add(line);
+}
+
+/* ──────────────────────────────────────────────────────────────
+ *  Animation loop: keep edges snapped to moving nodes
+ * ──────────────────────────────────────────────────────────── */
+renderer.setAnimationLoop(() => {
+  for (const n of nodes) {
+    for (const l of n.links) {
+      l.geometry.attributes.position.setXYZ(0, l.a.position.x, l.a.position.y, l.a.position.z);
+      l.geometry.attributes.position.setXYZ(1, l.b.position.x, l.b.position.y, l.b.position.z);
+      l.geometry.attributes.position.needsUpdate = true;
+    }
+  }
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>

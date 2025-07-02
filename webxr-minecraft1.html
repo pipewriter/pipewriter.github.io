@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+
+  <!-- FIXES THE WEIRD IMPORT BUG -->
+  <script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.178.0/build/three.module.js" } }</script>
+<meta charset="utf-8">
+<title>Super‑minimal Minecraft in WebXR + Three.js</title>
+<style>body{margin:0;overflow:hidden;background:#000}</style>
+</head>
+<body>
+<!-- VRButton will inject its button right into <body> -->
+<script type="module">
+/* ----------------------------------------------------------
+   0. Imports
+---------------------------------------------------------- */
+import * as THREE             from 'https://unpkg.com/three@0.167.0/build/three.module.js';
+import { VRButton }           from 'https://unpkg.com/three@0.167.0/examples/jsm/webxr/VRButton.js';
+import { XRControllerModelFactory }
+                              from 'https://unpkg.com/three@0.167.0/examples/jsm/webxr/XRControllerModelFactory.js';
+
+/* ----------------------------------------------------------
+   1. Basic renderer / scene / camera
+---------------------------------------------------------- */
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setPixelRatio(devicePixelRatio);
+renderer.setSize(innerWidth, innerHeight);
+renderer.xr.enabled = true;     // <- WebXR on!
+document.body.appendChild(renderer.domElement);
+document.body.appendChild(VRButton.createButton(renderer));
+
+const scene  = new THREE.Scene();
+scene.background = new THREE.Color(0x87ceeb); // light‑blue sky
+const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.1, 200);
+camera.position.set(0, 4, 8);
+
+/* ----------------------------------------------------------
+   2. Simple lighting
+---------------------------------------------------------- */
+scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.1));
+const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+dir.position.set(5, 10, -5);
+scene.add(dir);
+
+/* ----------------------------------------------------------
+   3. Block material & geometry
+---------------------------------------------------------- */
+const loader = new THREE.TextureLoader();
+let blockMat;
+try {
+  const tex = loader.load('textures/grass.png');
+  tex.magFilter = tex.minFilter = THREE.NearestFilter;
+  blockMat = new THREE.MeshLambertMaterial({ map: tex });
+} catch {                            // if texture missing, fallback
+  blockMat = new THREE.MeshLambertMaterial({ color: 0x55aa55 });
+}
+const blockGeom = new THREE.BoxGeometry(1,1,1);
+
+/* ----------------------------------------------------------
+   4. Instanced mesh to hold terrain
+---------------------------------------------------------- */
+const SIZE = 16;                       // 16×16 platform
+const blocks = new THREE.InstancedMesh(blockGeom, blockMat, SIZE*SIZE);
+blocks.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+let id = 0;
+for (let x=0; x<SIZE; x++){
+  for (let z=0; z<SIZE; z++){
+    const m = new THREE.Matrix4().makeTranslation(x - SIZE/2, 0, z - SIZE/2);
+    blocks.setMatrixAt(id++, m);
+  }
+}
+blocks.count = id;                      // start‑time block count
+blocks.frustumCulled = false;
+scene.add(blocks);
+
+/* ----------------------------------------------------------
+   5. Controller setup (ray + model)
+---------------------------------------------------------- */
+const rayGeom = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,-1)]);
+const rayMat  = new THREE.LineBasicMaterial({ color:0xffffff });
+function buildController(i){
+  const controller = renderer.xr.getController(i);
+  controller.add(new THREE.Line(rayGeom, rayMat.clone()));
+  scene.add(controller);
+
+  const grip = renderer.xr.getControllerGrip(i);
+  const factory = new XRControllerModelFactory();
+  grip.add(factory.createControllerModel(grip));
+  scene.add(grip);
+
+  /* click handler */
+  controller.addEventListener('selectstart', onSelect);
+  return controller;
+}
+const controller1 = buildController(0);
+const controller2 = buildController(1);
+
+/* ----------------------------------------------------------
+   6. Raycaster helpers
+---------------------------------------------------------- */
+const tempMatrix = new THREE.Matrix4();
+const inverseMatrix = new THREE.Matrix4();
+const raycaster = new THREE.Raycaster();
+const hit = new THREE.Vector3();
+
+function onSelect(event){
+  const ctrl = event.target;
+  tempMatrix.identity().extractRotation(ctrl.matrixWorld);
+  raycaster.ray.origin.setFromMatrixPosition(ctrl.matrixWorld);
+  raycaster.ray.direction.set(0,0,-1).applyMatrix4(tempMatrix);
+
+  /* A. Did we hit an existing block? -> remove */
+  inverseMatrix.copy(blocks.matrixWorld).invert();
+  raycaster.ray.applyMatrix4(inverseMatrix);
+  const intersects = raycaster.intersectObject(blocks);
+  if (intersects.length){
+    blocks.getMatrixAt(intersects[0].instanceId, tempMatrix);
+    const idx = intersects[0].instanceId;
+    // swap with last block then decrement count (classic instanced‑mesh delete)
+    const last = blocks.count - 1;
+    if (idx !== last){
+      blocks.getMatrixAt(last, tempMatrix);
+      blocks.setMatrixAt(idx, tempMatrix);
+    }
+    blocks.count--;
+    blocks.instanceMatrix.needsUpdate = true;
+    return;
+  }
+
+  /* B. Otherwise, add block one unit before where the ray hit world (simple) */
+  const worldInt = raycaster.intersectObject(new THREE.Mesh(new THREE.PlaneGeometry(1000,1000), new THREE.MeshBasicMaterial()));
+  if (worldInt.length){
+    hit.copy(worldInt[0].point).divideScalar(1).floor().addScalar(0.5); // align to grid
+    if (blocks.count < blocks.instanceMatrix.count){
+      const m = new THREE.Matrix4().makeTranslation(hit.x, hit.y, hit.z);
+      blocks.setMatrixAt(blocks.count++, m);
+      blocks.instanceMatrix.needsUpdate = true;
+    }
+  }
+}
+
+/* ----------------------------------------------------------
+   7. Handle resize
+---------------------------------------------------------- */
+addEventListener('resize', ()=>{
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+/* ----------------------------------------------------------
+   8. Animation loop
+---------------------------------------------------------- */
+renderer.setAnimationLoop(() => {
+  const t = performance.now()/1000;
+  dir.position.set(Math.sin(t*0.1)*5, 10, Math.cos(t*0.1)*5); // slow sun‑arc
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>

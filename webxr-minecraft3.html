@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>WebXR Mini‑Minecraft</title>
+  <style>
+    body{margin:0;overflow:hidden;background:#000;font-family:sans-serif}
+    #info{position:absolute;top:8px;left:0;right:0;color:#fff;text-align:center;pointer-events:none}
+  </style>
+</head>
+<body>
+<div id="info">Trigger = add block · Grip = remove block</div>
+
+<!-- Everything is inside one ES‑module -->
+<script type="module">
+import * as THREE      from 'https://unpkg.com/three@0.165.0/build/three.module.js';
+import {VRButton}       from 'https://unpkg.com/three@0.165.0/examples/jsm/webxr/VRButton.js';
+
+//// 1. Renderer, camera, scene //////////////////////////////////////////////////
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(devicePixelRatio);
+renderer.setSize(innerWidth, innerHeight);
+renderer.xr.enabled = true;                         // WebXR on
+document.body.append(renderer.domElement,
+                     VRButton.createButton(renderer)); // VR entry button
+
+const scene  = new THREE.Scene();
+scene.background = new THREE.Color(0x87ceeb);        // sky
+const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, .1, 1000);
+camera.position.set(2,2,4);
+
+//// 2. Lights and helpers ///////////////////////////////////////////////////////
+scene.add(new THREE.HemisphereLight(0xffffff,0x444444,0.8));
+const dir = new THREE.DirectionalLight(0xffffff,0.8);
+dir.position.set(5,10,2); dir.castShadow=true; scene.add(dir);
+scene.add(new THREE.GridHelper(40,40));
+
+//// 3. Voxel container //////////////////////////////////////////////////////////
+const BLOCK = 1;
+const voxelGroup = new THREE.Group();       // holds all cubes
+scene.add(voxelGroup);
+
+//// 4. Controller setup /////////////////////////////////////////////////////////
+const raycaster = new THREE.Raycaster();
+const tmpMat    = new THREE.Matrix4();
+for (let i=0;i<2;i++) setupController(i);
+
+function setupController(i){
+  const ctrl = renderer.xr.getController(i);
+  scene.add(ctrl);
+
+  // white line = laser pointer
+  const lineGeo = new THREE.BufferGeometry().setFromPoints(
+        [new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,-1)]);
+  ctrl.add(new THREE.Line(lineGeo, new THREE.LineBasicMaterial({color:0xffffff}))
+           .scale.set(1,1,10));
+
+  ctrl.addEventListener('selectstart', ()=>modifyBlock(ctrl, true));   // add
+  ctrl.addEventListener('squeezestart',()=>modifyBlock(ctrl,false));   // remove
+}
+
+//// 5. Block helpers ////////////////////////////////////////////////////////////
+function worldSnap(v){          // snap to voxel grid
+  return v.divideScalar(BLOCK).floor().multiplyScalar(BLOCK)
+          .addScalar(BLOCK/2);
+}
+
+function blockAt(pos){
+  return voxelGroup.children.find(m =>
+      m.position.distanceToSquared(pos) < 1e-6);
+}
+
+function addBlock(pos){
+  const g = new THREE.BoxGeometry(BLOCK,BLOCK,BLOCK);
+  const m = new THREE.MeshStandardMaterial({color:0x55aa55*Math.random()});
+  const mesh = new THREE.Mesh(g,m);
+  mesh.position.copy(pos);
+  mesh.castShadow = mesh.receiveShadow = true;
+  voxelGroup.add(mesh);
+}
+
+function removeBlock(mesh){
+  voxelGroup.remove(mesh);
+  mesh.geometry.dispose(); mesh.material.dispose();
+}
+
+function modifyBlock(ctrl, add){                // add===true => add block
+  tmpMat.identity().extractRotation(ctrl.matrixWorld);
+  raycaster.ray.origin.setFromMatrixPosition(ctrl.matrixWorld);
+  raycaster.ray.direction.set(0,0,-1).applyMatrix4(tmpMat);
+
+  // (a) Did we hit an existing voxel?
+  const hit = raycaster.intersectObjects(voxelGroup.children)[0];
+  if (hit){
+    const p = worldSnap(hit.point.clone()
+                .add(hit.face.normal.clone().multiplyScalar(BLOCK/2)));
+    add ? (!blockAt(p)&&addBlock(p)) : removeBlock(hit.object);
+    return;
+  }
+  // (b) Otherwise – where does the laser meet the ground plane (y=0)?
+  const t = -raycaster.ray.origin.y / raycaster.ray.direction.y;
+  if (t>0 && add){
+    const p = worldSnap(raycaster.ray.origin
+                        .clone().add(raycaster.ray.direction.clone().multiplyScalar(t)));
+    !blockAt(p) && addBlock(p);
+  }
+}
+
+//// 6. Animation loop ///////////////////////////////////////////////////////////
+renderer.setAnimationLoop(()=>renderer.render(scene,camera));
+
+//// 7. Resize handling //////////////////////////////////////////////////////////
+addEventListener('resize',()=>{
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+});
+</script>
+</body>
+</html>

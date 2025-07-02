@@ -1,0 +1,151 @@
+<!-- index.html  –  drop into an https server -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Mini‑Noda (Three.js + WebXR)</title>
+<style>
+  body { margin:0; background:#000; color:#fff; font-family:sans-serif; }
+  #ui { position:fixed; top:0; width:100%; text-align:center; padding:6px 0; z-index:1; }
+</style>
+</head>
+<body>
+<div id="ui">Trigger: create / grab • Grip: link nodes • Esc: quit</div>
+<script type="module">
+import * as THREE     from 'https://cdn.skypack.dev/three@0.162.0';
+import { VRButton }    from 'https://cdn.skypack.dev/three/examples/jsm/webxr/VRButton.js';
+import { FontLoader }  from 'https://cdn.skypack.dev/three/examples/jsm/loaders/FontLoader.js';
+import { TextGeometry }from 'https://cdn.skypack.dev/three/examples/jsm/geometries/TextGeometry.js';
+
+let camera, scene, renderer;
+const nodes   = [];          // meshes
+const links   = [];          // THREE.Line objects
+let linkStart = null;        // first node selected with grip
+const tempMatrix = new THREE.Matrix4();
+const raycaster  = new THREE.Raycaster();
+let font;                    // loaded once for labels
+
+init();  animate();
+
+function init() {
+  scene   = new THREE.Scene();
+  scene.background = new THREE.Color(0x101015);
+
+  camera  = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.1, 100);
+
+  renderer = new THREE.WebGLRenderer({ antialias:true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.xr.enabled = true;
+  document.body.appendChild(renderer.domElement);
+  document.body.appendChild(VRButton.createButton(renderer));
+
+  // subtle light
+  scene.add(new THREE.HemisphereLight(0x8888ff, 0x222233, 1.2));
+
+  // VR controllers
+  [0,1].forEach(i=>{
+    const c = renderer.xr.getController(i);
+    c.addEventListener('selectstart', onSelectStart);
+    c.addEventListener('selectend',   onSelectEnd);
+    c.addEventListener('squeezestart',onGrip);   // grip button
+    scene.add(c);
+  });
+
+  // load a tiny font for labels
+  new FontLoader().load(
+     'https://threejs.org/examples/fonts/helvetiker_regular.typeface.json',
+     f => { font = f; }
+  );
+
+  window.addEventListener('resize', ()=> {
+    camera.aspect = window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+}
+
+// ---------- interaction handlers ----------
+function onSelectStart( evt ){
+  const controller = evt.target;
+  const hit = intersectNode( controller );
+  if ( hit ){
+    controller.userData.grabbed = hit.object;
+    controller.attach( hit.object );           // follow controller
+  } else {                                     // nothing hit → create
+    createNode( controller );
+  }
+}
+function onSelectEnd( evt ){
+  const c = evt.target;
+  if ( c.userData.grabbed ){
+    scene.attach( c.userData.grabbed );        // drop to world
+    c.userData.grabbed = null;
+  }
+}
+function onGrip( evt ){                       // build / finish a link
+  const controller = evt.target;
+  const hit = intersectNode( controller );
+  if ( !hit ) return;
+  if ( linkStart === null ){
+    linkStart = hit.object;                    // first endpoint stored
+  } else if ( linkStart !== hit.object ){
+    createLink( linkStart, hit.object );       // second endpoint
+    linkStart = null;
+  }
+}
+
+// ---------- scene helpers ----------
+function createNode( controller ){
+  const geom  = new THREE.SphereGeometry(0.05, 24, 16);
+  const mat   = new THREE.MeshStandardMaterial({ color: 0x44aaff });
+  const mesh  = new THREE.Mesh( geom, mat );
+
+  // place 0.5 m ahead of controller
+  controller.matrixWorld.decompose( tempVec(), tempQuat(), tempPos() );
+  mesh.position.set(0,0,-0.5).applyMatrix4( controller.matrixWorld );
+
+  // optional label sprite
+  if (font){
+    const tg = new TextGeometry( `N${nodes.length}`, { font, size:0.025, height:0.001 } );
+    const tm = new THREE.MeshBasicMaterial({ color:0xffffff });
+    const text = new THREE.Mesh( tg, tm );
+    text.position.set( -0.02, 0.06, 0 );
+    mesh.add( text );
+  }
+
+  scene.add( mesh );
+  nodes.push( mesh );
+}
+function createLink( a, b ){
+  const pts = [ a.position, b.position ];
+  const geom = new THREE.BufferGeometry().setFromPoints( pts );
+  const line = new THREE.Line( geom, new THREE.LineBasicMaterial({ color:0xffff00 }) );
+  scene.add( line );
+  links.push( {line, a, b} );
+}
+function intersectNode( controller ){
+  tempMatrix.identity().extractRotation( controller.matrixWorld );
+  raycaster.ray.origin.setFromMatrixPosition( controller.matrixWorld );
+  raycaster.ray.direction.set(0,0,-1).applyMatrix4( tempMatrix );
+  return raycaster.intersectObjects( nodes )[0] || null;
+}
+
+// ---------- animation loop ----------
+function animate(){
+  renderer.setAnimationLoop( render );
+}
+function render(){
+  // keep link geometry up‑to‑date
+  links.forEach( L =>{
+     L.line.geometry.setFromPoints( [ L.a.position, L.b.position ] );
+     L.line.geometry.attributes.position.needsUpdate = true;
+  } );
+  renderer.render( scene, camera );
+}
+
+// small helpers
+const tempV = new THREE.Vector3(), tempQ = new THREE.Quaternion(), tempS = new THREE.Vector3();
+const tempVec = ()=>tempV; const tempQuat = ()=>tempQ; const tempPos = ()=>tempS;
+</script>
+</body>
+</html>

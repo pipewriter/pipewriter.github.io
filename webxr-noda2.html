@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Noda‑Lite – single‑file WebXR demo</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#20232a;color:#fff;font-family:sans-serif}
+  #info{position:fixed;top:8px;left:8px;font-size:14px;line-height:1.4em}
+</style>
+</head>
+<body>
+<div id="info">
+  Trigger&nbsp;= create / grab · <br>
+  Trigger‑up on another node&nbsp;= link
+</div>
+
+<!-- =====  Everything below this line is JavaScript  ===== -->
+<script type="module">
+/*  Load Three.js r178 and its VRButton helper straight from jsDelivr CDN.   */
+import * as THREE    from 'https://cdn.jsdelivr.net/npm/three@0.178.0/build/three.module.js';
+import { VRButton }  from 'https://cdn.jsdelivr.net/npm/three@0.178.0/examples/jsm/webxr/VRButton.js';
+
+/* ---------- Scene setup ---------- */
+const scene   = new THREE.Scene();            scene.background = new THREE.Color(0x20232a);
+const camera  = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.1, 100);
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.xr.enabled = true;
+document.body.appendChild(renderer.domElement);
+document.body.appendChild(VRButton.createButton(renderer));
+
+/* Lights & reference grid */
+scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.2));
+const grid = new THREE.GridHelper(10,10); grid.rotation.x = Math.PI/2; scene.add(grid);
+
+/* ---------- Data ---------- */
+const nodes = [];      // spheres
+const links = [];      // THREE.Line objects
+let  grabbed = null;   // {node, controller}
+let  pending = null;   // first‑picked node when making a link
+
+/* ---------- Controllers & laser pointers ---------- */
+[0,1].forEach(i=>{
+  const ctrl = renderer.xr.getController(i);
+  ctrl.addEventListener('selectstart', onSelectStart);
+  ctrl.addEventListener('selectend',   onSelectEnd);
+
+  const laserGeo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,-1)]);
+  const laser = new THREE.Line(laserGeo,
+        new THREE.LineBasicMaterial({color:0xffffff}));
+  laser.name='laser'; laser.scale.z = 5;
+  ctrl.add(laser);
+
+  scene.add(ctrl);
+});
+
+/* ---------- Interaction handlers ---------- */
+const raycaster = new THREE.Raycaster();
+const tmpMat    = new THREE.Matrix4();
+
+function onSelectStart(e){
+  const ctrl = e.target;
+  const hit  = hitTest(ctrl);
+  if(hit){                    // grab existing
+    grabbed = {node:hit, ctrl};
+  }else{                      // create new sphere 0.5 m ahead
+    const pos = new THREE.Vector3(0,0,-0.5).applyMatrix4(ctrl.matrixWorld);
+    const node = makeNode(pos);
+    scene.add(node);  nodes.push(node);
+    grabbed = {node, ctrl};   // auto‑grab new node
+  }
+}
+
+function onSelectEnd(e){
+  if(grabbed && grabbed.ctrl===e.target) grabbed = null;
+
+  const hit = hitTest(e.target);
+  if(hit){
+    if(!pending){                   // first click in link gesture
+      pending = hit;
+      setHighlight(hit, true);
+    }else if(pending !== hit){      // second different node → make link
+      makeLink(pending, hit);
+      setHighlight(pending,false);
+      pending = null;
+    }else{                          // same node twice → cancel
+      setHighlight(pending,false);
+      pending = null;
+    }
+  }
+}
+
+/* ---------- Helper functions ---------- */
+function hitTest(ctrl){
+  tmpMat.identity().extractRotation(ctrl.matrixWorld);
+  raycaster.ray.origin.setFromMatrixPosition(ctrl.matrixWorld);
+  raycaster.ray.direction.set(0,0,-1).applyMatrix4(tmpMat);
+  return raycaster.intersectObjects(nodes,false)[0]?.object || null;
+}
+
+function makeNode(position){
+  const geom = new THREE.SphereGeometry(0.05,16,16);
+  const mat  = new THREE.MeshStandardMaterial({color:0x00aaff});
+  const mesh = new THREE.Mesh(geom,mat);
+  mesh.position.copy(position);
+
+  /* Tiny self‑contained label sprite (no external libs). */
+  const label = new THREE.Sprite(new THREE.SpriteMaterial({map:makeTextTexture(`N${nodes.length+1}`),transparent:true}));
+  label.scale.set(0.16,0.08,1);     // roughly 8cm wide
+  label.position.y = 0.09;
+  mesh.add(label);
+  return mesh;
+}
+
+function makeTextTexture(txt){
+  const canvas   = document.createElement('canvas');
+  canvas.width = 256;  canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+  ctx.font = '64px sans-serif';
+  ctx.fillStyle = 'white';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(txt, canvas.width/2, canvas.height/2);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  return tex;
+}
+
+function makeLink(a,b){
+  const pts = [a.position.clone(), b.position.clone()];
+  const geo = new THREE.BufferGeometry().setFromPoints(pts);
+  const line = new THREE.Line(geo, new THREE.LineBasicMaterial({color:0xffff00}));
+  line.userData = {a,b};
+  scene.add(line);  links.push(line);
+}
+
+function setHighlight(node,on){
+  node.material.emissive?.set(on?0x333333:0x000000);
+}
+
+/* ---------- Main render loop ---------- */
+renderer.setAnimationLoop(()=>{
+  if(grabbed){
+    const {node,ctrl} = grabbed;
+    node.position.set(0,0,-0.05).applyMatrix4(ctrl.matrixWorld);
+    // update attached lines
+    links.forEach(l=>{
+      if(l.userData.a===node || l.userData.b===node){
+        l.geometry.setFromPoints([l.userData.a.position, l.userData.b.position]);
+      }
+    });
+  }
+  renderer.render(scene,camera);
+});
+
+/* ---------- Resize ---------- */
+window.addEventListener('resize',()=>{
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>

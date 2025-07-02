@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!-- FIXES THE WEIRD IMPORT BUG -->
+  <script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.178.0/build/three.module.js" } }</script>
+  <meta charset="utf-8" />
+  <title>Mini‑Minecraft WebXR Demo</title>
+  <style>
+    body { margin: 0; overflow: hidden; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+<script type="module">
+/* ───────────────────────────────────────────────────────────────────────────── */
+/*  Imports                                                                   */
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.164.0/build/three.module.js';
+import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.164.0/examples/jsm/controls/OrbitControls.js';
+import { VRButton } from 'https://cdn.jsdelivr.net/npm/three@0.164.0/examples/jsm/webxr/VRButton.js';
+import { XRControllerModelFactory } from 'https://cdn.jsdelivr.net/npm/three@0.164.0/examples/jsm/webxr/XRControllerModelFactory.js';
+
+/* ───────────────────────────────────────────────────────────────────────────── */
+/*  Renderer & scene setup                                                    */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize( window.innerWidth, window.innerHeight );
+renderer.setPixelRatio( window.devicePixelRatio );
+renderer.xr.enabled = true;                        // WebXR on
+document.body.appendChild( renderer.domElement );
+document.body.appendChild( VRButton.createButton( renderer ) );  // “Enter VR” :contentReference[oaicite:0]{index=0}
+
+const scene  = new THREE.Scene();
+scene.background = new THREE.Color( 0xa0d8f0 );
+
+const camera = new THREE.PerspectiveCamera( 70, window.innerWidth / window.innerHeight, 0.1, 1000 );
+camera.position.set( 10, 10, 10 );
+
+const controls = new OrbitControls( camera, renderer.domElement );
+controls.target.set( 8, 0, 8 );
+controls.update();
+
+/* ───────────────────────────────────────────────────────────────────────────── */
+/*  Basic lighting                                                            */
+scene.add( new THREE.HemisphereLight( 0xffffff, 0x444444, 1 ) );
+const dir = new THREE.DirectionalLight( 0xffffff, 0.8 );
+dir.position.set( 3, 10, 2 );
+scene.add( dir );
+
+/* ───────────────────────────────────────────────────────────────────────────── */
+/*  “World” – a 16×16 grass plane + small pillar                              */
+const cubeGeo  = new THREE.BoxGeometry( 1, 1, 1 );
+const grassMat = new THREE.MeshLambertMaterial({ color: 0x4caf50 });
+const stoneMat = new THREE.MeshLambertMaterial({ color: 0x868686 });
+
+const SIZE = 16;
+for ( let x = 0; x < SIZE; ++x ) {
+  for ( let z = 0; z < SIZE; ++z ) {
+    const c = new THREE.Mesh( cubeGeo, grassMat );
+    c.position.set( x, 0, z );
+    scene.add( c );
+  }
+}
+for ( let y = 1; y < 5; ++y ) {                    // pillar
+  const c = new THREE.Mesh( cubeGeo, stoneMat );
+  c.position.set( 4, y, 4 );
+  scene.add( c );
+}
+
+/* ───────────────────────────────────────────────────────────────────────────── */
+/*  VR hand controller – “place block” trigger                                */
+const controller       = renderer.xr.getController( 0 );
+const controllerGrip   = renderer.xr.getControllerGrip( 0 );
+controllerGrip.add( new XRControllerModelFactory().createControllerModel( controllerGrip ) );
+scene.add( controller, controllerGrip );
+
+controller.addEventListener( 'select', () => {
+  // place a cube 2 m in front of the controller
+  const dir = new THREE.Vector3( 0, 0, -1 ).applyQuaternion( controller.quaternion ).normalize();
+  const pos = controller.position.clone().addScaledVector( dir, 2 ).floor(); // snap to int coords
+  const c   = new THREE.Mesh( cubeGeo, grassMat );
+  c.position.copy( pos );
+  scene.add( c );
+});
+
+/* ───────────────────────────────────────────────────────────────────────────── */
+function onResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize( window.innerWidth, window.innerHeight );
+}
+window.addEventListener( 'resize', onResize );
+
+renderer.setAnimationLoop( () => renderer.render( scene, camera ) );
+</script>
+</body>
+</html>

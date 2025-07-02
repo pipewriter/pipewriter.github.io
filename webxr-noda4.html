@@ -1,0 +1,177 @@
+<!-- index.html – minimal “Noda‑lite” in Three.js + WebXR -->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+  <!-- FIXES THE WEIRD IMPORT BUG -->
+  <script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.178.0/build/three.module.js" } }</script>
+    <meta charset="utf-8" />
+    <title>Noda‑lite WebXR</title>
+    <style>
+      body { margin: 0; overflow: hidden; }
+      canvas { display: block; }
+    </style>
+  </head>
+  <body>
+    <script type="module">
+      import * as THREE from 'https://unpkg.com/three@0.165.0/build/three.module.js';
+      import { VRButton } from 'https://unpkg.com/three@0.165.0/examples/jsm/webxr/VRButton.js';
+      import { XRControllerModelFactory } from 'https://unpkg.com/three@0.165.0/examples/jsm/webxr/XRControllerModelFactory.js';
+
+      /* ----------------------------------------------------------------
+         basic scene / camera / renderer
+      ---------------------------------------------------------------- */
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x202020);
+
+      const camera = new THREE.PerspectiveCamera(
+        70,
+        window.innerWidth / window.innerHeight,
+        0.1,
+        50
+      );
+      camera.position.set(0, 1.6, 3);
+
+      const renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setPixelRatio(window.devicePixelRatio);
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.xr.enabled = true;
+      document.body.appendChild(renderer.domElement);
+      document.body.appendChild(VRButton.createButton(renderer));
+
+      window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+
+      /* ----------------------------------------------------------------
+         lights & reference grid
+      ---------------------------------------------------------------- */
+      scene.add(new THREE.HemisphereLight(0x8888ff, 0x444422, 1.2));
+      const grid = new THREE.GridHelper(10, 20, 0x404040, 0x404040);
+      grid.rotation.x = Math.PI / 2;
+      scene.add(grid);
+
+      /* ----------------------------------------------------------------
+         node + link helpers
+      ---------------------------------------------------------------- */
+      const sphereGeo = new THREE.SphereGeometry(0.12, 24, 16);
+      const links = [];
+
+      function makeNode(pos) {
+        const mesh = new THREE.Mesh(
+          sphereGeo,
+          new THREE.MeshStandardMaterial({ color: 0x2ee4ff })
+        );
+        mesh.position.copy(pos);
+        mesh.userData.isNode = true;
+        scene.add(mesh);
+        return mesh;
+      }
+
+      function makeLink(a, b) {
+        const g = new THREE.BufferGeometry().setFromPoints([
+          a.position,
+          b.position
+        ]);
+        const m = new THREE.LineBasicMaterial({ color: 0xffffff });
+        const line = new THREE.Line(g, m);
+        line.userData = { a, b };
+        scene.add(line);
+        links.push(line);
+      }
+
+      /* ----------------------------------------------------------------
+         controllers
+      ---------------------------------------------------------------- */
+      const controllerModelFactory = new XRControllerModelFactory();
+      const tempMatrix = new THREE.Matrix4();
+      const raycaster = new THREE.Raycaster();
+      const grabbed = new Map();
+      let lastSelected = null;
+
+      function setupController(i) {
+        const controller = renderer.xr.getController(i);
+        scene.add(controller);
+
+        const grip = renderer.xr.getControllerGrip(i);
+        grip.add(controllerModelFactory.createControllerModel(grip));
+        scene.add(grip);
+
+        // visible laser
+        const rayGeo = new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(0, 0, 0),
+          new THREE.Vector3(0, 0, -1)
+        ]);
+        const ray = new THREE.Line(
+          rayGeo,
+          new THREE.LineBasicMaterial({ color: 0xffff00 })
+        );
+        ray.scale.z = 5;
+        controller.add(ray);
+
+        controller.addEventListener('selectstart', onSelectStart);
+        controller.addEventListener('selectend', onSelectEnd);
+        return controller;
+      }
+
+      const controller1 = setupController(0);
+      const controller2 = setupController(1);
+
+      function onSelectStart() {
+        /* cast ray to find a node */
+        tempMatrix.identity().extractRotation(this.matrixWorld);
+        raycaster.ray.origin.setFromMatrixPosition(this.matrixWorld);
+        raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+
+        const hit = raycaster
+          .intersectObjects(scene.children, true)
+          .find((i) => i.object.userData.isNode);
+
+        if (hit) {
+          /* grab existing node */
+          grabbed.set(this, hit.object);
+          this.attach(hit.object);
+        } else {
+          /* spawn new node 0.5 m ahead */
+          const p = new THREE.Vector3(0, 0, -0.5).applyMatrix4(
+            this.matrixWorld
+          );
+          makeNode(p);
+        }
+      }
+
+      function onSelectEnd() {
+        const node = grabbed.get(this);
+        if (node) {
+          /* drop it */
+          scene.attach(node);
+          grabbed.delete(this);
+
+          /* linking logic */
+          if (lastSelected && lastSelected !== node) {
+            makeLink(lastSelected, node);
+            lastSelected = null;
+          } else {
+            lastSelected = node;
+          }
+        }
+      }
+
+      /* ----------------------------------------------------------------
+         render loop
+      ---------------------------------------------------------------- */
+      renderer.setAnimationLoop(() => {
+        /* keep links snapped while nodes move */
+        links.forEach((l) => {
+          l.geometry.setFromPoints([
+            l.userData.a.position,
+            l.userData.b.position
+          ]);
+          l.geometry.attributes.position.needsUpdate = true;
+        });
+        renderer.render(scene, camera);
+      });
+    </script>
+  </body>
+</html>
