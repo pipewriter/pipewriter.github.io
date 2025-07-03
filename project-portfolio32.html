@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Flashy Engineer Portfolio</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+
+<!-- ==========  F L A S H Y   S T Y L E S  ========== -->
+<style>
+:root{
+    --accent:#00d9ff;
+    --bg:#0e0f19;
+    --card-bg:#1b1d2b;
+    --text:#f3f6ff;
+    --duration:.6s;
+    --easing:cubic-bezier(.25,.8,.25,1);
+    font-size:16px;
+    font-family: "Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+
+body{
+    background:radial-gradient(ellipse at top,var(--accent)10%,transparent 70%) var(--bg);
+    min-height:100vh;color:var(--text);overflow-x:hidden;
+}
+
+/* ---- top hero ---- */
+header{padding:3rem 1rem 2rem;text-align:center;display:flex;flex-direction:column;align-items:center;gap:1.25rem;}
+#headshot{width:140px;height:140px;border-radius:50%;object-fit:cover;border:4px solid var(--accent);box-shadow:0 0 12px rgba(0,0,0,.55);}
+h1{font-size:2.5rem;margin-bottom:.4rem;letter-spacing:.03em;}
+h2{font-weight:400;opacity:.8;}
+
+/* ---- sticky navigation ---- */
+nav{
+    position:sticky;top:0;z-index:20;
+    backdrop-filter:blur(8px);
+    background:rgba(14,15,25,.75);
+    padding:.5rem 1rem;margin-bottom:1.5rem;
+}
+nav ul{display:flex;gap:2.5rem;justify-content:center;flex-wrap:wrap;list-style:none;}
+nav a{
+    color:var(--text);text-decoration:none;font-size:1rem;letter-spacing:.03em;
+    border-bottom:2px solid transparent;transition:border-color .25s;
+}
+nav a:hover,nav a:focus{border-color:var(--accent);}
+
+/* ---- filter bar ---- */
+#skillBar{display:flex;flex-wrap:wrap;gap:.5rem;justify-content:center;margin:2rem 0 0;}
+.filter-btn{
+    display:flex;align-items:center;gap:.45rem;
+    background:linear-gradient(135deg,#2e3043 0%,#171822 100%);
+    border:2px solid transparent;border-radius:2rem;
+    color:var(--text);padding:.45rem 1rem .45rem .6rem;
+    cursor:pointer;transition:background .3s;
+    position:relative;font-size:.95rem;
+}
+.filter-btn::after{content:'';position:absolute;inset:0;border-radius:inherit;
+    background:var(--accent);opacity:0;transition:opacity .3s;}
+.filter-btn.active::after{opacity:.4;}
+.filter-btn:hover{background:#2c2e40;}
+.filter-btn > img{width:22px;height:22px;border-radius:50%;background:#d6d6d6;object-fit:cover;}
+.stars{font-size:.8rem;letter-spacing:-.05em;user-select:none;}
+
+/* ---- grid ---- */
+#grid{display:grid;gap:1.5rem;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));
+      padding:2rem 1rem 4rem;width:100%;max-width:1400px;margin:0 auto;}
+.card{
+    background:var(--card-bg);border-radius:1rem;overflow:hidden;
+    box-shadow:0 10px 20px rgba(0,0,0,.45);
+    transform:translateY(40px) scale(.95);opacity:0;
+    animation:enter var(--duration) var(--easing) forwards;
+    text-decoration:none;color:inherit;
+}
+@keyframes enter{to{transform:none;opacity:1;}}
+.card img.banner{width:100%;display:block;height:160px;object-fit:cover;}
+.card-content{padding:1rem;}
+.card h3{margin:0 0 .25rem;font-size:1.25rem;}
+.card p{font-size:.9rem;line-height:1.45;opacity:.85;margin-bottom:.9rem;}
+.tag{
+     display:inline-flex;align-items:center;gap:.35rem;
+     font-size:.75rem;background:var(--accent);
+     color:#000;border-radius:.4rem;padding:.15rem .55rem;margin:.15rem .25rem 0 0;
+}
+.tag img{width:16px;height:16px;object-fit:cover;border-radius:50%;}
+.tag .stars{font-size:.65rem;}
+/* subtle hover lift */
+.card:hover{transform:translateY(-6px) scale(1.02);}
+.card:hover img.banner{filter:brightness(1.08) contrast(1.1);}
+.hidden{display:none!important;}
+
+/* ---- About & Contact Sections ---- */
+section{padding:4rem 1rem 5rem;max-width:900px;margin:0 auto;}
+section h2{font-size:2rem;margin-bottom:1.5rem;text-align:center;}
+.about-card{
+    background:var(--card-bg);padding:2rem;border-radius:1rem;
+    line-height:1.6;font-size:1rem;box-shadow:0 10px 20px rgba(0,0,0,.45);
+}
+#contact .contact-links a{
+    color:var(--accent);text-decoration:none;margin-right:1.25rem;font-weight:500;
+}
+#contact iframe{width:100%;height:280px;border:0;border-radius:1rem;box-shadow:0 10px 20px rgba(0,0,0,.45);}
+@media(max-width:600px){
+    nav ul{gap:1.2rem;}
+    #contact .contact-links a{display:block;margin:.4rem 0;}
+}
+</style>
+</head>
+
+<body>
+<header>
+    <!-- HEADSHOT -->
+    <img id="headshot" src="headshot.jpg" alt="Jane Doe headshot">
+    <div>
+      <h1>⛰️ Parker Diard — Graphics Engineer</h1>
+      <h2>creative tools for the new age</h2>
+    </div>
+
+    <!-- skills filter -->
+    <div id="skillBar"></div>
+</header>
+
+<!-- sticky nav -->
+<nav>
+  <ul>
+    <li><a href="#grid">Portfolio</a></li>
+    <li><a href="#about">About Me</a></li>
+    <li><a href="#contact">Contact</a></li>
+  </ul>
+</nav>
+
+<!-- project grid -->
+<main id="grid"></main>
+
+<!-- ==========  A B O U T   M E ========== -->
+<section id="about">
+  <h2>About Me</h2>
+  <div class="about-card">
+    <p>Hi — I’m Parker, a graphics engineer who loves turning math into magic on screen.  
+       My happy place is somewhere between a vertex shader and a spiral‑bound notebook full of doodles, 
+       and I’m currently building creative tooling that helps artists work at the speed of imagination.</p>
+    <p>When I’m not bending triangles you’ll find me exploring California’s coastal trails, 
+       experimenting with home‑roasted coffee, or hacking together tiny web toys (like this site!).</p>
+  </div>
+</section>
+
+<!-- ==========  C O N T A C T ========== -->
+<section id="contact">
+  <h2>Let’s Get in Touch</h2>
+  <div class="about-card">
+    <!-- Map -->
+    <iframe
+      loading="lazy"
+      allowfullscreen
+      referrerpolicy="no-referrer-when-downgrade"
+      src="https://www.google.com/maps/embed?pb=!1m14!1m8!1m3!1d25334.840191303998!2d-122.0839!3d37.3861!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x0%3A0x0!2zMzfCsDIzJzExLjkiTiAxMjLCsDA1JzAxLjkiVw!5e0!3m2!1sen!2sus!4v1717440000000">
+    </iframe>
+
+    <!-- quick links -->
+    <div class="contact-links" style="margin-top:1.5rem;">
+      <a href="mailto:parker@example.com">parker@example.com</a>
+      <a href="https://github.com/janedoe" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://www.linkedin.com/in/janedoe" target="_blank" rel="noopener">LinkedIn</a>
+    </div>
+  </div>
+</section>
+
+<!-- ==========  P O R T F O L I O   L O G I C  ========== -->
+<script>
+// -----------------------------
+// a 1×1 px transparent placeholder
+const blankLogo = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAAWgmWQ0AAAAASUVORK5CYII=";
+// -----------------------------
+// SKILL METADATA
+const skillMeta = {
+    "C++":         {rating:5, img:"logos/cpp.svg"},
+    "OpenGL":      {rating:4, img:"logos/opengl.svg"},
+    "JavaScript":  {rating:5, img:"logos/js.svg"},
+    "Supabase":    {rating:4, img:"logos/supabase.png"},
+    "DevOps":      {rating:4, img:"logos/devops.svg"},
+    "OpenCL":      {rating:3, img:"logos/opencl.svg"},
+    "AI":          {rating:4, img:"logos/ai.svg"},
+    "React":       {rating:4, img:"logos/react.svg"}
+};
+// -----------------------------
+// PROJECTS
+const projects = [
+  { title:"Real‑Time Veil‑Ray Tracer",
+    desc:"WebGL path tracer achieving 60 fps with BVH traversal in GLSL.",
+    skills:["C++","OpenGL","JavaScript"],
+    url:"https://github.com/janedoe/veil-ray",
+    img:"textures/grass.png" },
+  { title:"Supabase Multi‑Tenant SaaS",
+    desc:"Zero‑downtime live migrations & row‑level security.",
+    skills:["Supabase","DevOps","JavaScript"],
+    url:"https://example.com/supabase-saas" },
+  { title:"GPU‑Accelerated OpenCL ETL",
+    desc:"3 × speedup over Spark for genomic pipelines.",
+    skills:["OpenCL","C++","AI"],
+    url:"https://example.com/opencl-etl",
+    img:"etl.jpg" },
+  { title:"Reactive Game UI Kit",
+    desc:"Vanilla JS component library <5 kB, driving 10k+ stars.",
+    skills:["JavaScript"],
+    url:"https://github.com/janedoe/reactive-ui-kit" },
+  { title:"Vision‑Enhanced React Native",
+    desc:"On‑device ML inference and AR overlays.",
+    skills:["React","AI","JavaScript"],
+    url:"https://example.com/vision-rn" },
+  { title:"K8s Canary Controller",
+    desc:"GitOps‑driven rollout with adaptive health scoring.",
+    skills:["DevOps","C++"],
+    url:"https://example.com/k8s-canary",
+    img:"canary.jpg" },
+  { title:"Procedural Galaxy Generator",
+    desc:"4‑D simplex noise yields infinite explorable space.",
+    skills:["OpenGL","C++","AI"],
+    url:"https://example.com/galaxy-gen" },
+  { title:"Realtime Collaboration Engine",
+    desc:"CRDT‑backed sync layer with <40 ms median latency.",
+    skills:["JavaScript","Supabase"],
+    url:"https://example.com/realtime-collab",
+    img:"collab.jpg" }
+];
+
+// =============================================================
+//                BUILD  SKILL  FILTER  BAR
+// =============================================================
+const allSkills = [...new Set(projects.flatMap(p=>p.skills))].sort();
+const skillBar = document.getElementById("skillBar");
+let activeSkill = null;
+const starHTML = r => `<span class="stars">${"★".repeat(r)}${"☆".repeat(5-r)}</span>`;
+allSkills.forEach(skill=>{
+  const meta = skillMeta[skill] || {rating:3,img:null};
+  const btn = document.createElement("button");
+  btn.className="filter-btn";
+  const imgSrc = meta.img || blankLogo;
+  btn.innerHTML=`<img src="${imgSrc}" alt=""> ${skill} ${starHTML(meta.rating)}`;
+  btn.addEventListener("click",()=>{
+      activeSkill = (activeSkill===skill? null : skill);
+      updateFilter();
+      [...skillBar.children].forEach(b=>b.classList.toggle("active", b.dataset.skill===activeSkill));
+  });
+  btn.dataset.skill = skill;
+  skillBar.appendChild(btn);
+});
+
+// =============================================================
+//                BUILD  PROJECT  CARDS
+// =============================================================
+const grid = document.getElementById("grid");
+projects.forEach((p,i)=>{
+  const card = document.createElement("a");
+  card.className="card";
+  card.href = p.url; card.target="_blank" ; card.rel="noopener";
+  card.dataset.skills = p.skills.join("|");
+  let bannerURL = p.img;
+  if(!bannerURL){
+      const canvas = document.createElement("canvas");
+      canvas.width=800; canvas.height=400;
+      const ctx = canvas.getContext("2d");
+      const g = ctx.createLinearGradient(0,0,canvas.width,canvas.height);
+      g.addColorStop(0,`hsl(${(i*47)%360},90%,55%)`);
+      g.addColorStop(1,`hsl(${(i*47+80)%360},80%,35%)`);
+      ctx.fillStyle=g; ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.globalAlpha=0.2; ctx.lineWidth=40;
+      for(let x=-canvas.height;x<canvas.width*1.5;x+=80){
+        ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x+canvas.height,canvas.height);
+        ctx.strokeStyle="#fff";ctx.stroke();
+      }
+      bannerURL = canvas.toDataURL();
+  }
+  card.innerHTML = `
+      <img class="banner" src="${bannerURL}" alt="${p.title} banner">
+      <div class="card-content">
+          <h3>${p.title}</h3>
+          <p>${p.desc}</p>
+          ${p.skills.map(s=>{
+              const m = skillMeta[s] || {rating:3,img:null};
+              return `<span class="tag">
+                         ${m.img?`<img src="${m.img}" alt="">`:""}
+                         ${s} ${starHTML(m.rating)}
+                      </span>`
+          }).join("")}
+      </div>`;
+  grid.appendChild(card);
+});
+
+// =============================================================
+//                FILTER  HANDLING
+// =============================================================
+function updateFilter(){
+  [...grid.children].forEach(card=>{
+    const match = !activeSkill || card.dataset.skills.includes(activeSkill);
+    card.classList.toggle("hidden", !match);
+  });
+}
+[...grid.children].forEach((c,idx)=>c.style.animationDelay=`${idx*80}ms`);
+</script>
+</body>
+</html>

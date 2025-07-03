@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Your Name | Portfolio</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+/* ---------- GLOBAL LAYOUT (horizontal) ---------- */
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+body{display:flex;flex-direction:row;scroll-snap-type:x mandatory;overflow-x:auto;scroll-behavior:smooth}
+/* Each section fills the viewport */
+section{flex:0 0 100vw;scroll-snap-align:start;height:100%;display:flex;justify-content:center;align-items:center;position:relative;color:#fff}
+
+/* ---------- ANIMATED BACKGROUND HELPERS ---------- */
+.bg-gradient{
+  background:linear-gradient(-45deg,#3b82f6,#9333ea,#ec4899,#f59e0b);
+  background-size:400% 400%;animation:bgShift 15s ease infinite}
+@keyframes bgShift{0%,100%{background-position:0 50%}50%{background-position:100% 50%}}
+
+/* ---------- HEADSHOT / HERO ---------- */
+#hero{flex-direction:column;gap:1.5rem;text-align:center}
+#hero img{width:180px;height:180px;border-radius:50%;border:4px solid rgba(255,255,255,.6);box-shadow:0 0 20px rgba(0,0,0,.4)}
+#hero h1{font-size:clamp(2.2rem,5vw,3.5rem);font-weight:700;text-shadow:0 4px 10px rgba(0,0,0,.45)}
+#hero p{max-width:38ch;line-height:1.45}
+
+/* ---------- SKILLS ---------- */
+#skills{flex-direction:column;padding:2rem 8vw;overflow-y:auto}
+.skill-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1.8rem;width:100%;max-width:1200px}
+.skill{background:rgba(255,255,255,.12);border-radius:14px;padding:1.2rem;backdrop-filter:blur(6px);cursor:pointer;transition:transform .25s}
+.skill:hover{transform:translateY(-6px) scale(1.03)}
+.skill img{display:block;width:40px;height:40px;margin:0 auto 0.8rem}
+.skill h3{font-size:1.05rem;font-weight:600;text-align:center;margin-bottom:0.4rem}
+.stars{font-size:1.1rem;text-align:center;letter-spacing:1px;color:#fcd34d}
+
+/* ---------- PROJECTS ---------- */
+#projects{flex-direction:column;padding:2rem 6vw;overflow-y:auto}
+.filter-bar{display:flex;flex-wrap:wrap;gap:.6rem;margin-bottom:1.6rem;justify-content:center}
+.filter-btn{background:#1e293b;border:none;color:#fff;padding:.5rem 1rem;border-radius:9999px;font-size:.9rem;cursor:pointer;transition:opacity .25s}
+.filter-btn.active{background:#f97316}
+.project-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1.5rem;width:100%;max-width:1400px}
+.project{background:rgba(255,255,255,.1);padding:1rem 1rem 1.4rem;border-radius:18px;transition:transform .3s,opacity .4s;height:100%;display:flex;flex-direction:column}
+.project.hide{opacity:0;pointer-events:none;transform:scale(.8)}
+.project:hover{transform:translateY(-5px) scale(1.02)}
+.project svg{width:100%;height:120px;border-radius:12px;margin-bottom:1rem}
+.project h4{font-size:1.1rem;margin-bottom:.5rem}
+.tag-list{margin-top:auto;font-size:.75rem;opacity:.8}
+
+/* ---------- JOURNEY ---------- */
+#journey{padding:2rem 4vw;overflow-y:auto}
+.timeline{position:relative;margin-left:40px;max-width:960px}
+.timeline::before{content:"";position:absolute;left:-4px;top:0;bottom:0;width:2px;background:#fff}
+.step{position:relative;margin-bottom:2rem;padding-left:1.5rem}
+.step::before{content:"";position:absolute;left:-11px;top:0;width:18px;height:18px;border-radius:50%;background:#f97316;border:2px solid #fff}
+.step img{width:60px;height:60px;border-radius:8px;object-fit:cover;margin-right:1rem}
+.step h5{font-size:1.05rem;margin-bottom:.2rem}
+.step span{font-size:.8rem;opacity:.8}
+
+/* ---------- CONTACT ---------- */
+#contact{flex-direction:column;gap:1.2rem;text-align:center}
+.contact-link{display:inline-flex;align-items:center;gap:.6rem;font-size:1rem;background:rgba(255,255,255,.12);padding:.6rem 1.2rem;border-radius:9999px;backdrop-filter:blur(6px);transition:transform .25s}
+.contact-link:hover{transform:scale(1.08)}
+.contact-link svg{width:20px;height:20px}
+
+/* ---------- REVEAL (fade‑in) ANIMATION ---------- */
+.reveal{opacity:0;transform:translateY(30px);transition:opacity .8s ease,transform .8s ease}
+.reveal.visible{opacity:1;transform:none}
+</style>
+</head>
+<body class="bg-gradient">
+
+<!-- ============ 1. HERO / HEADSHOT ============ -->
+<section id="hero">
+  <img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" alt="Your headshot">
+  <h1>Your&nbsp;Name</h1>
+  <p>Full‑stack software engineer with a passion for immersive UIs, performant systems and pixel‑perfect UX.</p>
+</section>
+
+<!-- ============ 2. SKILLS ============ -->
+<section id="skills">
+  <h2 class="reveal" style="font-size:2rem;margin-bottom:1.6rem">Skills &amp; Proficiency</h2>
+  <div class="skill-grid" id="skillGrid"></div>
+</section>
+
+<!-- ============ 3. PROJECTS ============ -->
+<section id="projects">
+  <h2 class="reveal" style="font-size:2rem;margin-bottom:1.2rem">Projects</h2>
+  <div class="filter-bar" id="filterBar"></div>
+  <div class="project-grid" id="projectGrid"></div>
+</section>
+
+<!-- ============ 4. JOURNEY ============ -->
+<section id="journey">
+  <h2 class="reveal" style="font-size:2rem;margin-bottom:1.6rem">My Journey</h2>
+  <div class="timeline" id="timeline"></div>
+</section>
+
+<!-- ============ 5. CONTACT ============ -->
+<section id="contact" >
+  <h2 class="reveal" style="font-size:2.4rem">Get in touch</h2>
+  <a class="contact-link reveal" href="mailto:you@example.com">
+     <svg viewBox="0 0 24 24" fill="currentColor"><path d="M2 4h20v16H2V4zm10 7L4 6v12h16V6l-8 5z"/></svg>
+     you@example.com
+  </a>
+  <a class="contact-link reveal" href="tel:+15555555555">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6.62 10.79a15.05 15.05 0 006.59 6.59l2.2-2.2a1 1 0 011.01-.24 11.36 11.36 0 003.54.56 1 1 0 011 1v3.5a1 1 0 01-1 1A17 17 0 013 5a1 1 0 011-1h3.5a1 1 0 011 1 11.36 11.36 0 00.56 3.54 1 1 0 01-.24 1.01l-2.2 2.2z"/></svg>
+    +1&nbsp;555‑555‑5555
+  </a>
+  <a class="contact-link reveal" href="https://www.linkedin.com/in/yourhandle" target="_blank" rel="noopener">
+     <svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 3a2 2 0 11.001 3.999A2 2 0 014 3zm.5 4H1v13h3.5V7zm13.5 0h-3.3v1.6h.05c.46-.9 1.6-1.85 3.29-1.85 3.52 0 4.17 2.32 4.17 5.34V20H19v-7.03c0-1.68-.03-3.84-2.34-3.84-2.35 0-2.71 1.83-2.71 3.73V20h-3.5V7H14z"/></svg>
+     LinkedIn
+  </a>
+</section>
+
+<script>
+/* ======== DATA (edit freely) ======== */
+const skills = [
+  {name:'JavaScript', stars:5},
+  {name:'TypeScript', stars:4},
+  {name:'React', stars:4},
+  {name:'Node.js', stars:4},
+  {name:'OpenGL', stars:3},
+  {name:'C++', stars:3},
+  {name:'Rust', stars:2},
+  {name:'Go', stars:2}
+];
+
+const projects = [
+  {title:'Procedural Planet Generator',
+   skill:'OpenGL',
+   tags:['C++','Noise','Shaders'],
+   svg:`<svg viewBox="0 0 200 120" preserveAspectRatio="none">
+          <defs><radialGradient id="g1"><stop offset="0%" stop-color="#10b981"/><stop offset="100%" stop-color="#064e3b"/></radialGradient></defs>
+          <circle cx="100" cy="60" r="50" fill="url(#g1)"/>
+        </svg>`},
+  {title:'AI Code Assistant',
+   skill:'TypeScript',
+   tags:['LLMs','VSCode','Extension'],
+   svg:`<svg viewBox="0 0 200 120" preserveAspectRatio="none">
+         <rect width="200" height="120" fill="#1e40af"/>
+         <text x="100" y="70" font-size="48" fill="#facc15" text-anchor="middle" font-family="Arial">AI</text>
+        </svg>`},
+  {title:'Mind Palace Conveyor',
+   skill:'JavaScript',
+   tags:['Canvas','Game‑like UI'],
+   svg:`<svg viewBox="0 0 200 120" preserveAspectRatio="none">
+         <defs><linearGradient id="g2" x1="0" x2="1"><stop stop-color="#6366f1"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs>
+         <rect width="200" height="120" fill="url(#g2)"/>
+         <circle cx="60" cy="60" r="20" fill="#a5b4fc"/>
+         <circle cx="140" cy="60" r="20" fill="#a5b4fc"/>
+        </svg>`},
+  {title:'Fitness TENS Tracker',
+   skill:'Go',
+   tags:['BLE','Mobile','Charts'],
+   svg:`<svg viewBox="0 0 200 120"><rect width="200" height="120" fill="#047857"/><path d="M20 90 L50 40 L80 90 Z" fill="#34d399"/></svg>`},
+  {title:'Supabase Vision Service',
+   skill:'Node.js',
+   tags:['Supabase','Vision','Serverless'],
+   svg:`<svg viewBox="0 0 200 120"><rect width="200" height="120" fill="#0f766e"/><circle cx="100" cy="60" r="30" fill="#5eead4"/></svg>`},
+  {title:'Sparse Matrix Visualizer',
+   skill:'Rust',
+   tags:['WASM','D3'],
+   svg:`<svg viewBox="0 0 200 120"><rect width="200" height="120" fill="#ca8a04"/><rect x="40" y="20" width="20" height="20" fill="#fef3c7"/><rect x="100" y="60" width="20" height="20" fill="#fef3c7"/></svg>`},
+  {title:'Peer‑to‑Peer Networking Demo',
+   skill:'C++',
+   tags:['NAT','Punch‑through'],
+   svg:`<svg viewBox="0 0 200 120"><rect width="200" height="120" fill="#7c3aed"/><circle cx="60" cy="60" r="15" fill="#c4b5fd"/><circle cx="140" cy="60" r="15" fill="#c4b5fd"/></svg>`},
+  {title:'Factorio‑Style Quality Analyzer',
+   skill:'React',
+   tags:['UX','Charts','Hooks'],
+   svg:`<svg viewBox="0 0 200 120"><rect width="200" height="120" fill="#be123c"/><rect x="50" y="40" width="100" height="40" fill="#fda4af"/></svg>`}
+];
+
+const journey = [
+  {title:'B.S. Computer Science', place:'Oregon State University', timeframe:'2016‑2020'},
+  {title:'Software Engineer I', place:'Acme Corp', timeframe:'2020‑2022'},
+  {title:'Full‑Stack Engineer', place:'InnovateX', timeframe:'2022‑2024'},
+  {title:'Senior Engineer', place:'Startup (Pair VC‑backed)', timeframe:'2024‑Present'}
+];
+
+/* ======== RENDERERS ======== */
+function stars(n){return '★'.repeat(n)+'☆'.repeat(5-n)}
+
+function renderSkills(){
+  const grid=document.getElementById('skillGrid');
+  grid.innerHTML=skills.map(s=>`
+    <div class="skill reveal" data-skill="${s.name}">
+      <img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" alt="${s.name} logo">
+      <h3>${s.name}</h3>
+      <div class="stars">${stars(s.stars)}</div>
+    </div>`).join('');
+}
+
+function renderFilters(){
+  const bar=document.getElementById('filterBar');
+  bar.innerHTML=`<button class="filter-btn active" data-filter="All">All</button>`+
+     skills.map(s=>`<button class="filter-btn" data-filter="${s.name}">${s.name}</button>`).join('');
+}
+
+function renderProjects(){
+  const grid=document.getElementById('projectGrid');
+  grid.innerHTML=projects.map(p=>`
+   <div class="project reveal" data-skill="${p.skill}">
+      ${p.svg}
+      <h4>${p.title}</h4>
+      <div class="tag-list">${p.tags.join(', ')}</div>
+   </div>`).join('');
+}
+
+function renderJourney(){
+  const tl=document.getElementById('timeline');
+  tl.innerHTML=journey.map(j=>`
+    <div class="step reveal">
+       <div style="display:flex;align-items:center">
+         <img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" alt="Logo">
+         <div>
+           <h5>${j.title}</h5>
+           <span>${j.place} • ${j.timeframe}</span>
+         </div>
+       </div>
+    </div>`).join('');
+}
+
+/* ======== INTERACTIVITY ======== */
+function handleFilters(){
+  document.getElementById('filterBar').addEventListener('click',e=>{
+    if(!e.target.classList.contains('filter-btn'))return;
+    document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
+    e.target.classList.add('active');
+    const filter=e.target.dataset.filter;
+    document.querySelectorAll('.project').forEach(card=>{
+      card.classList.toggle('hide', filter!=='All' && card.dataset.skill!==filter);
+    });
+  });
+}
+
+function revealOnScroll(){
+  const obs=new IntersectionObserver((entries)=>{
+    entries.forEach(entry=>{
+      if(entry.isIntersecting){entry.target.classList.add('visible');}
+    });
+  },{threshold:.15});
+  document.querySelectorAll('.reveal').forEach(el=>obs.observe(el));
+}
+
+/* ======== INIT ======== */
+renderSkills();
+renderFilters();
+renderProjects();
+renderJourney();
+handleFilters();
+revealOnScroll();
+
+/* Optional: click a skill card to auto‑filter */
+document.getElementById('skillGrid').addEventListener('click',e=>{
+  const card=e.target.closest('.skill');
+  if(!card)return;
+  const sk=card.dataset.skill;
+  document.querySelector(`.filter-btn[data-filter="${sk}"]`).click();
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Your Name • Software Engineer Portfolio</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+
+<!-- =========================  GLOBAL STYLES  ========================= -->
+<style>
+:root{
+  /* quick‑change theme variables */
+  --accent:#07e0ff;
+  --bg-dark:#111;
+  --bg-darker:#0b0b0b;
+  --card:#1e1e1e;
+  --radius:12px;
+  --transition:.4s cubic-bezier(.25,.8,.25,1);
+  --snap:mandatory;
+  --max-stars:5;
+}
+*{box-sizing:border-box;padding:0;margin:0}
+html,body{height:100%;overflow:hidden;font-family:Inter,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#eee;
+  background:var(--bg-dark);scroll-behavior:smooth;}
+h1,h2,h3{font-weight:600;letter-spacing:.02em}
+a{color:var(--accent);text-decoration:none}
+
+/* ----------  Side‑scroll wrapper ---------- */
+#horiz{
+  display:flex;flex-direction:row;height:100%;
+  overflow-x:auto;overflow-y:hidden;
+  scroll-snap-type:x var(--snap);
+  scroll-padding:0;
+}
+#horiz::-webkit-scrollbar{display:none}
+
+/* ----------  Snap + section base ---------- */
+.panel{
+  flex:0 0 100vw;height:100%;padding:5vmin 7vmin;
+  scroll-snap-align:start;
+  position:relative;
+  background:linear-gradient(135deg,var(--bg-darker),var(--bg-dark));
+  animation:fade-slide .9s both;
+}
+@keyframes fade-slide{from{opacity:0;transform:translateX(80px)}}
+
+/* subtle parallax stripes */
+.panel::before{
+  content:"";pointer-events:none;position:absolute;inset:0;
+  background:repeating-linear-gradient(60deg,transparent 0 15px,rgba(255,255,255,.03) 15px 30px);
+  mix-blend-mode:overlay;animation:move 14s linear infinite;
+}
+@keyframes move{to{background-position:600px 300px}}
+
+/* ----------  Headshot / Intro ---------- */
+#intro{display:flex;flex-direction:column;gap:2rem;align-items:center;justify-content:center;text-align:center}
+.headshot{
+  width:180px;height:180px;border-radius:50%;overflow:hidden;
+  box-shadow:0 0 0 4px var(--accent),0 0 20px var(--accent);
+}
+.headshot img{width:100%;height:100%;object-fit:cover}
+.tagline{opacity:.8;font-size:1.2rem}
+
+/* ----------  Skills ---------- */
+#skills h2{margin-bottom:1rem}
+#skillGrid{
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:1.2rem
+}
+.skill{
+  background:var(--card);padding:1rem;border-radius:var(--radius);text-align:center;
+  transition:transform var(--transition),box-shadow var(--transition);
+  cursor:pointer;position:relative;
+}
+.skill:hover{transform:translateY(-6px);box-shadow:0 8px 20px rgba(0,0,0,.4)}
+.skill-logo{width:32px;height:32px;margin-bottom:.5rem;border-radius:50%;background:#333}
+.skill .stars{font-size:1.1rem;letter-spacing:1px;margin-top:.35rem}
+.star{color:#555;transition:color .3s}
+.star.filled{color:#FFD700;text-shadow:0 0 6px #fcc}
+
+/* ----------  Project filter buttons ---------- */
+#filters{margin-bottom:1.5rem;display:flex;flex-wrap:wrap;gap:.5rem}
+.filter{border:1px solid var(--accent);padding:.3rem .9rem;border-radius:999px;
+  background:none;color:#eee;font-size:.85rem;cursor:pointer;
+  transition:background var(--transition)}
+.filter.active, .filter:hover{background:var(--accent);color:#000}
+
+/* ----------  Project cards ---------- */
+#projectsWrap{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1.5rem}
+.project{
+  background:var(--card);border-radius:var(--radius);overflow:hidden;
+  transition:transform var(--transition),box-shadow var(--transition);
+}
+.project:hover{transform:scale(1.05) rotate(.5deg);box-shadow:0 12px 26px rgba(0,0,0,.5)}
+.project img{width:100%;height:160px;object-fit:cover}
+.project h3{padding:1rem 1rem .4rem}
+.project p{padding:0 1rem 1.2rem;font-size:.9rem;line-height:1.4}
+
+/* ----------  Journey timeline ---------- */
+.timeline{display:flex;gap:2rem;align-items:center;overflow-x:auto;padding-bottom:.5rem}
+.timeline::-webkit-scrollbar{height:6px}
+.timeline::-webkit-scrollbar-thumb{background:var(--accent);border-radius:3px}
+.event{min-width:220px;background:var(--card);padding:1rem;border-radius:var(--radius);text-align:center}
+.event img{width:100%;height:120px;object-fit:cover;border-radius:var(--radius)}
+.event .label{display:block;margin-top:.6rem;font-size:.9rem}
+
+/* ----------  Contact ---------- */
+#contact p{margin:.7rem 0;font-size:1.1rem}
+
+/* ----------  Utility classes ---------- */
+.hidden{display:none}
+
+/* ----------  Responsive fine‑tuning ---------- */
+@media(max-width:600px){
+  .skill, .project, .event{font-size:14px}
+}
+</style>
+</head>
+
+<!-- =========================  BODY  ========================= -->
+<body>
+<div id="horiz">
+
+  <!-- ===== Intro Panel ===== -->
+  <section id="intro" class="panel">
+    <div class="headshot">
+      <!-- ★ Replace the data URI with your real headshot -->
+      <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPSczMDAnIGhlaWdodD0nMzAwJz48cmVjdCB3aWR0aD0nMTAwJScgaGVpZ2h0PScxMDAlJyBmaWxsPScjODg4Jy8+PHRleHQgeD0nNTAlJyB5PSc1MCUnIGZpbGw9JyNmZmYnIGZvbnQtc2l6ZT0nMjQnIGRvbWluYW50LWJhc2VsaW5lPSdtaWRkbGUnIHRleHQtYW5jaG9yPSdtaWRkbGUnPkhlYWRzaG90PC90ZXh0Pjwvc3ZnPg==" alt="Headshot placeholder">
+    </div>
+    <h1>Your&nbsp;Name</h1>
+    <p class="tagline">Full‑Stack Software Engineer&nbsp;// Problem&nbsp;Solver</p>
+  </section>
+
+  <!-- ===== Skills Panel ===== -->
+  <section id="skills" class="panel">
+    <h2>Skills</h2>
+    <div id="skillGrid">
+
+      <!-- Example skill tile -->
+      <div class="skill" data-skill="js">
+        <img class="skill-logo" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="">
+        <span>JavaScript</span>
+        <div class="stars" data-stars="5"></div>
+      </div>
+
+      <div class="skill" data-skill="cpp">
+        <img class="skill-logo" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="">
+        <span>C++</span>
+        <div class="stars" data-stars="4"></div>
+      </div>
+
+      <div class="skill" data-skill="opengl">
+        <img class="skill-logo" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="">
+        <span>OpenGL</span>
+        <div class="stars" data-stars="4"></div>
+      </div>
+
+      <div class="skill" data-skill="opencl">
+        <img class="skill-logo" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="">
+        <span>OpenCL</span>
+        <div class="stars" data-stars="3"></div>
+      </div>
+
+      <div class="skill" data-skill="python">
+        <img class="skill-logo" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="">
+        <span>Python</span>
+        <div class="stars" data-stars="5"></div>
+      </div>
+
+      <div class="skill" data-skill="gamedev">
+        <img class="skill-logo" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="">
+        <span>Game Dev</span>
+        <div class="stars" data-stars="4"></div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ===== Projects Panel ===== -->
+  <section id="projects" class="panel">
+    <h2>Projects</h2>
+
+    <!-- Filter buttons -->
+    <div id="filters">
+      <button class="filter active" data-filter="all">All</button>
+      <button class="filter" data-filter="js">JavaScript</button>
+      <button class="filter" data-filter="cpp">C++</button>
+      <button class="filter" data-filter="opengl">OpenGL</button>
+      <button class="filter" data-filter="opencl">OpenCL</button>
+      <button class="filter" data-filter="python">Python</button>
+      <button class="filter" data-filter="gamedev">Game&nbsp;Dev</button>
+    </div>
+
+    <!-- Cards -->
+    <div id="projectsWrap">
+      <!-- 8 sample projects with base64 placeholder thumbs -->
+      <div class="project" data-skill="js">
+        <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPSczMDAnIGhlaWdodD0nMjAwJz48cmVjdCB3aWR0aD0nMTAwJScgaGVpZ2h0PScxMDAlJyBmaWxsPScjNDQ0Jy8+PHRleHQgeD0nNTAlJyB5PSc1MCUnIGZpbGw9JyNmZmYnIGZvbnQtc2l6ZT0nMjQnIGRvbWluYW50LWJhc2VsaW5lPSdtaWRkbGUnIHRleHQtYW5jaG9yPSdtaWRkbGUnPlByb2plY3Q8L3RleHQ+PC9zdmc+" alt="">
+        <h3>Chroma Kanban</h3>
+        <p>Drag‑and‑drop kanban board with buttery‑smooth animations.</p>
+      </div>
+
+      <div class="project" data-skill="python">
+        <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPSczMDAnIGhlaWdodD0nMjAwJz48cmVjdCB3aWR0aD0nMTAwJScgaGVpZ2h0PScxMDAlJyBmaWxsPScjNDQ0Jy8+PHRleHQgeD0nNTAlJyB5PSc1MCUnIGZpbGw9JyNmZmYnIGZvbnQtc2l6ZT0nMjQnIGRvbWluYW50LWJhc2VsaW5lPSdtaWRkbGUnIHRleHQtYW5jaG9yPSdtaWRkbGUnPlByb2plY3Q8L3RleHQ+PC9zdmc+" alt="">
+        <h3>ML Hyper‑Tuner</h3>
+        <p>Auto‑searches model hyper‑parameters using Bayesian opt.</p>
+      </div>
+
+      <div class="project" data-skill="cpp">
+        <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPSczMDAnIGhlaWdodD0nMjAwJz48cmVjdCB3aWR0aD0nMTAwJScgaGVpZ2h0PScxMDAlJyBmaWxsPScjNDQ0Jy8+PHRleHQgeD0nNTAlJyB5PSc1MCUnIGZpbGw9JyNmZmYnIGZvbnQtc2l6ZT0nMjQnIGRvbWluYW50LWJhc2VsaW5lPSdtaWRkbGUnIHRleHQtYW5jaG9yPSdtaWRkbGUnPlByb2plY3Q8L3RleHQ+PC9zdmc+" alt="">
+        <h3>Ray Tracer</h3>
+        <p>Real‑time CPU ray‑tracer demonstrating SIMD & thread pools.</p>
+      </div>
+
+      <div class="project" data-skill="opengl">
+        <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPSczMDAnIGhlaWdodD0nMjAwJz48cmVjdCB3aWR0aD0nMTAwJScgaGVpZ2h0PScxMDAlJyBmaWxsPScjNDQ0Jy8+PHRleHQgeD0nNTAlJyB5PSc1MCUnIGZpbGw9JyNmZmYnIGZvbnQtc2l6ZT0nMjQnIGRvbWluYW50LWJhc2VsaW5lPSdtaWRkbGUnIHRleHQtYW5jaG9yPSdtaWRkbGUnPlByb2plY3Q8L3RleHQ+PC9zdmc+" alt="">
+        <h3>Procedural Skybox</h3>
+        <p>GPU‑noise‑driven clouds & day/night cycle for game engines.</p>
+      </div>
+
+      <div class="project" data-skill="opencl">
+        <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPSczMDAnIGhlaWdodD0nMjAwJz48cmVjdCB3aWR0aD0nMTAwJScgaGVpZ2h0PScxMDAlJyBmaWxsPScjNDQ0Jy8+PHRleHQgeD0nNTAlJyB5PSc1MCUnIGZpbGw9JyNmZmYnIGZvbnQtc2l6ZT0nMjQnIGRvbWluYW50LWJhc2VsaW5lPSdtaWRkbGUnIHRleHQtYW5jaG9yPSdtaWRkbGUnPlByb2plY3Q8L3RleHQ+PC9zdmc+" alt="">
+        <h3>GPU Particle Sim</h3>
+        <p>OpenCL liquid simulation ↔ WebGL viz bridge.</p>
+      </div>
+
+      <div class="project" data-skill="gamedev">
+        <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPSczMDAnIGhlaWdodD0nMjAwJz48cmVjdCB3aWR0aD0nMTAwJScgaGVpZ2h0PScxMDAlJyBmaWxsPScjNDQ0Jy8+PHRleHQgeD0nNTAlJyB5PSc1MCUnIGZpbGw9JyNmZmYnIGZvbnQtc2l6ZT0nMjQnIGRvbWluYW50LWJhc2VsaW5lPSdtaWRkbGUnIHRleHQtYW5jaG9yPSdtaWRkbGUnPlByb2plY3Q8L3RleHQ+PC9zdmc+" alt="">
+        <h3>Factorio Mod “StimuBelts”</h3>
+        <p>Quality‑of‑life conveyor tweaks with Lua & sprite‑sheets.</p>
+      </div>
+
+      <div class="project" data-skill="js">
+        <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPSczMDAnIGhlaWdodD0nMjAwJz48cmVjdCB3aWR0aD0nMTAwJScgaGVpZ2h0PScxMDAlJyBmaWxsPScjNDQ0Jy8+PHRleHQgeD0nNTAlJyB5PSc1MCUnIGZpbGw9JyNmZmYnIGZvbnQtc2l6ZT0nMjQnIGRvbWluYW50LWJhc2VsaW5lPSdtaWRkbGUnIHRleHQtYW5jaG9yPSdtaWRkbGUnPlByb2plY3Q8L3RleHQ+PC9zdmc+" alt="">
+        <h3>Realtime Task Board</h3>
+        <p>Socket‑powered scrum wall with RxJS state streams.</p>
+      </div>
+
+      <div class="project" data-skill="python">
+        <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPSczMDAnIGhlaWdodD0nMjAwJz48cmVjdCB3aWR0aD0nMTAwJScgaGVpZ2h0PScxMDAlJyBmaWxsPScjNDQ0Jy8+PHRleHQgeD0nNTAlJyB5PSc1MCUnIGZpbGw9JyNmZmYnIGZvbnQtc2l6ZT0nMjQnIGRvbWluYW50LWJhc2VsaW5lPSdtaWRkbGUnIHRleHQtYW5jaG9yPSdtaWRkbGUnPlByb2plY3Q8L3RleHQ+PC9zdmc+" alt="">
+        <h3>Flask Auth Boilerplate</h3>
+        <p>Lightning‑quick starter with JWT & OAuth 2.0.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Journey Panel ===== -->
+  <section id="journey" class="panel">
+    <h2>Journey</h2>
+    <div class="timeline">
+
+      <div class="event">
+        <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScyMjAnIGhlaWdodD0nMTIwJz48cmVjdCB3aWR0aD0nMTAwJScgaGVpZ2h0PScxMDAlJyBmaWxsPScjMzM0Jy8+PHRleHQgeD0nNTAlJyB5PSc1MCUnIGZpbGw9JyNmZmYnIGZvbnQtc2l6ZT0nMjAnIGRvbWluYW50LWJhc2VsaW5lPSdtaWRkbGUnIHRleHQtYW5jaG9yPSdtaWRkbGUnPlVuaXY8L3RleHQ+PC9zdmc+" alt="">
+        <span class="label">B.S. Computer Science<br>(2015‑2019)</span>
+      </div>
+
+      <div class="event">
+        <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScyMjAnIGhlaWdodD0nMTIwJz48cmVjdCB3aWR0aD0nMTAwJScgaGVpZ2h0PScxMDAlJyBmaWxsPScjMzM0Jy8+PHRleHQgeD0nNTAlJyB5PSc1MCUnIGZpbGw9JyNmZmYnIGZvbnQtc2l6ZT0nMjAnIGRvbWluYW50LWJhc2VsaW5lPSdtaWRkbGUnIHRleHQtYW5jaG9yPSdtaWRkbGUnPkNvX2NvcnA8L3RleHQ+PC9zdmc+" alt="">
+        <span class="label">Acme Corp – SWE<br>(2019‑2022)</span>
+      </div>
+
+      <div class="event">
+        <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScyMjAnIGhlaWdodD0nMTIwJz48cmVjdCB3aWR0aD0nMTAwJScgaGVpZ2h0PScxMDAlJyBmaWxsPScjMzM0Jy8+PHRleHQgeD0nNTAlJyB5PSc1MCUnIGZpbGw9JyNmZmYnIGZvbnQtc2l6ZT0nMjAnIGRvbWluYW50LWJhc2VsaW5lPSdtaWRkbGUnIHRleHQtYW5jaG9yPSdtaWRkbGUnPloyMkFJPC90ZXh0Pjwvc3ZnPg==" alt="">
+        <span class="label">Stealth AI Startup – Lead Eng<br>(2022‑Now)</span>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ===== Contact Panel ===== -->
+  <section id="contact" class="panel">
+    <h2>Let’s Connect</h2>
+    <p>Email: <a href="mailto:you@example.com">you@example.com</a></p>
+    <p>LinkedIn: <a href="https://linkedin.com/in/your" target="_blank">linkedin.com/in/your</a></p>
+    <p>GitHub: <a href="https://github.com/your" target="_blank">github.com/your</a></p>
+  </section>
+
+</div>
+
+<!-- =========================  SCRIPT  ========================= -->
+<script>
+// ---------------------------------------------------------------
+// 1.  Render star ratings for each skill tile
+// ---------------------------------------------------------------
+document.querySelectorAll('.stars').forEach(starBox=>{
+  const filled = +starBox.dataset.stars || 0,
+        total  = +getComputedStyle(document.documentElement)
+                   .getPropertyValue('--max-stars') || 5;
+  starBox.innerHTML = Array.from({length:total},(_,i)=>
+    `<span class="star ${i<filled?'filled':''}">★</span>`).join('');
+});
+
+// ---------------------------------------------------------------
+// 2.  Clickable skill tiles ALSO act as filter buttons
+//     (same handler as the explicit buttons above the project grid)
+// ---------------------------------------------------------------
+const filterButtons = document.querySelectorAll('.filter');
+const skillTiles    = document.querySelectorAll('.skill');
+[...filterButtons, ...skillTiles].forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    const skill = btn.dataset.skill || btn.dataset.filter;
+    activateFilter(skill);
+  });
+});
+
+function activateFilter(skill){
+  // visual state
+  filterButtons.forEach(b=>b.classList.toggle('active',b.dataset.filter===skill || (skill==='all'&&b.dataset.filter==='all')));
+  // show/hide cards
+  document.querySelectorAll('.project').forEach(card=>{
+    card.classList.toggle('hidden', skill!=='all' && card.dataset.skill!==skill);
+  });
+}
+
+// ---------------------------------------------------------------
+// 3.  Horizontal scroll helpers: mouse wheel + arrow keys
+// ---------------------------------------------------------------
+const horiz = document.getElementById('horiz');
+horiz.addEventListener('wheel',e=>{
+  e.preventDefault();
+  horiz.scrollBy({left:e.deltaY,behavior:'auto'});
+},{passive:false});
+
+document.addEventListener('keydown',e=>{
+  const vw = window.innerWidth;
+  if(e.key==='ArrowRight') horiz.scrollBy({left:vw,behavior:'smooth'});
+  if(e.key==='ArrowLeft' ) horiz.scrollBy({left:-vw,behavior:'smooth'});
+});
+</script>
+</body>
+</html>
