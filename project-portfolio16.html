@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Your Name | Software Engineer</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+
+<!-- ====================  CORE STYLES  ==================== -->
+<style>
+:root{
+    --accent:#ffb400;
+    --bg1:#0d1b2a;
+    --bg2:#1b263b;
+    --txt:#e0e1dd;
+    --max-width:1100px;
+    --transition: .4s cubic-bezier(.25,.8,.25,1);
+    --star-size:20px;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+    font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.5;
+    color:var(--txt);
+    background:
+      linear-gradient(130deg,rgba(13,27,42,.9),rgba(27,38,59,.9)),
+      radial-gradient(circle at top left,#223043 0%,#0d1b2a 70%);
+    background-size:200% 200%;
+    animation:bgShift 20s ease-in-out infinite alternate;
+}
+@keyframes bgShift{0%{background-position:0% 0%}100%{background-position:100% 100%}}
+
+section{padding:4rem 1rem}
+h1,h2{text-align:center;font-weight:700;margin-bottom:1.5rem}
+h1{font-size:clamp(2rem,4.5vw,3.5rem)}
+h2{font-size:clamp(1.3rem,3.5vw,2.2rem);color:var(--accent)}
+
+.container{max-width:var(--max-width);margin:auto}
+
+.fade-in{opacity:0;transform:translateY(40px);transition:opacity .8s ease-out,transform .8s ease-out}
+.fade-in.show{opacity:1;transform:none}
+
+/* ----------  INTRO / HEADSHOT  ---------- */
+#intro{display:flex;flex-direction:column;align-items:center;padding:5rem 1rem 3rem}
+#intro .headshot{
+    width:180px;height:180px;border-radius:50%;
+    overflow:hidden;border:4px solid var(--accent);
+    margin-bottom:1.2rem;flex-shrink:0;
+    box-shadow:0 0 20px rgba(0,0,0,.5);
+}
+#intro .headshot svg{width:100%;height:100%}
+#intro h1 span{display:block;font-size:.6em;font-weight:400;color:#ddd}
+
+/* ----------  SKILLS  ---------- */
+.skills-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:1.2rem}
+.skill{
+    background:var(--bg2);padding:1rem;border-radius:12px;
+    text-align:center;cursor:pointer;transition:transform var(--transition),box-shadow var(--transition);
+    position:relative
+}
+.skill:hover{transform:translateY(-6px) scale(1.03);box-shadow:0 12px 20px rgba(0,0,0,.35)}
+.skill.active{outline:3px solid var(--accent)}
+.skill img{width:40px;height:40px;margin-bottom:.6rem}
+.skill .stars{font-size:var(--star-size);letter-spacing:2px;color:var(--accent);user-select:none}
+
+/* ----------  PROJECTS  ---------- */
+.projects-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fill,minmax(300px,1fr));
+    gap:2rem
+}
+.project{
+    background:var(--bg2);border-radius:14px;overflow:hidden;
+    transition:transform var(--transition),box-shadow var(--transition);
+    display:flex;flex-direction:column;min-height:350px
+}
+.project:hover{transform:translateY(-8px) scale(1.03);box-shadow:0 18px 26px rgba(0,0,0,.45)}
+.project figure{flex:1}
+.project figure svg{width:100%;height:100%;object-fit:cover}
+.project .p-body{padding:1rem 1.2rem}
+.project .p-body h3{margin-bottom:.5rem;font-size:1.2rem}
+.project .tags{font-size:.8rem;opacity:.7}
+.hidden{display:none!important}
+
+/* ----------  JOURNEY  ---------- */
+.timeline{position:relative;margin:2rem 0 0 0;padding-left:2rem}
+.timeline::before{content:"";position:absolute;left:10px;top:0;bottom:0;width:2px;background:var(--accent)}
+.event{
+    display:flex;align-items:center;gap:1rem;margin-bottom:2.5rem;position:relative
+}
+.event::before{
+    content:"";position:absolute;left:-14px;top:50%;transform:translateY(-50%);
+    width:12px;height:12px;border-radius:50%;background:var(--accent)
+}
+.event img{width:60px;height:60px;border-radius:8px;flex-shrink:0}
+.event p{font-weight:500}
+
+/* ----------  RESUME & CONTACT  ---------- */
+#resume-contact .resume a{
+    display:inline-block;background:var(--accent);color:#000;padding:.6rem 1.2rem;
+    border-radius:6px;font-weight:700;text-decoration:none;margin-bottom:1rem;
+    transition:transform var(--transition)
+}
+#resume-contact .resume a:hover{transform:scale(1.05)}
+#resume-embed{width:100%;height:500px;border:0;margin-top:1rem;background:#fff}
+.contact-links{margin-top:2rem;display:flex;justify-content:center;gap:2rem;font-size:1.1rem}
+.contact-links a{color:var(--accent);text-decoration:none;position:relative}
+.contact-links a::after{
+    content:"";position:absolute;left:0;bottom:-2px;width:100%;height:1px;background:var(--accent);
+    transform:scaleX(0);transform-origin:left;transition:transform .3s ease
+}
+.contact-links a:hover::after{transform:scaleX(1)}
+</style>
+</head>
+
+<body>
+
+<!-- ====================  INTRO  ==================== -->
+<header id="intro" class="fade-in">
+    <div class="headshot">
+        <!-- Inline SVG sample headshot (replace with real base64 or <img>) -->
+        <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+            <defs><linearGradient id="grad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#4facfe"/><stop offset="100%" stop-color="#00f2fe"/>
+            </linearGradient></defs>
+            <rect width="100" height="100" fill="url(#grad)"/>
+            <text x="50" y="55" font-size="14" fill="#fff" text-anchor="middle" font-family="Arial">Your Photo</text>
+        </svg>
+    </div>
+    <h1>Your&nbsp;Name<br><span>Software Engineer</span></h1>
+</header>
+
+
+
+<!-- ====================  SKILLS  ==================== -->
+<section id="skills" class="fade-in">
+    <h2>Skills</h2>
+    <div class="container">
+        <div class="skills-grid" id="skillButtons">
+            <!-- Example skills (logo is 1×1 transparent GIF placeholder) -->
+            <button class="skill active" data-skill="JavaScript" data-rating="5">
+                <img src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" alt="">
+                JavaScript
+                <div class="stars"></div>
+            </button>
+            <button class="skill" data-skill="C++" data-rating="4">
+                <img src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" alt="">
+                C++
+                <div class="stars"></div>
+            </button>
+            <button class="skill" data-skill="OpenGL" data-rating="3">
+                <img src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" alt="">
+                OpenGL
+                <div class="stars"></div>
+            </button>
+            <button class="skill" data-skill="React" data-rating="5">
+                <img src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" alt="">
+                React
+                <div class="stars"></div>
+            </button>
+        </div>
+    </div>
+</section>
+
+
+
+<!-- ====================  PROJECTS  ==================== -->
+<section id="projects" class="fade-in">
+    <h2>Projects</h2>
+    <div class="container">
+        <div class="projects-grid" id="projectsGrid">
+            <!-- Eight sample projects -->
+            <article class="project" data-skills="JavaScript,React">
+              <figure>
+                <svg viewBox="0 0 300 180" xmlns="http://www.w3.org/2000/svg">
+                  <rect width="300" height="180" fill="#4e54c8"/>
+                  <text x="50%" y="50%" fill="#fff" font-size="20" font-family="Arial" text-anchor="middle" dy=".35em">Project 1</text>
+                </svg>
+              </figure>
+              <div class="p-body">
+                <h3>Flashy SPA</h3>
+                <p class="tags">React • JavaScript</p>
+              </div>
+            </article>
+
+            <article class="project" data-skills="C++,OpenGL">
+              <figure>
+                <svg viewBox="0 0 300 180" xmlns="http://www.w3.org/2000/svg">
+                  <rect width="300" height="180" fill="#11998e"/>
+                  <text x="50%" y="50%" fill="#fff" font-size="20" font-family="Arial" text-anchor="middle" dy=".35em">Project 2</text>
+                </svg>
+              </figure>
+              <div class="p-body">
+                <h3>Procedural Skybox</h3>
+                <p class="tags">C++ • OpenGL</p>
+              </div>
+            </article>
+
+            <article class="project" data-skills="JavaScript">
+              <figure>
+                <svg viewBox="0 0 300 180" xmlns="http://www.w3.org/2000/svg">
+                  <rect width="300" height="180" fill="#fc4a1a"/>
+                  <text x="50%" y="50%" fill="#fff" font-size="20" font-family="Arial" text-anchor="middle" dy=".35em">Project 3</text>
+                </svg>
+              </figure>
+              <div class="p-body">
+                <h3>Algorithm Visualizer</h3>
+                <p class="tags">JavaScript</p>
+              </div>
+            </article>
+
+            <article class="project" data-skills="React">
+              <figure>
+                <svg viewBox="0 0 300 180" xmlns="http://www.w3.org/2000/svg">
+                  <rect width="300" height="180" fill="#f46b45"/>
+                  <text x="50%" y="50%" fill="#fff" font-size="20" font-family="Arial" text-anchor="middle" dy=".35em">Project 4</text>
+                </svg>
+              </figure>
+              <div class="p-body">
+                <h3>Mobile PWA</h3>
+                <p class="tags">React</p>
+              </div>
+            </article>
+
+            <article class="project" data-skills="C++">
+              <figure>
+                <svg viewBox="0 0 300 180" xmlns="http://www.w3.org/2000/svg">
+                  <rect width="300" height="180" fill="#dd2476"/>
+                  <text x="50%" y="50%" fill="#fff" font-size="20" font-family="Arial" text-anchor="middle" dy=".35em">Project 5</text>
+                </svg>
+              </figure>
+              <div class="p-body">
+                <h3>High‑perf Engine</h3>
+                <p class="tags">C++</p>
+              </div>
+            </article>
+
+            <article class="project" data-skills="JavaScript,OpenGL">
+              <figure>
+                <svg viewBox="0 0 300 180" xmlns="http://www.w3.org/2000/svg">
+                  <rect width="300" height="180" fill="#7b4397"/>
+                  <text x="50%" y="50%" fill="#fff" font-size="20" font-family="Arial" text-anchor="middle" dy=".35em">Project 6</text>
+                </svg>
+              </figure>
+              <div class="p-body">
+                <h3>WebGL Game</h3>
+                <p class="tags">JavaScript • OpenGL</p>
+              </div>
+            </article>
+
+            <article class="project" data-skills="React,JavaScript">
+              <figure>
+                <svg viewBox="0 0 300 180" xmlns="http://www.w3.org/2000/svg">
+                  <rect width="300" height="180" fill="#1d976c"/>
+                  <text x="50%" y="50%" fill="#fff" font-size="20" font-family="Arial" text-anchor="middle" dy=".35em">Project 7</text>
+                </svg>
+              </figure>
+              <div class="p-body">
+                <h3>Realtime Chat</h3>
+                <p class="tags">React • JavaScript</p>
+              </div>
+            </article>
+
+            <article class="project" data-skills="C++,OpenGL,JavaScript">
+              <figure>
+                <svg viewBox="0 0 300 180" xmlns="http://www.w3.org/2000/svg">
+                  <rect width="300" height="180" fill="#ee0979"/>
+                  <text x="50%" y="50%" fill="#fff" font-size="20" font-family="Arial" text-anchor="middle" dy=".35em">Project 8</text>
+                </svg>
+              </figure>
+              <div class="p-body">
+                <h3>Hybrid Renderer</h3>
+                <p class="tags">C++ • OpenGL • JS</p>
+              </div>
+            </article>
+        </div>
+    </div>
+</section>
+
+
+
+<!-- ====================  JOURNEY  ==================== -->
+<section id="journey" class="fade-in">
+    <h2>Journey</h2>
+    <div class="container">
+        <ul class="timeline">
+            <li class="event">
+                <img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0nNjAnIGhlaWdodD0nNjAnIHZpZXdCb3g9JzAgMCA2MCA2MCcgeG1sbnM9J2h0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnJz48cmVjdCB3aWR0aD0nNjAnIGhlaWdodD0nNjAnIGZpbGw9JyM0ZWU5ZmUnLz48dGV4dCB4PSczMCUnIHk9JzUwJScgZmlsbD0nI2ZmZicgZm9udC1zaXplPScxMCcgZm9udC1mYW1pbHk9J0FyaWFsJyB0ZXh0LWFuY2hvcj0nbWlkZGxlJyBkeT0nLjM1ZW0nPkJTRzwvdGV4dDwvc3ZnPg==" alt="">
+                <p>2020 — B.S. Computer Science, State University</p>
+            </li>
+            <li class="event">
+                <img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0nNjAnIGhlaWdodD0nNjAnIHZpZXdCb3g9JzAgMCA2MCA2MCcgeG1sbnM9J2h0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnJz48cmVjdCB3aWR0aD0nNjAnIGhlaWdodD0nNjAnIGZpbGw9JyMxMTk5OGUnLz48dGV4dCB4PSczMCUnIHk9JzUwJScgZmlsbD0nI2ZmZicgZm9udC1zaXplPSc5JyBmb250LWZhbWlseT0nQXJpYWwnIHRleHQtYW5jaG9yPSdtaWRkbGUnIGR5PScuMzVlbSc+Q28uIEE8L3RleHQ+PC9zdmc+" alt="">
+                <p>2020‑2023 — Software Engineer, Company A</p>
+            </li>
+            <li class="event">
+                <img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0nNjAnIGhlaWdodD0nNjAnIHZpZXdCb3g9JzAgMCA2MCA2MCcgeG1sbnM9J2h0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnJz48cmVjdCB3aWR0aD0nNjAnIGhlaWdodD0nNjAnIGZpbGw9JyM3YjQzOTcnLz48dGV4dCB4PSczMCUnIHk9JzUwJScgZmlsbD0nI2ZmZicgZm9udC1zaXplPSc5JyBmb250LWZhbWlseT0nQXJpYWwnIHRleHQtYW5jaG9yPSdtaWRkbGUnIGR5PScuMzVlbSc+Q28uIEI8L3RleHQ+PC9zdmc+" alt="">
+                <p>2023‑Present — Senior Engineer, Company B</p>
+            </li>
+        </ul>
+    </div>
+</section>
+
+
+
+<!-- ====================  RESUME & CONTACT  ==================== -->
+<section id="resume-contact" class="fade-in">
+    <h2>Résumé &amp; Contact</h2>
+    <div class="container">
+        <div class="resume" style="text-align:center">
+            <!-- Replace # with actual PDF data URI or file path -->
+            <a id="resume-download" href="#" download="YourName_Resume.pdf">⬇ Download my résumé</a>
+            <iframe id="resume-embed" src="#"></iframe>
+        </div>
+
+        <div class="contact-links">
+            <a href="mailto:you@example.com">you@example.com</a>
+            <a href="https://github.com/yourhandle" target="_blank" rel="noopener">GitHub</a>
+            <a href="https://linkedin.com/in/yourhandle" target="_blank" rel="noopener">LinkedIn</a>
+        </div>
+    </div>
+</section>
+
+
+
+<!-- ====================  INTERACTIVITY  ==================== -->
+<script>
+// ----------  Scroll‑in fade animation ----------
+const faders=[...document.querySelectorAll('.fade-in')];
+const io=new IntersectionObserver((entries)=>entries.forEach(e=>{
+    if(e.isIntersecting){e.target.classList.add('show');io.unobserve(e.target);}
+}),{threshold:.25});
+faders.forEach(el=>io.observe(el));
+
+// ----------  Render stars ----------
+document.querySelectorAll('.skill').forEach(s=>{
+    const rating=+s.dataset.rating||0;
+    s.querySelector('.stars').innerHTML='★'.repeat(rating)+'☆'.repeat(5-rating);
+});
+
+// ----------  Filtering ----------
+const buttons=[...document.querySelectorAll('.skill')];
+const cards=[...document.querySelectorAll('.project')];
+
+function filter(skill){
+    cards.forEach(c=>{
+        c.classList.toggle('hidden',skill!=='All' && !c.dataset.skills.includes(skill))
+    });
+}
+buttons.forEach(btn=>{
+    btn.addEventListener('click',()=>{
+        buttons.forEach(b=>b.classList.remove('active'));
+        btn.classList.add('active');
+        filter(btn.dataset.skill);
+    });
+});
+
+// default show all
+filter('All');
+</script>
+
+</body>
+</html>

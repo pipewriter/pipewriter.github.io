@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>⚡ Flashy Software‑Engineer Portfolio ⚡</title>
+<style>
+    :root{
+        --primary:#ff4d4d;
+        --secondary:#2b67f6;
+        --bg1:#1b1b1f;
+        --bg2:#25252b;
+        --card-radius:16px;
+        --anim-time:0.6s;
+        --pixel: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAOiC/dQAAAAASUVORK5CYII=");
+        font-family: "Segoe UI","Helvetica Neue",Arial,sans-serif;
+        color:#f3f3f3;
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{
+        background:var(--bg1);
+        line-height:1.45;
+        overflow-x:hidden;
+    }
+    header{
+        display:flex;
+        flex-direction:column;
+        align-items:center;
+        justify-content:center;
+        height:45vh;
+        text-align:center;
+        color:white;
+        position:relative;
+        z-index:0;
+    }
+    header::before{
+        content:"";
+        position:absolute;
+        inset:0;
+        background:linear-gradient(60deg,#ff0040,#8300ff,#0066ff,#00c2ff);
+        background-size:400% 400%;
+        animation:moveGradient 15s ease infinite;
+        z-index:-1;
+        filter:blur(60px);
+        opacity:0.65;
+    }
+    @keyframes moveGradient{
+        0%{background-position:0% 50%}
+        50%{background-position:100% 50%}
+        100%{background-position:0% 50%}
+    }
+    h1{font-size:clamp(2rem,4vw,3.5rem);letter-spacing:1px;text-shadow:0 3px 12px rgba(0,0,0,.5)}
+    p.tagline{font-weight:300;letter-spacing:.5px;max-width:700px;margin-top:1rem;font-size:1.1rem}
+    /* Skill filter bar */
+    #skills{
+        display:flex;
+        flex-wrap:wrap;
+        justify-content:center;
+        gap:.5rem;
+        padding:1.5rem 1rem;
+        background:var(--bg2);
+        position:sticky;
+        top:0;
+        z-index:10;
+        box-shadow:0 3px 6px rgba(0,0,0,.3);
+    }
+    .skill-chip{
+        display:flex;
+        align-items:center;
+        gap:.4rem;
+        background:rgba(255,255,255,.08);
+        border:2px solid transparent;
+        padding:.5rem 1rem .5rem .5rem;
+        border-radius:999px;
+        cursor:pointer;
+        user-select:none;
+        transition:transform .25s,box-shadow .25s,border-color .25s;
+        font-size:.9rem;
+    }
+    .skill-chip.active{
+        border-color:var(--primary);
+        box-shadow:0 0 8px var(--primary);
+    }
+    .skill-chip:hover{transform:translateY(-2px) scale(1.05)}
+    .skill-logo{
+        width:20px;height:20px;object-fit:contain;image-rendering:pixelated;
+        background:rgba(255,255,255,.15);border-radius:50%;
+    }
+    /* Projects grid */
+    #projects{
+        display:grid;
+        gap:2rem;
+        grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
+        padding:3rem 5vw 5rem;
+        perspective:1200px;
+    }
+    .card{
+        background:var(--bg2);
+        border-radius:var(--card-radius);
+        overflow:hidden;
+        transform-style:preserve-3d;
+        transform:translateY(40px) rotateX(12deg);
+        opacity:0;
+        transition:transform var(--anim-time) ease,opacity var(--anim-time) ease;
+        box-shadow:0 8px 18px rgba(0,0,0,.4);
+    }
+    .card.show{transform:translateY(0) rotateX(0);opacity:1}
+    .card img.thumb{display:block;width:100%;height:160px;object-fit:cover}
+    .card-body{padding:1rem}
+    .card h3{font-size:1.25rem;margin-bottom:.5rem;color:var(--primary)}
+    .card p{font-size:.9rem;color:#dadada}
+    .tags{margin-top:.75rem;display:flex;gap:.4rem;flex-wrap:wrap}
+    .tags span{
+        background:rgba(255,255,255,.1);
+        padding:.25rem .55rem;
+        border-radius:6px;
+        font-size:.7rem;
+        letter-spacing:.3px;
+    }
+    /* Card hover tilt */
+    .card:hover{
+        transform:scale(1.03) rotateX(0) translateY(-4px);
+        box-shadow:0 14px 28px rgba(0,0,0,.45);
+    }
+    /* Confetti canvas */
+    #confetti{
+        position:fixed;inset:0;pointer-events:none;z-index:50;
+    }
+</style>
+</head>
+<body>
+
+<header>
+    <h1>Jane Dev · Software Engineer</h1>
+    <p class="tagline">Crafting performant, human‑centric experiences across web, native and cloud.</p>
+</header>
+
+<!-- Skill filter bar -->
+<div id="skills"></div>
+
+<!-- Projects -->
+<main id="projects"></main>
+
+<canvas id="confetti"></canvas>
+
+<script>
+/* ---------- Data ---------- */
+const projects=[
+  {title:"Project Alpha",desc:"Realtime collaboration app with CRDT magic.",skills:["JavaScript","WebSockets"]},
+  {title:"Neural‑Net Trainer",desc:"GPU‑accelerated deep‑learning playground.",skills:["Python","CUDA","Machine Learning"]},
+  {title:"Pixel Painter",desc:"WebGL‑powered retro art tool.",skills:["WebGL","C++","OpenCL"]},
+  {title:"Task Forge",desc:"Offline‑first todo manager using service‑workers.",skills:["JavaScript","PWA"]},
+  {title:"Vision Board",desc:"RN mobile app with on‑device vision inference.",skills:["React Native","AI"]},
+  {title:"Data Dash",desc:"Interactive BI dashboards + drag‑n‑drop ETL.",skills:["SQL","D3.js","DevOps"]},
+  {title:"IoT Orchestrator",desc:"Mesh network for smart‑home devices.",skills:["C++","Rust","Embedded"]},
+  {title:"Game Engine X",desc:"Custom ECS + Vulkan renderer.",skills:["C++","Vulkan","Physics"]}
+];
+/* gather unique skills */
+const allSkills=[...new Set(projects.flatMap(p=>p.skills))].sort();
+allSkills.unshift("All");
+
+/* ---------- Build UI ---------- */
+const skillsBar=document.getElementById("skills");
+const projGrid=document.getElementById("projects");
+let activeSkill="All";
+
+allSkills.forEach(skill=>{
+  const chip=document.createElement("div");
+  chip.className="skill-chip"+(skill==="All"?" active":"");
+  chip.dataset.skill=skill;
+  chip.innerHTML=`<img class="skill-logo" src="${getPixel()}" alt=""> ${skill}`;
+  chip.addEventListener("click",()=>{setFilter(skill,chip)});
+  skillsBar.appendChild(chip);
+});
+
+/* renders cards */
+function render(){projGrid.innerHTML="";
+  projects.filter(p=>activeSkill==="All"||p.skills.includes(activeSkill))
+          .forEach((p,i)=>projGrid.appendChild(card(p,i)));
+  revealCards();
+}
+
+/* create a single card */
+function card(p,idx){
+  const el=document.createElement("article");
+  el.className="card";
+  /* sample generated placeholder thumb */
+  const img=document.createElement("img");
+  img.className="thumb";
+  img.src=generateImg(400,160,idx);
+  el.appendChild(img);
+  el.innerHTML+=`<div class="card-body">
+    <h3>${p.title}</h3><p>${p.desc}</p>
+    <div class="tags">${p.skills.map(s=>`<span>${s}</span>`).join("")}</div>
+  </div>`;
+  return el;
+}
+
+/* IntersectionObserver for reveal */
+function revealCards(){
+  const obs=new IntersectionObserver(entries=>{
+    entries.forEach(e=>{if(e.isIntersecting){e.target.classList.add("show");obs.unobserve(e.target);}})
+  },{threshold:.2});
+  document.querySelectorAll(".card").forEach(c=>obs.observe(c));
+}
+
+/* ---------- Filtering ---------- */
+function setFilter(skill,chip){
+  if(skill===activeSkill){return;} // skip if already active
+  document.querySelectorAll(".skill-chip").forEach(c=>c.classList.toggle("active",c===chip));
+  activeSkill=skill;
+  render();
+  burstConfetti();
+}
+
+/* ---------- Thumb generator (canvas → dataURI) ---------- */
+function generateImg(w,h,seed){
+  const c=document.createElement("canvas");
+  c.width=w;c.height=h;
+  const ctx=c.getContext("2d");
+  const rand=(min,max)=>Math.sin(seed++*999)*.5+.5*(max-min)+min;
+  const g=ctx.createLinearGradient(0,0,w,h);
+  g.addColorStop(0,`hsl(${rand(0,360)},72%,60%)`);
+  g.addColorStop(1,`hsl(${rand(0,360)},72%,70%)`);
+  ctx.fillStyle=g;ctx.fillRect(0,0,w,h);
+  ctx.fillStyle="rgba(255,255,255,.08)";
+  for(let i=0;i<30;i++){
+    const x=Math.random()*w,y=Math.random()*h,r=Math.random()*60;
+    ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill();
+  }
+  return c.toDataURL("image/png");
+}
+
+/* transparent pixel for skill logos */
+function getPixel(){
+  return "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAOiC/dQAAAAASUVORK5CYII=";
+}
+
+/* ---------- Confetti effect ---------- */
+const confetti=document.getElementById("confetti");
+const ctx2=confetti.getContext("2d");
+let pieces=[];
+function burstConfetti(){
+  confetti.width=innerWidth;confetti.height=innerHeight;
+  pieces=[...Array(120)].map(()=>({
+    x:Math.random()*innerWidth,y:innerHeight+Math.random()*20,
+    s:Math.random()*8+4,vs:Math.random()*2+1,
+    vy:Math.random()*-15-8,vx:(Math.random()-.5)*4,
+    rot:Math.random()*2*Math.PI,vrot:(Math.random()-.5)*.2,
+    color:`hsl(${Math.random()*360},80%,60%)`
+  }));
+}
+(function animate(){
+  requestAnimationFrame(animate);
+  ctx2.clearRect(0,0,confetti.width,confetti.height);
+  pieces.forEach(p=>{
+    p.vy+=.3;p.y+=p.vy;p.x+=p.vx;p.rot+=p.vrot;
+    ctx2.save();ctx2.translate(p.x,p.y);ctx2.rotate(p.rot);
+    ctx2.fillStyle=p.color;ctx2.fillRect(-p.s/2,-p.s/2,p.s,p.s);
+    ctx2.restore();
+  });
+  pieces=pieces.filter(p=>p.y<confetti.height+40);
+})();
+
+/* ---------- Init ---------- */
+render();
+</script>
+</body>
+</html>

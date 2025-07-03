@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Jane Doe · Software Engineer</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+/* ------------  CSS RESET  ------------ */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font:16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--fg);background:var(--bg);transition:background .4s,color .4s}
+
+/* ------------  CSS VARIABLES  ------------ */
+:root{
+  --fg:#1d1f20;--bg:#fefefe;
+  --brand:#5b5df0;
+  --accent:#ff9372;
+  --card-bg:#fff;
+  --shadow:0 6px 18px rgba(0,0,0,.07);
+}
+.dark{
+  --fg:#dedede;--bg:#151617;
+  --card-bg:#1e1f20;
+  --shadow:0 6px 18px rgba(0,0,0,.4);
+}
+
+/* ------------  LAYOUT  ------------ */
+header{min-height:100vh;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:0 1rem;background:linear-gradient(120deg,var(--brand),var(--accent));background-size:400% 400%;animation:gradientShift 12s ease-in-out infinite;color:#fff}
+@keyframes gradientShift{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
+
+header h1{font-size:clamp(2.4rem,5vw,4rem);font-weight:700;margin-bottom:.5rem}
+header h2{font-size:clamp(1rem,2.2vw,1.4rem);opacity:.85;height:1.4em}/* fixed height for typewriter */
+
+main{max-width:1100px;margin:auto;padding:4rem 1rem}
+
+/* project grid */
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:2rem;margin-top:2rem}
+.card{background:var(--card-bg);border-radius:10px;box-shadow:var(--shadow);overflow:hidden;transform:translateY(40px);opacity:0;transition:transform .6s ease,opacity .6s ease}
+.card img{width:100%;display:block}
+.card-content{padding:1.2rem}
+.card h3{margin-bottom:.5rem}
+.card p{font-size:.9rem;opacity:.8}
+
+/* lightbox */
+#lightbox{position:fixed;inset:0;background:rgba(0,0,0,.8);display:none;justify-content:center;align-items:center;z-index:999}
+#lightbox img{max-width:90vw;max-height:90vh;border-radius:12px;box-shadow:0 0 30px rgba(0,0,0,.6)}
+
+/* theme toggle */
+#theme-toggle{position:fixed;top:1rem;right:1rem;background:none;border:none;cursor:pointer;font-size:1.25rem;color:var(--fg);transition:transform .3s}
+#theme-toggle:hover{transform:scale(1.15)}
+</style>
+</head>
+
+<body>
+<!-- ---------------- HERO ---------------- -->
+<header>
+  <h1>Jane Doe</h1>
+  <h2 id="typewriter"></h2>
+</header>
+
+<!-- -------------- MAIN ------------------ -->
+<main>
+  <h2>Selected Projects</h2>
+  <section class="grid" id="projects">
+    <!-- CARD 1 -->
+    <article class="card">
+      <img src="https://source.unsplash.com/900x600?code,city" alt="Project 1 cover">
+      <div class="card-content">
+        <h3>Realtime Chat Platform</h3>
+        <p>WebSocket‑driven chat app with end‑to‑end encryption and emoji reactions.  
+        <strong>Stack:</strong> Node, Redis, Vanilla JS.</p>
+      </div>
+    </article>
+    <!-- CARD 2 -->
+    <article class="card">
+      <img src="https://source.unsplash.com/900x600?dashboard,data" alt="Project 2 cover">
+      <div class="card-content">
+        <h3>IoT Sensor Dashboard</h3>
+        <p>Single‑board computers stream data to a progressive web dashboard with offline mode.  
+        <strong>Stack:</strong> D3, IndexedDB, Web Workers.</p>
+      </div>
+    </article>
+    <!-- CARD 3 -->
+    <article class="card">
+      <img src="https://source.unsplash.com/900x600?game,retro" alt="Project 3 cover">
+      <div class="card-content">
+        <h3>Pixel‑Art Game Engine</h3>
+        <p>Created a tiny ECS‑based engine in 1000 LOC, exporting to WebAssembly for 60 fps performance.  
+        <strong>Stack:</strong> C++, Emscripten.</p>
+      </div>
+    </article>
+    <!-- Add / duplicate more cards as needed -->
+  </section>
+</main>
+
+<!-- -------------- LIGHTBOX -------------- -->
+<div id="lightbox"><img src="" alt="enlarged"></div>
+
+<!-- -------------- SCRIPTS --------------- -->
+<script>
+// ---- TYPEWRITER EFFECT ----
+const roles = ["Full‑Stack Engineer","Open‑Source Contributor","Performance Tinkerer","Dogged Bug‑Hunter"];
+let i = 0, j = 0, erase = false, speed = 90;
+const twEl = document.getElementById("typewriter");
+
+function typeLoop(){
+  const word = roles[i];
+  twEl.textContent = word.slice(0, j);
+  if (!erase){ j++; if (j === word.length+1){ erase = true; setTimeout(typeLoop,1200); return;}
+  } else { j--; if (j === 0){ erase = false; i = (i+1)%roles.length; }}
+  setTimeout(typeLoop, erase? 40 : speed);
+}
+typeLoop();
+
+// ---- SCROLL‑IN CARDS ----
+const observer = new IntersectionObserver(entries=>{
+  entries.forEach(e=>{
+    if(e.isIntersecting){ e.target.style.transform='none'; e.target.style.opacity=1; observer.unobserve(e.target); }
+  });
+},{threshold:.2});
+document.querySelectorAll('.card').forEach(c=>observer.observe(c));
+
+// ---- LIGHTBOX ----
+const lb = document.getElementById('lightbox'), lbImg = lb.querySelector('img');
+document.querySelectorAll('.card img').forEach(img=>{
+  img.addEventListener('click',()=>{ lbImg.src = img.src; lb.style.display='flex'; });
+});
+lb.addEventListener('click',()=> lb.style.display='none');
+
+// ---- THEME TOGGLE ----
+const btn = document.createElement('button');
+btn.id='theme-toggle'; btn.innerHTML='🌙';
+document.body.append(btn);
+
+function setTheme(dark){
+  document.body.classList.toggle('dark',dark);
+  btn.innerHTML = dark?'☀️':'🌙';
+  localStorage.setItem('prefers-dark',dark);
+}
+setTheme(localStorage.getItem('prefers-dark')==='true');
+btn.addEventListener('click',()=>setTheme(!document.body.classList.contains('dark')));
+</script>
+</body>
+</html>

@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+  <title>Jane Dev – Portfolio</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <!-- ─── Navigation ────────────────────────── -->
+  <header class="navbar">
+    <a href="#" class="logo">Jane<span>Dev</span></a>
+    <nav>
+      <button class="hamburger" aria-label="Menu"></button>
+      <ul class="nav-links">
+        <li><a href="#about">About</a></li>
+        <li><a href="#projects">Projects</a></li>
+        <li><a href="#contact">Contact</a></li>
+        <li><button id="themeToggle" aria-label="Toggle dark mode">🌓</button></li>
+      </ul>
+    </nav>
+  </header>
+
+  <!-- ─── Hero ──────────────────────────────── -->
+  <section class="hero" id="hero">
+    <div class="hero-inner">
+      <h1 class="intro">Hi, I'm <span class="typewriter">Jane Doe</span></h1>
+      <p class="tagline">Full‑stack engineer crafting delightful end‑to‑end experiences.</p>
+      <a href="#projects" class="btn primary">View my work ↓</a>
+    </div>
+  </section>
+
+  <!-- ─── About ─────────────────────────────── -->
+  <section class="about reveal" id="about">
+    <div class="about-text">
+      <h2>About Me</h2>
+      <p>I build fast, accessible web & mobile products with JavaScript, TypeScript and a touch of Go.</p>
+      <p>Recently I’ve been shipping AI‑enhanced tools at Series‑A scale and open‑sourcing ergonomic dev‑tooling.</p>
+    </div>
+    <div class="skills">
+      <h3>Tech Stack</h3>
+      <ul>
+        <li>ES2023 / TS5</li><li>React Native</li><li>Supabase</li>
+        <li>Rust & WASM</li><li>Python / FastAPI</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ─── Projects ──────────────────────────── -->
+  <section class="projects" id="projects">
+    <h2>Projects</h2>
+    <div class="filters">
+      <button data-filter="all" class="active">All</button>
+      <button data-filter="web">Web</button>
+      <button data-filter="ml">ML</button>
+      <button data-filter="tools">Tools</button>
+    </div>
+    <div class="project-grid">
+      <!-- Repeat this card pattern -->
+      <article class="card reveal" data-cat="web">
+        <img src="assets/img/project-1.jpg" alt="Screenshot of Project 1" loading="lazy" />
+        <div class="card-body">
+          <h3>Realtime Kanban</h3>
+          <p>Socket‑driven board that stays in sync across clients with CRDT conflict‑resolution.</p>
+          <a href="https://github.com/you/kanban" target="_blank">GitHub ↗</a>
+        </div>
+      </article>
+
+      <article class="card reveal" data-cat="ml">
+        <img src="assets/img/project-2.jpg" alt="Model visualisation dashboard" loading="lazy" />
+        <div class="card-body">
+          <h3>ModelViz</h3>
+          <p>Visual debugger for transformer attention heads, built on WebGL & Three.js.</p>
+          <a href="https://modelviz.dev" target="_blank">Live Demo ↗</a>
+        </div>
+      </article>
+
+      <!-- …add more cards as needed -->
+    </div>
+  </section>
+
+  <!-- ─── Contact ───────────────────────────── -->
+  <section class="contact reveal" id="contact">
+    <h2>Get in touch</h2>
+    <form action="mailto:your@email.com" method="post" 
+          enctype="text/plain" class="contact-form">
+      <input type="text" name="name" placeholder="Your name" required />
+      <input type="email" name="email" placeholder="Email" required />
+      <textarea name="message" rows="5" placeholder="Message…" required></textarea>
+      <button type="submit" class="btn primary">Send</button>
+    </form>
+    <div class="social">
+      <a href="https://github.com/you" aria-label="GitHub">🐙</a>
+      <a href="https://linkedin.com/in/you" aria-label="LinkedIn">💼</a>
+      <a href="https://x.com/you" aria-label="Twitter">🐦</a>
+    </div>
+  </section>
+
+  <footer>© 2025 Jane Doe · Built with plain HTML/CSS/JS</footer>
+  <script src="js/app.js" defer></script>
+</body>
+</html>

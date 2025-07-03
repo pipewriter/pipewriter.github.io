@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Jane Doe · Software Engineer</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    /* =========  RESET & BASE  ========= */
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    html{scroll-behavior:smooth;font-size:16px}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+         line-height:1.5;color:#eee;background:#111;}
+    a{color:#87cefa;text-decoration:none}
+    img,canvas{display:block;width:100%}
+    
+    /* =========  HERO  ========= */
+    header{
+      min-height:60vh;
+      display:flex;flex-direction:column;justify-content:center;align-items:center;
+      text-align:center;padding:4rem 1rem;position:relative;overflow:hidden;
+    }
+    header::before{
+      content:"";position:absolute;inset:-50%;background:
+       linear-gradient(45deg,#4631ff,#ff4f70,#ffc42d,#26ff93);
+      background-size:400% 400%;animation:bgMove 30s infinite;
+      filter:blur(120px);opacity:0.4;z-index:-1;
+    }
+    @keyframes bgMove{0%{background-position:0 0}50%{background-position:100% 100%}100%{background-position:0 0}}
+    header h1{font-size:calc(2rem + 2vw);margin-bottom:0.5rem}
+    header p{max-width:40rem;font-size:1.1rem;color:#ccc}
+    
+    /* =========  PROJECT GRID  ========= */
+    #projects{padding:4rem 1rem;max-width:1100px;margin:auto;display:grid;
+             gap:2rem;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));}
+    .project{background:#1c1c1e;border-radius:8px;overflow:hidden;
+             transform:translateY(40px);opacity:0;transition:transform .6s ease,opacity .6s ease;}
+    .project canvas{aspect-ratio:16/9;background:#000}
+    .info{padding:1rem}
+    .info h3{font-size:1.25rem;margin-bottom:.25rem}
+    .info span{font-size:.9rem;color:#aaa}
+    .info p{font-size:.95rem;margin:0.75rem 0 1rem}
+    .btn{display:inline-block;padding:.5rem 1rem;border:1px solid #87cefa;border-radius:4px;
+         transition:.3s}
+    .btn:hover{background:#87cefa;color:#000}
+    /* hover zoom */
+    .project:hover{transform:translateY(0) scale(1.03)}
+    
+    /* =========  FOOTER  ========= */
+    footer{padding:2rem 1rem;text-align:center;font-size:.85rem;color:#666}
+    
+    /* =========  REVEAL ON SCROLL  ========= */
+    .reveal-visible{transform:translateY(0);opacity:1}
+    
+    /* =========  MEDIA QUERIES  ========= */
+    @media(max-width:500px){header h1{font-size:2rem}}
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Jane Doe</h1>
+  <p>Full‑stack engineer building performant and delightful web experiences.</p>
+</header>
+
+<section id="projects">
+  <!-- ===== PROJECT CARD TEMPLATE ===== -->
+  <article class="project" data-title="Mind‑Palace Automata"
+           data-tech="C++ · OpenGL · ECS" data-desc="A 3‑D mind‑mapping tool with Factorio‑style conveyor logic."
+           data-link="https://github.com/janedoe/mind-palace">
+    <canvas class="thumb"></canvas>
+    <div class="info">
+      <h3></h3>
+      <span class="tech"></span>
+      <p class="desc"></p>
+      <a class="btn" target="_blank">View code</a>
+    </div>
+  </article>
+
+  <article class="project" data-title="Raiders Blitz Analytics"
+           data-tech="Python · FastAPI · d3.js" data-desc="Interactive dashboards revealing NFL play‑calling tendencies."
+           data-link="https://raiders.dev/blitz">
+    <canvas class="thumb"></canvas>
+    <div class="info"><h3></h3><span class="tech"></span><p class="desc"></p><a class="btn" target="_blank">Live demo</a></div>
+  </article>
+
+  <article class="project" data-title="OpenCL Kernel Visualizer"
+           data-tech="OpenCL · WebGPU" data-desc="Web‑based profiler that compares GPU kernels to CPU baselines in real time."
+           data-link="https://kernelviz.dev">
+    <canvas class="thumb"></canvas>
+    <div class="info"><h3></h3><span class="tech"></span><p class="desc"></p><a class="btn" target="_blank">Case study</a></div>
+  </article>
+</section>
+
+<footer>
+  © 2025 Jane Doe · <a href="mailto:jane@example.com">jane@example.com</a> ·  
+  <a href="https://linkedin.com/in/janedoe" target="_blank">LinkedIn</a> ·  
+  <a href="https://github.com/janedoe" target="_blank">GitHub</a>
+</footer>
+
+
+<!-- ==========  VANILLA JS ========== -->
+<script>
+/* ---------- Populate cards from data‑ attributes ---------- */
+document.querySelectorAll('.project').forEach(card=>{
+  card.querySelector('h3').textContent      = card.dataset.title;
+  card.querySelector('.tech').textContent   = card.dataset.tech;
+  card.querySelector('.desc').textContent   = card.dataset.desc;
+  const btn      = card.querySelector('.btn');
+  btn.href       = card.dataset.link;
+});
+
+/* ---------- Reveal‑on‑scroll using IntersectionObserver ---------- */
+const revealOpts={threshold:0.15};
+const revealCb=(entries,o)=>{
+  entries.forEach(entry=>{
+    if(entry.isIntersecting){
+      entry.target.classList.add('reveal-visible');
+      o.unobserve(entry.target);
+    }
+  });
+};
+const observer=new IntersectionObserver(revealCb,revealOpts);
+document.querySelectorAll('.project').forEach(el=>observer.observe(el));
+
+/* ---------- Procedurally generate abstract thumbnails ---------- */
+function genArt(canvas,seed){
+  const ctx=canvas.getContext('2d'),w=canvas.width=480,h=canvas.height=270;
+  const rnd=(()=>{let s=seed;return ()=> (s=Math.sin(s)*10000)-Math.floor(s);})();
+  // paint background gradient
+  const grad=ctx.createLinearGradient(0,0,w,h);
+  grad.addColorStop(0,`hsl(${rnd()*360},60%,30%)`);
+  grad.addColorStop(1,`hsl(${rnd()*360},60%,10%)`);
+  ctx.fillStyle=grad;ctx.fillRect(0,0,w,h);
+  // scatter translucent rectangles
+  for(let i=0;i<80;i++){
+    ctx.fillStyle=`hsla(${rnd()*360},90%,70%,.07)`;
+    const x=rnd()*w,y=rnd()*h,sw=rnd()*120+20,sh=rnd()*80+20;
+    ctx.fillRect(x,y,sw,sh);
+  }
+}
+document.querySelectorAll('.thumb').forEach((c,i)=>genArt(c,i+1));
+</script>
+
+</body>
+</html>

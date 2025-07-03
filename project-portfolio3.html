@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Jane Coder · Software Engineer</title>
+
+<!-- ==========  BASIC RESET & TYPE  ========== -->
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth;font-size:16px}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+       line-height:1.6;background:#0d1117;color:#d1d5db}
+  h1,h2,h3{line-height:1.2;margin-bottom:.4em}
+  a{color:#38bdf8;text-decoration:none}
+  a:hover{text-decoration:underline}
+  
+  /* ==========  FLASHINESS (BUT NOT TOO MUCH)  ========== */
+  :root{
+    --accent:#38bdf8;
+    --radius:12px;
+    --shadow:0 2px 6px rgba(0,0,0,.35);
+    --fade-distance:40px;
+  }
+  .fade-in{opacity:0;transform:translateY(var(--fade-distance));transition:opacity .7s ease,transform .7s ease}
+  .fade-in.is-visible{opacity:1;transform:translateY(0)}
+
+  /* ==========  LAYOUT  ========== */
+  header{min-height:50vh;display:flex;flex-direction:column;justify-content:center;align-items:center;
+         text-align:center;background:linear-gradient(135deg,#0f172a 0%,#172554 100%)}
+  header h1{font-size:clamp(2.2rem,5vw,3.5rem);color:#fff}
+  header p{max-width:28rem;margin-top:.6em;color:#cbd5e1}
+
+  section{padding:4rem 1rem;max-width:960px;margin:auto}
+  #projects{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:2rem}
+
+  .card{background:#161b22;border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;display:flex;
+        flex-direction:column;transition:transform .3s ease}
+  .card:hover{transform:translateY(-6px)}
+  .card img{width:100%;height:160px;object-fit:cover}
+  .card-body{padding:1rem;display:flex;flex-direction:column;flex:1}
+  .tags{margin:.6em 0 .8em;font-size:.85rem}
+  .tags span{background:#1e293b;color:#cbd5e1;border-radius:6px;padding:.2em .5em;margin-right:.4em}
+
+  /* ==========  CONTACT STRIP  ========== */
+  footer{padding:3rem 1rem;text-align:center}
+  .btn{display:inline-block;background:var(--accent);color:#0c0c0d;font-weight:600;padding:.75em 1.3em;
+       border-radius:var(--radius);transition:filter .25s ease}
+  .btn:hover{filter:brightness(1.15)}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Jane Coder</h1>
+  <p>Full‑stack software engineer with a passion for clean UIs, efficient APIs and playful side‑projects.</p>
+</header>
+
+<section id="about" class="fade-in">
+  <h2>About Me</h2>
+  <p>I craft reliable, maintainable web applications and enjoy closing the gap between elegant design
+     and robust engineering. My current tool‑belt includes TypeScript, React, Go and plenty of CI/CD glue.</p>
+</section>
+
+<section>
+  <h2 class="fade-in">Featured Projects</h2>
+  <div id="projects"></div>
+</section>
+
+<footer class="fade-in">
+  <h2>Let’s Build Something Great</h2>
+  <p><a class="btn" href="mailto:jane@example.com">Get in Touch</a></p>
+</footer>
+
+<!-- ==========  PORTFOLIO DATA + IMAGE GENERATOR  ========== -->
+<script>
+const projects = [
+  {
+    title: 'Realtime Kanban',
+    desc : 'Web‑socket powered task board that stays in perfect sync across clients.',
+    tags : ['TypeScript','React','WebSocket'],
+    links: {demo:'https://example.com/kanban', code:'https://github.com/jane/kanban'}
+  },
+  {
+    title: 'Go URL Shortener',
+    desc : 'Ridiculously fast URL shortener (60 k req/s) with click analytics & QR codes.',
+    tags : ['Go','Redis','Docker'],
+    links: {demo:'https://example.com/short', code:'https://github.com/jane/short'}
+  },
+  {
+    title: 'Shader Toybox',
+    desc : 'WebGL playground featuring a live‑coding editor and community gallery.',
+    tags : ['WebGL','GLSL','Monaco‑Editor'],
+    links: {demo:'https://example.com/shaders', code:'https://github.com/jane/toybox'}
+  }
+];
+
+/* --- Canvas image generator: simple but unique per project --- */
+function makeImage(seed){
+  const canvas=document.createElement('canvas');
+  canvas.width=800; canvas.height=400;
+  const ctx=canvas.getContext('2d');
+
+  // Simple seeded PRNG
+  let x=seed.charCodeAt(0)*16807%2147483647;
+  const rnd=()=> ((x = x*16807%2147483647) -1)/2147483646;
+
+  // Gradient background
+  const g=ctx.createLinearGradient(0,0,canvas.width,canvas.height);
+  for(let i=0;i<3;i++){
+    const h=Math.floor(rnd()*360);
+    g.addColorStop(i/2,`hsl(${h},70%,${55+i*10}%)`);
+  }
+  ctx.fillStyle=g; ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  // Concentric circles
+  for(let i=0;i<6;i++){
+    ctx.beginPath();
+    ctx.arc(canvas.width/2,canvas.height/2,(i+1)*60,0,Math.PI*2);
+    ctx.strokeStyle=`rgba(255,255,255,${.15-i*.02})`;
+    ctx.lineWidth=4; ctx.stroke();
+  }
+  // encode
+  return canvas.toDataURL('image/png');
+}
+
+/* --- Populate cards --- */
+const container=document.getElementById('projects');
+projects.forEach(p=>{
+  const card=document.createElement('article');
+  card.className='card fade-in';
+
+  const img=document.createElement('img');
+  img.alt=`Screenshot of ${p.title}`;
+  img.src=makeImage(p.title);       // generated preview
+  card.appendChild(img);
+
+  const body=document.createElement('div');
+  body.className='card-body';
+  body.innerHTML=`
+     <h3>${p.title}</h3>
+     <p>${p.desc}</p>
+     <div class="tags">${p.tags.map(t=>`<span>${t}</span>`).join('')}</div>
+     <p><a href="${p.links.demo}" target="_blank">Live&nbsp;Demo</a> ·
+        <a href="${p.links.code}" target="_blank">Code</a></p>`;
+  card.appendChild(body);
+  container.appendChild(card);
+});
+
+/* --- Scroll‑reveal effect (IntersectionObserver) --- */
+const io=new IntersectionObserver((entries)=>{
+  entries.forEach(e=> e.isIntersecting && e.target.classList.add('is-visible'));
+},{threshold:.2});
+document.querySelectorAll('.fade-in').forEach(el=>io.observe(el));
+</script>
+</body>
+</html>

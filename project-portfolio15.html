@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Your Name — Portfolio</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<!------------------------------------------------------------
+  CSS  ––– colours & motion kept inside one file
+------------------------------------------------------------->
+<style>
+:root{
+    --c-bg:#0f0f1a;
+    --c-card:#1b1b2d;
+    --c-accent:#32d3ff;
+    --c-text:#f0f0f7;
+    --c-muted:#8b8b9e;
+    --radius:12px;
+    --tr:.4s cubic-bezier(.16,1,.3,1);
+    font-family:'Segoe UI',system-ui,Roboto,sans-serif;
+    color:var(--c-text);
+}
+html,body{margin:0;background:var(--c-bg);scroll-behavior:smooth}
+h1,h2,h3,h4,p{margin:0}
+a{color:var(--c-accent);text-decoration:none}
+section{padding:4rem 7vw}
+.hide{display:none}
+
+/* flashy gradient sweep used in hero & cards */
+@keyframes glow{
+  0%{background-position:0% 50%}
+  50%{background-position:100% 50%}
+  100%{background-position:0% 50%}
+}
+
+/* --------------------------------------------------  HERO */
+#hero{
+  display:flex;flex-wrap:wrap;gap:2rem;align-items:center;justify-content:center;
+  background:linear-gradient(135deg,#202033 0%,#151529 100%);
+  animation:glow 12s linear infinite;
+  background-size:200% 200%;
+  color:#fff;
+}
+#hero img{
+  width:140px;height:140px;border-radius:50%;object-fit:cover;
+  border:4px solid var(--c-accent);flex-shrink:0;
+}
+#hero .name-title{max-width:400px}
+#hero h1{font-size:clamp(2rem,5vw,3rem);font-weight:600;line-height:1.2}
+#hero p{opacity:.8;margin-top:.7rem}
+
+/* --------------------------------------------------  SKILLS */
+#skills{
+  text-align:center;
+}
+.skill-list{display:flex;flex-wrap:wrap;gap:1rem;justify-content:center;margin-top:2rem}
+.skill{
+  position:relative;
+  width:120px;height:120px;border-radius:var(--radius);
+  background:var(--c-card);cursor:pointer;transition:transform var(--tr);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+}
+.skill:hover{transform:translateY(-6px) scale(1.05)}
+.skill img{width:32px;height:32px;margin-bottom:.5rem;filter:invert(1)}
+.skill .label{font-size:.9rem}
+.skill .stars{font-size:.9rem;color:gold;margin-top:.2rem;letter-spacing:-1px}
+.skill.active{outline:3px solid var(--c-accent)}
+
+/* -------------------------------------------------- PROJECTS */
+#projects{max-width:1300px;margin-inline:auto}
+.project-grid{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
+  gap:1.2rem;margin-top:2.5rem;
+}
+.project{
+  background:var(--c-card);border-radius:var(--radius);overflow:hidden;
+  display:flex;flex-direction:column;transition:transform var(--tr),box-shadow var(--tr);
+  cursor:pointer;position:relative;
+}
+.project:hover{transform:translateY(-5px);box-shadow:0 8px 20px #0008}
+.project-cover{
+  padding-top:56%; /* 16:9 ratio */
+  background:linear-gradient(135deg,#414178 0%,#2a2a4f 100%);
+  background-size:150% 150%;animation:glow 18s linear infinite;
+}
+.project .content{padding:1rem 1.3rem;display:flex;flex-direction:column;gap:.4rem}
+.project .tags{color:var(--c-accent);font-size:.75rem}
+.project .desc{font-size:.85rem;color:var(--c-muted)}
+
+/* -------------------------------------------------- JOURNEY */
+#journey .timeline{
+  display:flex;gap:2rem;overflow-x:auto;padding-bottom:1rem;
+  scroll-snap-type:x mandatory;
+}
+.journey-card{
+  flex:0 0 240px;scroll-snap-align:center;
+  background:var(--c-card);border-radius:var(--radius);padding:1.5rem;
+  display:flex;flex-direction:column;align-items:center;gap:1rem;
+  transition:transform var(--tr);
+}
+.journey-card:hover{transform:scale(1.08)}
+.journey-card img{width:60px;height:60px;border-radius:50%}
+.journey-card h4{font-size:1rem}
+.journey-card span{font-size:.8rem;color:var(--c-muted)}
+
+/* -------------------------------------------------- RESUME / CONTACT */
+#resume{display:flex;flex-direction:column;align-items:center;gap:1.5rem}
+#resume embed{width:min(90vw,700px);height:480px;border:none;border-radius:var(--radius)}
+#contact{display:flex;flex-direction:column;align-items:center;gap:.8rem;margin-top:2rem}
+button.cta{
+  background:var(--c-accent);border:none;color:#000;font-weight:600;
+  padding:.9rem 2rem;border-radius:9999px;cursor:pointer;transition:transform var(--tr);
+}
+button.cta:hover{transform:translateY(-4px)}
+footer{padding:3rem 0;text-align:center;color:var(--c-muted);font-size:.8rem}
+</style>
+</head>
+
+<body>
+
+<!------------------------------------------------ HERO ------------------------------------------------>
+<header id="hero">
+  <!-- TODO: replace src with your head‑shot -->
+  <img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgdmlld0JveD0iMCAwIDEwMCAxMDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSByPSI1MCIgZmlsbD0iI2NjY2MiLz48dGV4dCB4PSI1MCIgeT0iNTQiIGZvbnQtc2l6ZT0iNDBweCIgZmlsbD0iI2ZmZiIgZm9udC1mYW1pbHk9InNhbnMtc2VyaWYiIHRleHQtYW5jaG9yPSJtaWRkbGUiPk1FIjwvdGV4dD48L3N2Zz4=" alt="headshot">
+  <div class="name-title">
+      <h1>Your&nbsp;Name<br><small style="font-weight:400;font-size:.55em;opacity:.8">Full‑Stack Software Engineer</small></h1>
+      <p>Short punchy tagline about what you build and why you love building it.</p>
+  </div>
+</header>
+
+<!------------------------------------------------ SKILLS ------------------------------------------------>
+<section id="skills">
+  <h2>Skills / Tools</h2>
+  <p>Click a skill to filter the projects below.</p>
+  <div class="skill-list" id="skillList"><!-- populated by JS --></div>
+</section>
+
+<!------------------------------------------------ PROJECTS ------------------------------------------------>
+<section id="projects">
+  <h2>Projects</h2>
+  <div class="project-grid" id="projectGrid"><!-- populated by JS --></div>
+</section>
+
+<!------------------------------------------------ JOURNEY ------------------------------------------------>
+<section id="journey">
+  <h2>Journey</h2>
+  <div class="timeline" id="journeyTimeline"><!-- populated by JS --></div>
+</section>
+
+<!------------------------------------------------ RESUME & CONTACT ------------------------------------------------>
+<section id="resume">
+  <h2>Résumé</h2>
+  <!-- TODO: supply resume.pdf in same folder -->
+  <embed src="resume.pdf" type="application/pdf"/>
+  <a href="resume.pdf" download><button class="cta">Download PDF</button></a>
+  <div id="contact">
+      <h3>Let’s work together</h3>
+      <!-- TODO: update links -->
+      <p>📧 <a href="mailto:your@email.com">your@email.com</a></p>
+      <p>💼 <a href="https://www.linkedin.com/">LinkedIn</a> &nbsp; | &nbsp; 🐙 <a href="https://github.com/">GitHub</a></p>
+  </div>
+</section>
+
+<footer>&copy; <span id="year"></span> Your Name. All rights reserved.</footer>
+
+<!-------------------------------------------------------------
+  JAVASCRIPT  ––– data + rendering + interactivity
+-------------------------------------------------------------->
+<script>
+// ---------- Sample DATA  (swap freely) ------------------------
+const skills = [
+  {key:'js', label:'JavaScript', stars:5},
+  {key:'cpp', label:'C++', stars:4},
+  {key:'react', label:'React', stars:4},
+  {key:'opencl', label:'OpenCL', stars:3},
+  {key:'gl', label:'OpenGL', stars:3},
+  {key:'design', label:'UX Design', stars:2},
+];
+const projects = [
+  {title:'Voxel Engine', skill:['cpp','gl'], desc:'Real‑time global illumination in a home‑made vox‑engine.', url:'#'},
+  {title:'Mind Palace', skill:['js','design','react'], desc:'Gamified knowledge management app with conveyor‑belt metaphor.', url:'#'},
+  {title:'Wave Function Collapse', skill:['js','cpp'], desc:'Procedural level generator used in two shipped games.', url:'#'},
+  {title:'Factorio Mods', skill:['js'], desc:'Collection (>250 K d/ls) of QOL mods for the factory game.', url:'#'},
+  {title:'OpenCL Bench', skill:['opencl','cpp'], desc:'Benchmark harness comparing GPU kernel vs CPU SIMD.', url:'#'},
+  {title:'Portfolio Site', skill:['js','design'], desc:'You’re looking at it! 100% vanilla HTML/JS/CSS.', url:'#'},
+  {title:'AR Garden', skill:['react'], desc:'Mobile AR garden planner built with React Native & Viro.', url:'#'},
+  {title:'Raiders Fan Stats', skill:['js'], desc:'Fun dashboard tracking Las Vegas Raiders trivia.', url:'#'},
+];
+const journey = [
+  {date:'2020', place:'UC Awesome', role:'B.S. Computer Sci.', color:'#ffb703'},
+  {date:'2021‑22', place:'Big Tech Co.', role:'Software Intern', color:'#219ebc'},
+  {date:'2022‑23', place:'Pair VC Startup', role:'Full‑Stack Engineer', color:'#8ecae6'},
+  {date:'2024‑now', place:'Indie Hacker', role:'Building Mind Palace', color:'#ff6868'}
+];
+
+// ---------- RENDER helpers -----------------------------------
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
+
+function renderStars(n){
+  return '★'.repeat(n)+'<span style="opacity:.2">'+('★'.repeat(5-n))+'</span>';
+}
+function createSkillCard(s){
+  const div=document.createElement('div');
+  div.className='skill';div.dataset.key=s.key;
+  div.innerHTML=`<img src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEAAAAALAAAAAABAAEAAAI=" alt="">
+    <span class="label">${s.label}</span>
+    <span class="stars">${renderStars(s.stars)}</span>`;
+  div.addEventListener('click',()=>toggleFilter(s.key,div));
+  return div;
+}
+function createProjectCard(p){
+  const div=document.createElement('div');
+  div.className='project';div.dataset.skill=p.skill.join(' ');
+  div.innerHTML=`<div class="project-cover"></div>
+    <div class="content">
+      <h3>${p.title}</h3>
+      <span class="tags">${p.skill.map(k=>skills.find(s=>s.key===k)?.label||k).join(', ')}</span>
+      <p class="desc">${p.desc}</p>
+    </div>`;
+  div.addEventListener('click',()=>{if(p.url!=='#')window.open(p.url,'_blank')});
+  return div;
+}
+function createJourneyCard(j){
+  const div=document.createElement('div');div.className='journey-card';
+  div.innerHTML=`<img style="background:${j.color}" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEAAAAALAAAAAABAAEAAAI=" alt="">
+  <h4>${j.place}</h4>
+  <span>${j.role}</span>
+  <span>${j.date}</span>`;
+  return div;
+}
+
+// ---------- RENDER all ---------------------------------------
+skills.forEach(s=>$('#skillList').appendChild(createSkillCard(s)));
+projects.forEach(p=>$('#projectGrid').appendChild(createProjectCard(p)));
+journey.forEach(j=>$('#journeyTimeline').appendChild(createJourneyCard(j)));
+$('#year').textContent=new Date().getFullYear();
+
+// ---------- Filtering logic ----------------------------------
+let activeSkill=null;
+function toggleFilter(skillKey,elem){
+  // clear previous
+  $$('.skill.active').forEach(e=>e.classList.remove('active'));
+  if(activeSkill===skillKey){ // clicked same = clear filter
+    activeSkill=null;
+    $$('#projectGrid .project').forEach(p=>p.classList.remove('hide'));
+    return;
+  }
+  activeSkill=skillKey;elem.classList.add('active');
+  $$('#projectGrid .project').forEach(p=>{
+    p.classList.toggle('hide',!p.dataset.skill.split(' ').includes(skillKey));
+  });
+}
+
+</script>
+</body>
+</html>

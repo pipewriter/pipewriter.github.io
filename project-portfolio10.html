@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>🚀 My Flashy Portfolio</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+
+<!-- ----------  GLOBAL STYLE  ---------- -->
+<style>
+:root{
+    --accent: #ff5f6d;
+    --accent2:#ffc371;
+    --text-light:#ffffff;
+    --card-bg:rgba(255,255,255,0.10);
+    --card-border:rgba(255,255,255,0.25);
+    --transition: .35s cubic-bezier(.4,.0,.2,1);
+    --blur: 8px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+    font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color:var(--text-light);
+    background:linear-gradient(60deg,#1e3c72,#2a5298,#1e3c72);
+    background-size:600% 600%;
+    animation:bgShift 25s ease-in-out infinite;
+    overflow-x:hidden;
+}
+@keyframes bgShift{
+    0%{background-position:0% 50%}
+    50%{background-position:100% 50%}
+    100%{background-position:0% 50%}
+}
+
+/* ----------  HERO  ---------- */
+header{
+    padding:6rem 1rem 3rem;
+    text-align:center;
+}
+h1{
+    font-size:clamp(2rem,5vw,4rem);
+    letter-spacing:.03em;
+    margin-bottom:.25em;
+    background:linear-gradient(90deg,var(--accent),var(--accent2));
+    -webkit-background-clip:text;
+    color:transparent;
+}
+p.tagline{
+    font-size:clamp(1rem,1.5vw,1.3rem);
+    opacity:.9;
+}
+
+/* ----------  SKILL FILTER BAR  ---------- */
+#skillBar{
+    display:flex;
+    flex-wrap:wrap;
+    justify-content:center;
+    gap:.5rem 1rem;
+    margin:2.5rem auto;
+    max-width:900px;
+}
+.skillBtn{
+    position:relative;
+    display:flex;
+    align-items:center;
+    gap:.4rem;
+    padding:.45rem 1rem .45rem .6rem;
+    border:1px solid var(--card-border);
+    background:var(--card-bg);
+    backdrop-filter:blur(var(--blur));
+    border-radius:99px;
+    font-size:.9rem;
+    cursor:pointer;
+    transition:var(--transition);
+    user-select:none;
+}
+.skillBtn img{
+    width:20px;height:20px;
+}
+.skillBtn:hover,
+.skillBtn.active{
+    transform:translateY(-3px) scale(1.05);
+    border-color:var(--accent);
+    box-shadow:0 6px 12px rgba(0,0,0,.25);
+}
+
+/* ----------  PROJECT GRID  ---------- */
+#grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
+    gap:2rem;
+    padding:0 1.5rem 4rem;
+    max-width:1200px;
+    margin:0 auto;
+}
+.card{
+    position:relative;
+    border-radius:16px;
+    overflow:hidden;
+    background:var(--card-bg);
+    border:1px solid var(--card-border);
+    backdrop-filter:blur(var(--blur));
+    transition:var(--transition);
+    opacity:0;
+    transform:translateY(40px) scale(.95);
+}
+.card.visible{
+    opacity:1;transform:none;
+}
+.card:hover{
+    transform:translateY(-8px) scale(1.02);
+    border-color:var(--accent2);
+    box-shadow:0 10px 18px rgba(0,0,0,.4);
+}
+.card img.thumb{
+    width:100%;aspect-ratio:16/9;object-fit:cover;display:block;
+    filter:brightness(.9);
+}
+.card .body{
+    padding:1.1rem 1.2rem 1.6rem;
+}
+.card h3{
+    font-size:1.25rem;margin-bottom:.4rem;line-height:1.25;
+}
+.card p{
+    font-size:.9rem;opacity:.85;line-height:1.45;margin-bottom:1rem;
+}
+.tag{
+    display:inline-block;
+    background:rgba(255,255,255,.15);
+    padding:.15rem .6rem;
+    border-radius:99px;
+    font-size:.72rem;
+    margin:.15rem .35rem .15rem 0;
+}
+
+/* ----------  HIDE / SHOW FOR FILTER ---------- */
+.hide{
+    pointer-events:none;
+    opacity:0 !important;
+    transform:scale(.8)!important;
+}
+
+/* ----------  SCROLLBAR POLISH ---------- */
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-thumb{background:rgba(255,255,255,.25);border-radius:4px}
+::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.4)}
+</style>
+</head>
+
+<body>
+
+<header>
+    <h1>Hi&nbsp;— I’m Sam, a Software Engineer.</h1>
+    <p class="tagline">Here are a few things I’ve built lately.<br/>Click a skill to focus on projects using it.</p>
+</header>
+
+<!-- clickable skill filter bar -->
+<div id="skillBar"></div>
+
+<!-- project grid -->
+<section id="grid"></section>
+
+<!-- ----------  SCRIPT  ---------- -->
+<script>
+// ---------  DATA  ----------------------------------------------------------
+const projects = [
+  { title:"Realtime Chat App", desc:"WebSocket‑powered chat with offline caching & emoji reactions.", skills:["JavaScript","HTML","CSS"] },
+  { title:"3‑D Path‑Finding Visualizer", desc:"A‑star algorithm rendered in WebGL without external libs.", skills:["C++","OpenGL","JavaScript"] },
+  { title:"Serverless Image Optimizer", desc:"Edge‑deployed Lambda that shrinks photos 10× on the fly.", skills:["AWS","Node","TypeScript"] },
+  { title:"Crypto Dashboard", desc:"Candlestick, depth charts & live WebSocket feeds.", skills:["React","D3","JavaScript"] },
+  { title:"Native Mobile Fitness App", desc:"Tracks workouts with BLE heart‑rate monitors & charts.", skills:["Swift","iOS","Core Bluetooth"] },
+  { title:"Automated Resume Parser", desc:"NLP pipeline turning PDFs into structured JSON.", skills:["Python","spaCy","AWS"] },
+  { title:"Procedural Terrain Generator", desc:"Noise‑based landscapes & biome shading in a browser.", skills:["Rust","WASM","WebGL"] },
+  { title:"AR Measuring Tool", desc:"Uses ARKit for accurate dimensioning & scene export.", skills:["Swift","ARKit","iOS"] },
+];
+
+// transparent 1×1 gif for placeholder logos
+const blankLogo = "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
+
+// ---------  UTILS  ---------------------------------------------------------
+function uniq(arr){return [...new Set(arr.flat())]}
+
+// draw a thumbnail with canvas -> data URL
+function makeThumb(title){
+    const w=640,h=360, ctx=Object.assign(document.createElement("canvas"),{width:w,height:h}).getContext("2d");
+    // random gradient
+    const g = ctx.createLinearGradient(0,0,w,h);
+    const hue = Math.floor(Math.random()*360);
+    g.addColorStop(0,`hsl(${hue},70%,55%)`);
+    g.addColorStop(1,`hsl(${(hue+60)%360},80%,45%)`);
+    ctx.fillStyle=g;ctx.fillRect(0,0,w,h);
+    // title text
+    ctx.font="bold 40px Segoe UI, sans-serif";
+    ctx.fillStyle="rgba(255,255,255,.9)";
+    ctx.textAlign="center";ctx.textBaseline="middle";
+    ctx.fillText(title,w/2,h/2);
+    return ctx.canvas.toDataURL("image/png");
+}
+
+// ---------  BUILD SKILL BAR  ----------------------------------------------
+const skillBar = document.getElementById("skillBar");
+const skills = uniq(projects.map(p=>p.skills));
+skills.unshift("All"); // "All" filter
+skills.forEach(skill=>{
+    const btn=document.createElement("button");
+    btn.className="skillBtn";
+    btn.innerHTML=`<img src="${blankLogo}" alt=""><span>${skill}</span>`;
+    if(skill==="All")btn.classList.add("active");
+    btn.addEventListener("click",()=>applyFilter(skill,btn));
+    skillBar.appendChild(btn);
+});
+
+// ---------  BUILD PROJECT GRID  -------------------------------------------
+const grid = document.getElementById("grid");
+projects.forEach(p=>{
+    const card=document.createElement("article");
+    card.className="card";
+    card.dataset.skills=p.skills.join(",");
+    card.innerHTML=`
+        <img class="thumb" alt="${p.title}" src="${makeThumb(p.title)}">
+        <div class="body">
+            <h3>${p.title}</h3>
+            <p>${p.desc}</p>
+            ${p.skills.map(s=>`<span class="tag">${s}</span>`).join("")}
+        </div>`;
+    grid.appendChild(card);
+});
+
+// ---------  FILTER FUNCTION  ----------------------------------------------
+function applyFilter(skill,btn){
+    document.querySelectorAll(".skillBtn").forEach(b=>b.classList.toggle("active",b===btn));
+    document.querySelectorAll(".card").forEach(card=>{
+        const match = skill==="All" || card.dataset.skills.includes(skill);
+        card.classList.toggle("hide",!match);
+    });
+}
+
+// ---------  ENTRANCE ANIMATION  -------------------------------------------
+const io = new IntersectionObserver((entries)=>{
+    entries.forEach(e=>e.isIntersecting && e.target.classList.add("visible"));
+},{threshold:.3});
+document.querySelectorAll(".card").forEach(c=>io.observe(c));
+</script>
+
+</body>
+</html>

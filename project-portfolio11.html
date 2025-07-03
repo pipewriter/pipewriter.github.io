@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>⚡ Flashy Portfolio – Software Engineer</title>
+
+<!-- ──────────────────  GLOBAL STYLE  ────────────────── -->
+<style>
+/* --- Reset / base --- */
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;font-family:system-ui,Segoe UI,Roboto,sans-serif;color:#fdfdfd;overflow-x:hidden}
+
+/* Animated nebula background */
+body{
+  background:radial-gradient(circle at 20% 120%,#121212 0,#060606 40%,#000 100%);
+  animation:bgShift 20s infinite alternate ease-in-out;
+}
+@keyframes bgShift{
+  0%{background-position:0 0,0 0}
+  100%{background-position:300px 400px,‑200px -300px}
+}
+
+/* Subtle starfield overlay */
+body::before{
+  content:"";
+  position:fixed;inset:0;
+  background:url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNSIgaGVpZ2h0PSI1IiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxyZWN0IHdpZHRoPSI1IiBoZWlnaHQ9IjUiIGZpbGw9IiNmZmYiLz48L3N2Zz4=');
+  opacity:.06;
+  background-repeat:repeat;
+  background-size:5px 5px;
+  mix-blend-mode:screen;
+  pointer-events:none;
+}
+
+/* --- Layout --- */
+header{padding:3rem 1.5rem;text-align:center}
+h1{font-size:clamp(2rem,5vw,3.5rem);letter-spacing:.03em;background:linear-gradient(90deg,#ffbe0b,#fb5607,#ff006e,#8338ec,#3a86ff);background-size:300% 100%;‑webkit-background-clip:text;color:transparent;animation:hue 12s linear infinite}
+@keyframes hue{to{background-position:‑300% 0}}
+#skillBar{
+  display:flex;flex-wrap:wrap;justify-content:center;gap:.75rem;
+  padding-bottom:2rem;
+}
+.skill-btn{
+  position:relative;
+  display:flex;align-items:center;gap:.5rem;
+  padding:.5rem 1.1rem;border:2px solid #fff2;border-radius:30px;
+  cursor:pointer;user-select:none;
+  transition:transform .2s,box-shadow .2s,background-color .2s;
+}
+.skill-btn img{width:20px;height:20px}
+.skill-btn.active,
+.skill-btn:hover{background:#fff1;box-shadow:0 0 .75rem #fff3;transform:translateY(-2px)}
+main{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1.5rem;padding:1rem 1.5rem 4rem}
+
+/* --- Project card --- */
+.card{
+  position:relative;aspect-ratio:4/3;perspective:1000px;opacity:0;transform:translateY(30px);
+  animation:slideIn .8s forwards;
+}
+@keyframes slideIn{to{opacity:1;transform:none}}
+.card-inner{
+  width:100%;height:100%;
+  transform-style:preserve-3d;
+  transition:transform .6s cubic-bezier(.4,.2,.2,1);
+}
+.card:hover .card-inner{transform:rotateY(180deg)}
+.card-face{
+  position:absolute;inset:0;border-radius:12px;overflow:hidden;
+  backface-visibility:hidden;
+  box-shadow:0 8px 15px rgba(0,0,0,.4);
+  transform-origin:center;
+}
+.card-face.front canvas{width:100%;height:100%;display:block}
+.card-face.front::after{ /* glossy glare */
+  content:"";position:absolute;inset:0;background:linear-gradient(130deg,rgba(255,255,255,.15) 0%,transparent 40%);
+  mix-blend-mode:screen;pointer-events:none
+}
+.card-face.back{
+  background:#111;padding:1.25rem;
+  display:flex;flex-direction:column;justify-content:center;
+  transform:rotateY(180deg);
+}
+.card-face.back h3{margin-bottom:.5rem;font-size:1.25rem;color:#ffbe0b}
+.card-face.back p{font-size:.9rem;line-height:1.4}
+
+/* Filter (fade‑out) */
+.card.filtered{pointer-events:none;opacity:.1;filter:blur(1.5px)}
+@media(prefers-reduced-motion:reduce){
+  *{animation:none!important;transition:none!important}
+}
+</style>
+</head>
+
+<body>
+<header>
+  <h1>Flash‑Forward Portfolio</h1>
+  <nav id="skillBar"></nav>
+</header>
+<main id="grid"></main>
+
+<!-- ──────────────────  DATA + LOGIC  ────────────────── -->
+<script>
+(()=>{
+/* ---------- Project & Skill Data ---------- */
+const projects=[
+  {title:"Real‑Time Raytracer",desc:"GPU path‑tracing in WebGL2 reaching 60 FPS.",skills:["WebGL","C++","Shaders"]},
+  {title:"Distributed KV Store",desc:"Raft‑based key–value storage with hotspot‑aware sharding.",skills:["Go","Distributed Systems"]},
+  {title:"AI Code Buddy",desc:"LLM‑powered VS Code extension that learns your repo.",skills:["TypeScript","AI","NLP"]},
+  {title:"AR Indoor Nav",desc:"Monocular SLAM + floor‑plan alignment for retail spaces.",skills:["Computer Vision","Swift","iOS"]},
+  {title:"Serverless ETL",desc:"Sub‑second transforms on 1 TB+/day clickstream.",skills:["Python","AWS","Data Eng"]},
+  {title:"Game Engine Mod",desc:"Custom physics plugin & ECS optimisations.",skills:["C++","GameDev"]},
+  {title:"Live Collab Whiteboard",desc:"CRDT protocol with latency compensation <30 ms.",skills:["React","WebRTC","CRDT"]},
+  {title:"Quantum Circuit Viz",desc:"Drag‑and‑drop gate editor with on‑GPU simulation.",skills:["Rust","WASM","Quantum"]}
+];
+
+/* derive unique skill list */
+const skills=[...new Set(projects.flatMap(p=>p.skills))].sort();
+
+/* ---------- DOM Helpers ---------- */
+const q=(sel,ctx=document)=>ctx.querySelector(sel);
+const qa=(sel,ctx=document)=>[...ctx.querySelectorAll(sel)];
+const grid=q('#grid');
+const bar=q('#skillBar');
+
+/* ---------- Populate Skill Bar ---------- */
+skills.forEach(skill=>{
+  const btn=document.createElement('div');
+  btn.className='skill-btn';
+  btn.dataset.skill=skill;
+  btn.innerHTML=`<img alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="><span>${skill}</span>`;
+  btn.addEventListener('click',()=>toggleFilter(skill,btn));
+  bar.appendChild(btn);
+});
+
+/* ---------- Build Cards ---------- */
+projects.forEach((p,i)=>{
+  const card=document.createElement('div');
+  card.className='card';card.style.animationDelay=`${i*80}ms`;
+  card.dataset.skills=p.skills.join('|');
+
+  const inner=document.createElement('div');
+  inner.className='card-inner';
+
+  // — Front face (auto-generated preview) —
+  const front=document.createElement('div');
+  front.className='card-face front';
+  const canvas=document.createElement('canvas');
+  front.appendChild(canvas);
+
+  // — Back face (details) —
+  const back=document.createElement('div');
+  back.className='card-face back';
+  back.innerHTML=`<h3>${p.title}</h3><p>${p.desc}</p>`;
+
+  inner.append(front,back);
+  card.appendChild(inner);
+  grid.appendChild(card);
+
+  // draw placeholder graphic once layouted
+  requestAnimationFrame(()=>paint(canvas,p.title));
+});
+
+/* ---------- Placeholder Canvas Art ---------- */
+function paint(cv,title){
+  const w=cv.clientWidth,h=cv.clientHeight;
+  cv.width=w;cv.height=h;
+  const ctx=cv.getContext('2d');
+
+  /* diagonal gradient */
+  const g=ctx.createLinearGradient(0,0,w,h);
+  g.addColorStop(0,`hsl(${Math.random()*360},90%,60%)`);
+  g.addColorStop(1,`hsl(${Math.random()*360},90%,50%)`);
+  ctx.fillStyle=g;ctx.fillRect(0,0,w,h);
+
+  /* big translucent text */
+  ctx.font='700 40px sans-serif';
+  ctx.fillStyle='rgba(255,255,255,.18)';
+  ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillText(title, w/2, h/2, w*0.9);
+}
+
+/* ---------- Card tilt on pointer ---------- */
+grid.addEventListener('pointermove',e=>{
+  const card=e.target.closest('.card');
+  if(!card)return;
+  const rect=card.getBoundingClientRect();
+  const x=e.clientX-rect.left,y=e.clientY-rect.top;
+  const rotY=((x/rect.width)-.5)*12;
+  const rotX=(.5-(y/rect.height))*12;
+  q('.card-inner',card).style.transform=`rotateY(${rotY}deg) rotateX(${rotX}deg)`;
+});
+grid.addEventListener('pointerleave',e=>{
+  const card=e.target.closest('.card');
+  if(card)q('.card-inner',card).style.transform='';
+});
+
+/* ---------- Filtering ---------- */
+let activeSkill=null;
+function toggleFilter(skill,btn){
+  /* toggle buttons */
+  qa('.skill-btn').forEach(b=>b.classList.toggle('active',b===btn && activeSkill!==skill));
+  activeSkill = (activeSkill===skill) ? null : skill;
+
+  qa('.card').forEach(c=>{
+    const match = !activeSkill || c.dataset.skills.includes(activeSkill);
+    c.classList.toggle('filtered',!match);
+  });
+}
+
+/* ---------- Optional: reveal on scroll ---------- */
+const io=new IntersectionObserver(entries=>{
+  entries.forEach(e=>e.isIntersecting && (e.target.style.visibility=''));
+},{threshold:.2});
+qa('.card').forEach(c=>{c.style.visibility='hidden';io.observe(c)});
+})();
+</script>
+
+</body>
+</html>

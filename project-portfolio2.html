@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Jane Doe · Software Engineer</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <!-- ❖  HERO  ❖ -->
+  <header class="hero">
+    <nav class="nav">
+      <span class="logo">JD<span class="blink">_</span></span>
+      <ul class="nav‑links">
+        <li><a href="#projects">Projects</a></li>
+        <li><a href="#skills">Skills</a></li>
+        <li><a href="#about">About</a></li>
+        <li><a href="#contact">Contact</a></li>
+        <li><button id="modeToggle" aria-label="Toggle night mode">🌙</button></li>
+      </ul>
+    </nav>
+
+    <div class="hero‑inner">
+      <h1>Hi, I’m <span class="accent">Jane Doe</span>.</h1>
+      <p class="tagline">Full‑stack engineer obsessed with clean APIs & delightful UX.</p>
+      <a href="#projects" class="cta">View My Work ↓</a>
+    </div>
+    <div class="wave" aria-hidden="true"></div>
+  </header>
+
+  <!-- ❖  PROJECTS  ❖ -->
+  <section id="projects" class="section">
+    <h2 class="section‑title">Selected Projects</h2>
+    <div class="card‑grid">
+      <!-- repeat this block per project -->
+      <article class="card reveal">
+        <img src="assets/proj-1.jpg" alt="Screenshot of Project A" loading="lazy" />
+        <div class="card‑body">
+          <h3>Realtime Kanban</h3>
+          <p>Socket‑driven board with optimistic UI and CRDT merging.</p>
+          <a href="https://github.com/youruser/kanban" target="_blank"
+             rel="noopener" class="btn‑ghost">Code ↗</a>
+        </div>
+      </article>
+      <!-- five more cards omitted for brevity -->
+    </div>
+  </section>
+
+  <!-- ❖  SKILLS  ❖ -->
+  <section id="skills" class="section alt">
+    <h2 class="section‑title">Core Skills</h2>
+    <ul class="skills">
+      <li><span>JavaScript / TypeScript</span><meter max="100" value="90"></meter></li>
+      <li><span>React & React Native</span><meter max="100" value="85"></meter></li>
+      <li><span>Node, GraphQL, SQL</span><meter max="100" value="80"></meter></li>
+      <li><span>C++ & OpenCL</span><meter max="100" value="65"></meter></li>
+    </ul>
+  </section>
+
+  <!-- ❖  ABOUT  ❖ -->
+  <section id="about" class="section">
+    <h2 class="section‑title">About Me</h2>
+    <div class="about‑wrapper">
+      <img src="assets/headshot.jpg" alt="Headshot of Jane Doe" class="headshot reveal" />
+      <p class="about‑text">
+        Ten years shipping production code, from low‑latency trading platforms
+        to consumer mobile apps.  I care about <strong>developer experience</strong>,
+        <strong>accessibility</strong>, and <strong>measurable impact</strong>.  
+      </p>
+    </div>
+  </section>
+
+  <!-- ❖  CONTACT  ❖ -->
+  <section id="contact" class="section alt">
+    <h2 class="section‑title">Let’s Talk</h2>
+    <p>
+      Email <a href="mailto:jane@example.com">jane@example.com</a> or
+      message me on <a href="https://www.linkedin.com/in/janedoe/">LinkedIn</a>.
+    </p>
+  </section>
+
+  <footer>© 2025 Jane Doe • Built with vanilla JS & love</footer>
+  <button id="toTop" aria-label="Scroll to top">↑</button>
+
+  <script src="js/main.js"></script>
+</body>
+</html>

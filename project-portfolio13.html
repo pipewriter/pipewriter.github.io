@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Engineer Portfolio</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(to bottom, #0f2027, #203a43, #2c5364);
+      color: white;
+      overflow-x: hidden;
+    }
+    header {
+      text-align: center;
+      padding: 2rem;
+      background: #111;
+      animation: fadeIn 2s;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .headshot {
+      width: 150px;
+      height: 150px;
+      border-radius: 50%;
+      border: 3px solid white;
+      margin-top: 1rem;
+      object-fit: cover;
+    }
+    .skills {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 2rem;
+      padding: 2rem;
+    }
+    .skill {
+      background: rgba(255,255,255,0.1);
+      padding: 1rem;
+      border-radius: 10px;
+      text-align: center;
+      width: 120px;
+      cursor: pointer;
+      transition: transform 0.3s;
+    }
+    .skill:hover {
+      transform: scale(1.1);
+    }
+    .projects {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      padding: 2rem;
+      gap: 1rem;
+    }
+    .project {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 10px;
+      padding: 1rem;
+      width: 250px;
+      transition: transform 0.3s, background 0.5s;
+    }
+    .project:hover {
+      transform: translateY(-10px);
+      background: rgba(255,255,255,0.15);
+    }
+    .journey {
+      padding: 2rem;
+      text-align: center;
+    }
+    .journey img {
+      width: 100px;
+      height: auto;
+      margin: 1rem;
+      border-radius: 10px;
+    }
+    .resume-contact {
+      background: #111;
+      padding: 2rem;
+      text-align: center;
+    }
+    .resume-contact a {
+      display: inline-block;
+      margin: 1rem;
+      padding: 1rem 2rem;
+      background: #007BFF;
+      color: white;
+      border-radius: 5px;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Your Name</h1>
+    <img src="headshot.jpg" alt="Headshot" class="headshot" />
+  </header>
+
+  <section class="skills">
+    <div class="skill" onclick="filterProjects('JavaScript')">
+      <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB" alt="" width="32" height="32"/><br>JavaScript<br>⭐⭐⭐⭐⭐
+    </div>
+    <div class="skill" onclick="filterProjects('C++')">
+      <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB" alt="" width="32" height="32"/><br>C++<br>⭐⭐⭐
+    </div>
+    <!-- Add more skills here -->
+  </section>
+
+  <section class="projects" id="projects">
+    <!-- Sample project cards -->
+    <div class="project" data-skill="JavaScript">
+      <h3>Project 1</h3>
+      <img src="https://placekitten.com/200/100" alt="Project 1" style="width:100%"/>
+      <p>Description of Project 1.</p>
+    </div>
+    <div class="project" data-skill="C++">
+      <h3>Project 2</h3>
+      <img src="https://placebear.com/200/100" alt="Project 2" style="width:100%"/>
+      <p>Description of Project 2.</p>
+    </div>
+    <!-- Repeat until you have 8 -->
+  </section>
+
+  <section class="journey">
+    <h2>Journey</h2>
+    <p>Places I've studied and worked</p>
+    <img src="https://upload.wikimedia.org/wikipedia/commons/4/4e/School_icon.png" alt="School" />
+    <img src="https://upload.wikimedia.org/wikipedia/commons/7/75/Office_building_icon.png" alt="Work" />
+  </section>
+
+  <section class="resume-contact">
+    <a href="resume.pdf" download>Download Resume</a>
+    <a href="#">Contact Me</a>
+    <iframe src="resume.pdf" style="width:100%; height:400px; margin-top:1rem;"></iframe>
+  </section>
+
+  <script>
+    function filterProjects(skill) {
+      const projects = document.querySelectorAll('.project');
+      projects.forEach(project => {
+        project.style.display = project.dataset.skill === skill ? 'block' : 'none';
+      });
+    }
+  </script>
+</body>
+</html>

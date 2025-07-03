@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Your Name | Software Engineer Portfolio</title>
+
+<!-- ───────────  GLOBAL STYLES  ─────────── -->
+<style>
+:root{
+  --accent-1:#667eea;
+  --accent-2:#764ba2;
+  --accent-3:#ff6a00;
+  --bg:#f5f7fa;
+  --text:#333;
+  --radius:12px;
+  --shadow:0 8px 18px rgba(0,0,0,.15);
+  --trans:.35s cubic-bezier(.4,.0,.2,1);
+  --star-size:18px;
+  scroll-behavior:smooth;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font:16px/1.55 "Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text)}
+h1,h2,h3,h4{font-weight:600}
+section{padding:70px 6vw}
+a{color:var(--accent-1);text-decoration:none}
+.btn{display:inline-block;padding:10px 20px;border-radius:var(--radius);background:var(--accent-1);color:#fff;font-weight:600;transition:var(--trans)}
+.btn:hover{transform:translateY(-2px);box-shadow:var(--shadow);background:var(--accent-2)}
+/* ───────── Header ───────── */
+header{padding:100px 6vw 70px;background:linear-gradient(135deg,var(--accent-1),var(--accent-2));color:#fff;text-align:center;position:relative;overflow:hidden}
+header:before,header:after{content:"";position:absolute;width:200%;height:200%;border-radius:50%;background:rgba(255,255,255,.05);top:-80%;left:-50%;animation:float 18s infinite ease-in-out}
+header:after{animation-delay:9s}
+@keyframes float{50%{transform:translate(25%,35%) scale(1.05)}}
+#headshot{width:160px;height:160px;border-radius:50%;border:6px solid #fff;object-fit:cover;box-shadow:var(--shadow);background:#fff;animation:bob 6s infinite ease-in-out}
+@keyframes bob{50%{transform:translateY(8px)}}
+.tagline{margin-top:10px;font-size:1.2rem;opacity:.85}
+/* ───────── Skills ───────── */
+.skills-grid{display:flex;flex-wrap:wrap;gap:20px;justify-content:center;margin-top:40px}
+.skill{width:160px;cursor:pointer;padding:20px;border-radius:var(--radius);background:#fff;box-shadow:var(--shadow);text-align:center;transition:var(--trans)}
+.skill.active,.skill:hover{transform:translateY(-4px);background:var(--accent-3);color:#fff}
+.skill img.logo{width:40px;height:40px;margin-bottom:10px;border-radius:6px;background:#eee}
+.stars{display:flex;justify-content:center;gap:2px;margin-top:4px}
+.stars span{font-size:var(--star-size);color:#ffd700;filter:drop-shadow(0 0 1px rgba(0,0,0,.15))}
+.skill:not(.active) .stars span.inactive{opacity:.25}
+/* ───────── Projects ───────── */
+.projects-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:25px;margin-top:40px}
+.project-card{background:#fff;border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;display:flex;flex-direction:column;transition:var(--trans)}
+.project-card:hover{transform:translateY(-4px)}
+.project-card img{width:100%;aspect-ratio:16/9;object-fit:cover}
+.project-card>div{padding:18px 20px 25px}
+.project-card h3{font-size:1.25rem;margin-bottom:6px}
+.project-card p{font-size:.95rem;opacity:.85}
+/* ───────── Journey (vertical timeline) ───────── */
+.timeline{position:relative;margin-top:50px;padding-left:40px}
+.timeline:before{content:"";position:absolute;top:0;bottom:0;left:14px;width:4px;background:var(--accent-1)}
+.timeline li{position:relative;margin-bottom:40px;opacity:0;transform:translateY(20px);transition:var(--trans)}
+.timeline li.visible{opacity:1;transform:none}
+.timeline-img{position:absolute;left:-6px;top:0;width:36px;height:36px;border-radius:50%;background:#fff;border:4px solid var(--accent-1);box-shadow:var(--shadow);overflow:hidden}
+.timeline-img img{width:100%;height:100%;object-fit:cover}
+.timeline-content{padding:6px 14px 6px 0}
+.timeline-content span{font-size:.85rem;opacity:.65}
+/* ───────── Resume / Contact ───────── */
+#resume-contact .resume-block{margin:40px auto 60px;max-width:800px}
+#resume-contact object{width:100%;height:450px;border:0;border-radius:var(--radius);box-shadow:var(--shadow)}
+.contact{display:flex;gap:20px;flex-wrap:wrap;justify-content:center;margin-top:20px}
+/* ───────── Section reveal ───────── */
+.reveal{opacity:0;transform:translateY(30px);transition:var(--trans)}
+.reveal.visible{opacity:1;transform:none}
+</style>
+</head>
+<body>
+
+<!-- ───────────────────────── HEADER ───────────────────────── -->
+<header id="top">
+  <!-- TODO: replace src with real headshot -->
+  <img id="headshot" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="Headshot placeholder">
+  <h1>Your Name</h1>
+  <p class="tagline">Full‑Stack&nbsp;Software&nbsp;Engineer</p>
+</header>
+
+<!-- ───────────────────────── SKILLS ───────────────────────── -->
+<section id="skills" class="reveal">
+  <h2>Skills</h2>
+  <div class="skills-grid">
+    <!-- Repeat .skill blocks as needed; data-level = 1‑5 stars -->
+    <div class="skill" data-skill="JavaScript" data-level="5">
+      <img class="logo" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="">
+      <span>JavaScript</span>
+      <div class="stars"></div>
+    </div>
+    <div class="skill" data-skill="HTML/CSS" data-level="5">
+      <img class="logo" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="">
+      <span>HTML/CSS</span>
+      <div class="stars"></div>
+    </div>
+    <div class="skill" data-skill="Node.js" data-level="4">
+      <img class="logo" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="">
+      <span>Node.js</span>
+      <div class="stars"></div>
+    </div>
+    <div class="skill" data-skill="C++" data-level="3">
+      <img class="logo" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="">
+      <span>C++</span>
+      <div class="stars"></div>
+    </div>
+    <div class="skill" data-skill="OpenGL" data-level="3">
+      <img class="logo" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="">
+      <span>OpenGL</span>
+      <div class="stars"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────────────── PROJECTS ───────────────────────── -->
+<section id="projects" class="reveal">
+  <h2>Projects</h2>
+  <div class="projects-grid">
+    <!-- 8 demo projects. data-skills should list comma‑separated skills that power the filter -->
+    <div class="project-card" data-skills="JavaScript,HTML/CSS">
+      <img data-placeholder="Portfolio"></img>
+      <div>
+        <h3>Interactive Portfolio</h3>
+        <p>A lightweight static site generator with live markdown preview and drag‑and‑drop deployment.</p>
+      </div>
+    </div>
+    <div class="project-card" data-skills="Node.js,JavaScript">
+      <img data-placeholder="API"></img>
+      <div>
+        <h3>Realtime Chat API</h3>
+        <p>WebSocket‑based server handling 20k concurrent users on a single core.</p>
+      </div>
+    </div>
+    <div class="project-card" data-skills="OpenGL,C++">
+      <img data-placeholder="Renderer"></img>
+      <div>
+        <h3>Voxel Renderer</h3>
+        <p>An experimental, GPU‑driven voxel engine with dynamic LOD and PBR materials.</p>
+      </div>
+    </div>
+    <div class="project-card" data-skills="JavaScript,HTML/CSS">
+      <img data-placeholder="Game"></img>
+      <div>
+        <h3>Browser Roguelike</h3>
+        <p>Tiny procedural‑map RPG built in 13&nbsp;kB using vanilla JS and Canvas.</p>
+      </div>
+    </div>
+    <div class="project-card" data-skills="Node.js,JavaScript">
+      <img data-placeholder="CLI"></img>
+      <div>
+        <h3>Dev‑Ops CLI</h3>
+        <p>A cross‑platform toolkit for container orchestration, templating, and secret management.</p>
+      </div>
+    </div>
+    <div class="project-card" data-skills="C++,OpenGL">
+      <img data-placeholder="Physics"></img>
+      <div>
+        <h3>Soft‑Body Physics</h3>
+        <p>Real‑time mass‑spring simulation accelerated with SIMD and compute shaders.</p>
+      </div>
+    </div>
+    <div class="project-card" data-skills="HTML/CSS,JavaScript">
+      <img data-placeholder="Design"></img>
+      <div>
+        <h3>Design System</h3>
+        <p>A fully‑themed, WCAG‑compliant component library with zero‑runtime CSS utilities.</p>
+      </div>
+    </div>
+    <div class="project-card" data-skills="JavaScript,Node.js">
+      <img data-placeholder="Analytics"></img>
+      <div>
+        <h3>Edge Analytics</h3>
+        <p>Privacy‑first, cookie‑less analytics running entirely at the CDN edge.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────────────── JOURNEY ───────────────────────── -->
+<section id="journey" class="reveal">
+  <h2>Journey</h2>
+  <ul class="timeline">
+    <li>
+      <div class="timeline-img"><img data-placeholder="Uni"></div>
+      <div class="timeline-content">
+        <h4>Awesome University</h4><span>2015 – 2019</span>
+        <p>B.S. in Computer Science, minor in Mathematics.</p>
+      </div>
+    </li>
+    <li>
+      <div class="timeline-img"><img data-placeholder="Startup"></div>
+      <div class="timeline-content">
+        <h4>Rocket Start‑Up</h4><span>2019 – 2021</span>
+        <p>Founding engineer, built scalable microservice architecture on Kubernetes.</p>
+      </div>
+    </li>
+    <li>
+      <div class="timeline-img"><img data-placeholder="BigCo"></div>
+      <div class="timeline-content">
+        <h4>Big Tech Corp</h4><span>2021 – Present</span>
+        <p>Senior software engineer in the cloud acceleration group.</p>
+      </div>
+    </li>
+  </ul>
+</section>
+
+<!-- ───────────────────────── RESUME & CONTACT ───────────────────────── -->
+<section id="resume-contact" class="reveal">
+  <h2>Résumé & Contact</h2>
+  <div class="resume-block">
+    <!-- TODO: replace resume.pdf when ready -->
+    <a id="download-resume" href="resume.pdf" download class="btn">Download PDF</a>
+    <object id="embed-resume" data="resume.pdf" type="application/pdf">
+      <p>Your browser can’t show embedded PDFs. Please <a href="resume.pdf">download it</a>.</p>
+    </object>
+  </div>
+  <div class="contact">
+    <!-- TODO: replace with your real contact methods -->
+    <a class="btn" href="mailto:you@example.com">Email Me</a>
+    <a class="btn" href="tel:+15555555555">Call Me</a>
+    <a class="btn" href="https://www.linkedin.com/in/yourprofile">LinkedIn</a>
+  </div>
+</section>
+
+<!-- ───────────────────────── JAVASCRIPT ───────────────────────── -->
+<script>
+/* ===== Helper: create star rating ===== */
+function buildStars(container, level=5){
+  for(let i=1;i<=5;i++){
+    const s=document.createElement('span');
+    s.textContent='★';
+    if(i>level) s.classList.add('inactive');
+    container.appendChild(s);
+  }
+}
+
+/* ===== Helper: generate colourful placeholder images on the fly ===== */
+function makePlaceholder(text,w=480,h=270){
+  const c=document.createElement('canvas');
+  c.width=w;c.height=h;
+  const ctx=c.getContext('2d');
+  // vibrant diagonal gradient
+  const grd=ctx.createLinearGradient(0,0,w,h);
+  grd.addColorStop(0,`hsl(${Math.random()*360},70%,60%)`);
+  grd.addColorStop(1,`hsl(${Math.random()*360},70%,45%)`);
+  ctx.fillStyle=grd;ctx.fillRect(0,0,w,h);
+  // overlay text
+  ctx.font='bold 36px Segoe UI, sans-serif';
+  ctx.fillStyle='rgba(255,255,255,.9)';
+  ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillText(text,w/2,h/2);
+  return c.toDataURL('image/png');
+}
+
+/* ===== Intersection Observer for reveal animations ===== */
+const revealObserver=new IntersectionObserver(entries=>{
+  entries.forEach(e=>{
+    if(e.isIntersecting){
+      e.target.classList.add('visible');
+      revealObserver.unobserve(e.target);
+    }
+  });
+},{threshold:.15});
+
+/* ===== Intersection Observer for timeline items ===== */
+const timelineObserver=new IntersectionObserver(entries=>{
+  entries.forEach(e=>{
+    if(e.isIntersecting){
+      e.target.classList.add('visible');
+      timelineObserver.unobserve(e.target);
+    }
+  });
+},{threshold:.1});
+
+/* ===== Page init ===== */
+document.addEventListener('DOMContentLoaded',()=>{
+  /* Build star ratings */
+  document.querySelectorAll('.skill').forEach(skill=>{
+    const level=parseInt(skill.dataset.level||5,10);
+    buildStars(skill.querySelector('.stars'),level);
+  });
+
+  /* Generate placeholder images */
+  document.querySelectorAll('img[data-placeholder]').forEach(img=>{
+    const label=img.dataset.placeholder||'Demo';
+    img.src=makePlaceholder(label);
+  });
+
+  /* Reveal effects */
+  document.querySelectorAll('.reveal').forEach(el=>revealObserver.observe(el));
+  document.querySelectorAll('.timeline li').forEach(li=>timelineObserver.observe(li));
+
+  /* Skill filter */
+  const skills=document.querySelectorAll('.skill');
+  const cards=[...document.querySelectorAll('.project-card')];
+  skills.forEach(skill=>{
+    skill.addEventListener('click',()=>{
+      // toggle selection
+      if(skill.classList.contains('active')){ // reset
+        skills.forEach(s=>s.classList.remove('active'));
+        cards.forEach(c=>c.style.display='flex');
+      }else{
+        skills.forEach(s=>s.classList.remove('active'));
+        skill.classList.add('active');
+        const key=skill.dataset.skill;
+        cards.forEach(c=>{
+          const list=c.dataset.skills.split(',');
+          c.style.display=list.includes(key)?'flex':'none';
+        });
+      }
+    });
+  });
+});
+</script>
+</body>
+</html>

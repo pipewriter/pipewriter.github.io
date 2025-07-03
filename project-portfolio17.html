@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Your Name | Software Engineer Portfolio</title>
+
+<!-- ==========  GLOBAL STYLES  ========== -->
+<style>
+:root{
+  /* Theme tokens */
+  --primary:#00d1ff;
+  --secondary:#ff2dd5;
+  --bg1:#101020;
+  --bg2:#181830;
+  --card:#202030;
+  --text:#f0f0f0;
+  --star:#ffce38;
+  --transition:all .4s cubic-bezier(.25,.8,.25,1);
+  --radius:12px;
+  --shadow:0 10px 25px rgba(0,0,0,.25);
+  --section-pad:5rem 1rem;
+  scroll-behavior:smooth;
+}
+
+/* fancy shifting background */
+body{
+  margin:0;
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,Ubuntu,sans-serif;
+  color:var(--text);
+  background:linear-gradient(130deg,var(--bg1),var(--bg2));
+  background-size:400% 400%;
+  animation:bgMove 25s ease-in-out infinite;
+}
+@keyframes bgMove{
+  0%,100%{background-position:0 0}
+  50%{background-position:100% 50%}
+}
+
+h1,h2,h3{margin:.2em 0;text-align:center}
+section{padding:var(--section-pad);position:relative}
+a{color:var(--primary);text-decoration:none}
+button{all:unset;cursor:pointer}
+img{display:block;max-width:100%}
+
+.fade-in{opacity:0;transform:translateY(40px);transition:var(--transition)}
+.fade-in.visible{opacity:1;transform:none}
+
+/* ----------  NAV ---------- */
+nav{
+  position:fixed;top:0;width:100%;z-index:999;
+  backdrop-filter:blur(10px);
+  background:rgba(16,16,32,.55);
+  display:flex;justify-content:center;gap:2rem;padding:.5rem 0;
+}
+nav a{font-weight:600;padding:.25rem .5rem;border-radius:6px}
+nav a:hover{background:rgba(255,255,255,.08)}
+
+/* ----------  HERO ---------- */
+#hero{display:flex;flex-direction:column;align-items:center;text-align:center}
+#hero img{
+  border-radius:50%;width:170px;height:170px;object-fit:cover;
+  box-shadow:0 0 0 4px var(--primary),var(--shadow);
+}
+#hero h1{font-size:clamp(2rem,6vw,3.5rem)}
+#hero p{max-width:600px}
+
+/* ----------  SKILLS ---------- */
+#skills .skill-grid{
+  display:flex;flex-wrap:wrap;gap:1.2rem;justify-content:center
+}
+.skill{
+  background:var(--card);padding:1rem 1.25rem;border-radius:var(--radius);
+  box-shadow:var(--shadow);display:flex;flex-direction:column;
+  align-items:center;width:120px;transition:var(--transition)
+}
+.skill:hover{transform:translateY(-6px);box-shadow:0 15px 35px rgba(0,0,0,.35)}
+.skill img{width:32px;height:32px;margin-bottom:.6rem}
+.stars{color:var(--star);font-size:1.1rem;letter-spacing:-1px}
+
+/* ----------  PROJECTS ---------- */
+#projects .filter-bar{display:flex;flex-wrap:wrap;justify-content:center;gap:.75rem;margin-bottom:2rem}
+.filter-btn{
+  border:2px solid var(--primary);padding:.35rem .9rem;border-radius:999px;
+  font-weight:600;transition:var(--transition)
+}
+.filter-btn.active, .filter-btn:hover{
+  background:var(--primary);color:#000
+}
+.project-grid{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
+  gap:2rem
+}
+.project{
+  background:var(--card);border-radius:var(--radius);overflow:hidden;
+  box-shadow:var(--shadow);position:relative;
+  display:flex;flex-direction:column;transition:var(--transition)
+}
+.project:hover{transform:translateY(-8px)}
+.project img{aspect-ratio:4/3;object-fit:cover;width:100%}
+.project .info{padding:1rem;flex:1}
+.project .tags{font-size:.8rem;color:var(--secondary)}
+
+/* ----------  JOURNEY ---------- */
+.timeline{max-width:680px;margin-inline:auto;position:relative}
+.timeline::before{
+  content:"";position:absolute;left:calc(50% - 2px);top:0;bottom:0;width:4px;
+  background:linear-gradient(var(--primary),var(--secondary))
+}
+.milestone{
+  position:relative;margin:2.5rem 0;padding-inline:4rem 2rem;min-height:120px
+}
+.milestone:nth-child(odd){padding-inline:2rem 4rem}
+.milestone img{
+  position:absolute;left:50%;translate:-50% -50%;
+  width:80px;height:80px;border-radius:50%;object-fit:cover;
+  box-shadow:0 0 0 4px var(--bg2),var(--shadow);
+}
+.milestone:nth-child(odd) img{left:auto;right:50%}
+.milestone h3{margin:.2rem 0;font-size:1.1rem}
+.milestone p{font-size:.9rem}
+
+/* ----------  RESUME / CONTACT ---------- */
+#resume-ct{display:grid;gap:2rem;max-width:1000px;margin-inline:auto}
+#resume-ct embed{width:100%;height:600px;border:0;box-shadow:var(--shadow);border-radius:var(--radius)}
+.contact{display:flex;justify-content:center;gap:2rem;font-size:1.8rem}
+.contact a:hover{transform:scale(1.2);transition:var(--transition)}
+</style>
+</head>
+
+<body>
+<!-- ========== NAV ========== -->
+<nav>
+  <a href="#hero">Home</a>
+  <a href="#skills">Skills</a>
+  <a href="#projects">Projects</a>
+  <a href="#journey">Journey</a>
+  <a href="#resume">Résumé</a>
+</nav>
+
+<!-- ========== HERO ========== -->
+<section id="hero" class="fade-in">
+  <img id="headshot" src="textures/grass.png">
+  <!-- <img id="headshot" src="data:image/png;base64,
+  iVBORw0KGgoAAAANSUhEUgAAAJYAAACWCAMAAADc35ZYAAAAA1BMVEX///+nxBvIAAAAL0lEQVR4nO3BMQEAAADCoPdPbQ43oAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwOYEAAHCvrYMAAAAASUVORK5CYII="
+  alt="Headshot placeholder"> -->
+  <h1>Your Name</h1>
+  <p>Short punchy tagline about the kind of problems you solve and the technologies you love.</p>
+</section>
+
+<!-- ========== SKILLS ========== -->
+<section id="skills" class="fade-in">
+  <h2>Skills</h2>
+  <div class="skill-grid" id="skillGrid">
+    <!-- Each .skill must have data-skill for filtering -->
+    <div class="skill" data-skill="JavaScript"><img  src="textures/grass.png" alt="">
+      <span>JavaScript</span>
+      <div class="stars">★★★★★</div></div>
+
+    <div class="skill" data-skill="C++"><img src="data:image/png;base64,
+    iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/w8AAwMB/6X5bcgAAAAASUVORK5CYII=" alt="">
+      <span>C++</span>
+      <div class="stars">★★★★☆</div></div>
+
+    <div class="skill" data-skill="OpenCL"><img src="data:image/png;base64,
+    iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/w8AAwMB/6X5bcgAAAAASUVORK5CYII=" alt="">
+      <span>OpenCL</span>
+      <div class="stars">★★★☆☆</div></div>
+
+    <div class="skill" data-skill="HTML/CSS"><img src="data:image/png;base64,
+    iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/w8AAwMB/6X5bcgAAAAASUVORK5CYII=" alt="">
+      <span>HTML & CSS</span>
+      <div class="stars">★★★★★</div></div>
+  </div>
+</section>
+
+<!-- ========== PROJECTS ========== -->
+<section id="projects" class="fade-in">
+  <h2>Projects</h2>
+
+  <!-- Filter buttons generated automatically -->
+  <div class="filter-bar" id="filterBar"></div>
+
+  <div class="project-grid" id="projectGrid">
+    <!-- Sample projects; add more as needed -->
+    <div class="project" data-skills="JavaScript,HTML/CSS">
+      <img  src="textures/grass.png" alt="Blog Engine">
+      <div class="info">
+        <h3>Static Blog Engine</h3>
+        <p class="tags">JavaScript, Markdown</p>
+      </div>
+    </div>
+
+    <div class="project" data-skills="C++,OpenCL">
+      <img class="placeholder" data-text="Ray Tracer" alt="Ray Tracer">
+      <div class="info">
+        <h3>Realtime GPU Ray Tracer</h3>
+        <p class="tags">C++, OpenCL</p>
+      </div>
+    </div>
+
+    <div class="project" data-skills="JavaScript">
+      <img class="placeholder" data-text="Task Board" alt="Task Board">
+      <div class="info">
+        <h3>Drag‑and‑Drop Task Board</h3>
+        <p class="tags">Vue lite, IndexedDB</p>
+      </div>
+    </div>
+
+    <div class="project" data-skills="HTML/CSS,JavaScript">
+      <img class="placeholder" data-text="Game Stats" alt="Game Stats">
+      <div class="info">
+        <h3>Game Stats Dashboard</h3>
+        <p class="tags">Charts, Web Sockets</p>
+      </div>
+    </div>
+
+    <div class="project" data-skills="C++">
+      <img class="placeholder" data-text="Geometry Lib" alt="Geometry Lib">
+      <div class="info">
+        <h3>Procedural Geometry Library</h3>
+        <p class="tags">C++, STL</p>
+      </div>
+    </div>
+
+    <div class="project" data-skills="OpenCL">
+      <img class="placeholder" data-text="FFT Solver" alt="FFT Solver">
+      <div class="info">
+        <h3>Parallel FFT Solver</h3>
+        <p class="tags">OpenCL</p>
+      </div>
+    </div>
+
+    <div class="project" data-skills="JavaScript">
+      <img class="placeholder" data-text="Recipe Finder" alt="Recipe Finder">
+      <div class="info">
+        <h3>AI‑Powered Recipe Finder</h3>
+        <p class="tags">LLM API, Vanilla JS</p>
+      </div>
+    </div>
+
+    <div class="project" data-skills="HTML/CSS">
+      <img class="placeholder" data-text="CSS Art" alt="CSS Art">
+      <div class="info">
+        <h3>Pure‑CSS Pixel Art</h3>
+        <p class="tags">CSS Grid</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ========== JOURNEY TIMELINE ========== -->
+<section id="journey" class="fade-in">
+  <h2>Journey</h2>
+  <div class="timeline">
+    <div class="milestone">
+      <img src="textures/grass.png" data-text="University" alt="University">
+      <h3>B.Sc. Computer Science</h3>
+      <p>Awesome University (2015‑2019)</p>
+    </div>
+    <div class="milestone">
+      <img class="placeholder" data-text="Startup" alt="Startup">
+      <h3>Full‑Stack Engineer</h3>
+      <p>Innovative Startup (2019‑2021)</p>
+    </div>
+    <div class="milestone">
+      <img class="placeholder" data-text="Corp" alt="Corp">
+      <h3>Senior Software Engineer</h3>
+      <p>Global Tech Corp (2021‑Present)</p>
+    </div>
+  </div>
+</section>
+
+<!-- ========== RESUME & CONTACT ========== -->
+<section id="resume" class="fade-in">
+  <h2>Résumé & Contact</h2>
+  <div id="resume-ct">
+    <embed id="resumeEmbed" src="July 2025.pdf" type="application/pdf" />
+    <div style="text-align:center">
+      <a id="downloadResume" href="#" download="resume.pdf"
+         style="display:inline-block;padding:.6rem 1.2rem;border:2px solid var(--primary);border-radius:999px;font-weight:600;">Download Résumé</a>
+      <div class="contact" style="margin-top:2rem">
+        <a href="mailto:me@example.com" title="Email">📧</a>
+        <a href="https://www.linkedin.com/in/yourprofile" target="_blank" title="LinkedIn">🔗</a>
+        <a href="https://github.com/yourhandle" target="_blank" title="GitHub">💻</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==========  SCRIPTS  ========== -->
+<script>
+/* ===== helper: build placeholder images on the fly ===== */
+function generatePlaceholder(text,w=400,h=300,bg="#333",fg="#ddd"){
+  const canvas=document.createElement("canvas");
+  canvas.width=w;canvas.height=h;
+  const ctx=canvas.getContext("2d");
+  ctx.fillStyle=bg;ctx.fillRect(0,0,w,h);
+  ctx.fillStyle=fg;ctx.font="bold 28px system-ui";ctx.textAlign="center";
+  ctx.textBaseline="middle";
+  ctx.fillText(text,w/2,h/2);
+  return canvas.toDataURL("image/png");
+}
+
+/* ===== inject placeholder images ===== */
+document.querySelectorAll(".placeholder").forEach(img=>{
+  img.src=generatePlaceholder(img.dataset.text||"Image");
+});
+
+/* ===== scroll‑in animation ===== */
+const observer=new IntersectionObserver(entries=>{
+  entries.forEach(e=>{
+    if(e.isIntersecting){e.target.classList.add("visible");}
+  });
+},{threshold:.15});
+document.querySelectorAll(".fade-in").forEach(el=>observer.observe(el));
+
+/* ===== filter projects by skill ===== */
+const skillSet=[...new Set([...document.querySelectorAll(".skill")].map(s=>s.dataset.skill))],
+      bar=document.getElementById("filterBar"),
+      grid=document.getElementById("projectGrid");
+
+function buildFilters(){
+  const allBtn=document.createElement("button");
+  allBtn.textContent="All";allBtn.className="filter-btn active";bar.append(allBtn);
+  allBtn.onclick=()=>applyFilter("");
+
+  skillSet.forEach(skill=>{
+    const btn=document.createElement("button");
+    btn.textContent=skill;btn.className="filter-btn";
+    btn.onclick=()=>applyFilter(skill);
+    bar.append(btn);
+  });
+}
+function applyFilter(skill){
+  bar.querySelectorAll(".filter-btn").forEach(b=>b.classList.toggle("active",b.textContent===skill||(!skill&&b.textContent==="All")));
+  grid.querySelectorAll(".project").forEach(card=>{
+    const show=(skill==="")||card.dataset.skills.split(",").map(s=>s.trim()).includes(skill);
+    card.style.display=show?"flex":"none";
+  });
+}
+buildFilters();
+
+/* ===== optional: light parallax on mouse move (extra flash!) ===== */
+document.addEventListener("mousemove",e=>{
+  const x=(e.clientX/window.innerWidth-.5)*8;
+  const y=(e.clientY/window.innerHeight-.5)*8;
+  document.body.style.setProperty("--tiltX",y+"deg");
+  document.body.style.setProperty("--tiltY",x+"deg");
+});
+</script>
+</body>
+</html>

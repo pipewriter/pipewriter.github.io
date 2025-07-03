@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Flashy Vanilla Portfolio</title>
+
+<!--‑‑‑‑‑‑‑ Styling & Animations ‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑-->
+<style>
+    :root{
+        --accent:#14e0ff;
+        --bg1:#0f0c29;
+        --bg2:#302b63;
+        --bg3:#24243e;
+        --duration:45s;
+    }
+    /* Full‑screen animated gradient background */
+    body{
+        margin:0;
+        font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+        color:#fff;
+        background:linear-gradient(135deg,var(--bg1),var(--bg2),var(--bg3));
+        background-size:400% 400%;
+        animation:moveBackground var(--duration) ease-in-out infinite;
+        overflow-x:hidden;
+    }
+    @keyframes moveBackground{
+        0%{background-position:0 0}
+        50%{background-position:100% 100%}
+        100%{background-position:0 0}
+    }
+
+    h1{
+        text-align:center;
+        letter-spacing:1px;
+        margin:1.2rem 0 0.3rem;
+        filter:drop-shadow(0 0 6px var(--accent));
+    }
+
+    /* Skill filter chips */
+    .skills{
+        display:flex;
+        flex-wrap:wrap;
+        justify-content:center;
+        gap:.5rem;
+        margin-bottom:1rem;
+    }
+    .chip{
+        cursor:pointer;
+        padding:.45rem .9rem .45rem .55rem;
+        border:1px solid var(--accent);
+        border-radius:999px;
+        display:flex;
+        align-items:center;
+        gap:.45rem;
+        background:rgba(255,255,255,0.05);
+        transition:background .3s,transform .3s;
+        user-select:none;
+    }
+    .chip:hover{background:rgba(255,255,255,0.12); transform:translateY(-2px);}
+    .chip.active{background:var(--accent); color:#000; font-weight:600;}
+    .chip img{width:22px;height:22px;border-radius:50%;background:#fff;object-fit:cover;}
+
+    /* Project card grid */
+    .grid{
+        display:grid;
+        gap:1.2rem;
+        grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
+        max-width:1100px;
+        margin:0 auto 4rem;
+        padding:0 1.2rem;
+    }
+    .card{
+        position:relative;
+        overflow:hidden;
+        border-radius:16px;
+        background:rgba(255,255,255,0.07);
+        border:1px solid rgba(255,255,255,0.2);
+        box-shadow:0 12px 22px -10px #000;
+        transform-style:preserve-3d;
+        transition:transform .5s;
+        opacity:0;           /* start invisible; will fade/slide in */
+        animation:pop 0.8s cubic-bezier(.23,1.24,.54,1) forwards;
+    }
+    @keyframes pop{to{opacity:1;transform:translateY(0);}}
+    .card:hover{transform:rotateY(6deg) rotateX(-2deg) scale(1.03);}
+    .card img{
+        width:100%;height:160px;object-fit:cover;display:block;
+        filter:contrast(110%) saturate(1.2);
+    }
+    .info{
+        padding:1rem 1.1rem 1.4rem;
+        backdrop-filter:blur(4px);
+    }
+    .title{font-size:1.15rem;font-weight:600;margin:0 0 .5rem;}
+    .desc{font-size:.9rem;line-height:1.35;}
+    .tags{margin-top:.8rem;display:flex;gap:.4rem;flex-wrap:wrap;}
+    .tag{
+        font-size:.68rem;
+        padding:.2rem .45rem;
+        background:rgba(0,0,0,.25);
+        border:1px solid var(--accent);
+        border-radius:6px;
+        backdrop-filter:blur(2px);
+    }
+</style>
+</head>
+<body>
+
+<h1>⚡ My Animated Portfolio ⚡</h1>
+<div class="skills" id="skillBar"></div>
+<div class="grid" id="grid"></div>
+
+<!--‑‑‑‑‑‑‑ Data & Logic (Vanilla JS) ‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑-->
+<script>
+/* ------------ 1. Portfolio data -------------- */
+const projects = [
+    {name:"Reactive Dashboard",      desc:"SPA with live WebSocket charts.",     skills:["JavaScript","WebSockets","D3.js"]},
+    {name:"ML Model API",            desc:"FastAPI serving real‑time predictions.",skills:["Python","FastAPI","Machine Learning"]},
+    {name:"Mobile Fitness Tracker",  desc:"React Native app with offline sync.",  skills:["React Native","SQLite","JavaScript"]},
+    {name:"Auth Microservice",       desc:"JWT/OAuth2 microservice in Go.",       skills:["Go","Docker","OAuth2"]},
+    {name:"3D Terrain Engine",       desc:"WebGL engine rendering voxel terrain.",skills:["WebGL","C++","Shaders"]},
+    {name:"CI/CD Pipeline",          desc:"GitHub Actions pipeline with k8s deploy.",skills:["DevOps","Kubernetes","Bash"]},
+    {name:"Realtime Chat",           desc:"Peer‑to‑peer chat over WebRTC.",       skills:["WebRTC","TypeScript","Service Workers"]},
+    {name:"Algo Trading Bot",        desc:"Event‑driven equities trader.",        skills:["Python","Pandas","AsyncIO"]}
+];
+
+/* ------------ 2. Skill extraction ------------- */
+const skills = [...new Set(projects.flatMap(p=>p.skills))].sort();
+skills.unshift("All");
+
+/* Transparent 1×1 GIF placeholder for skill logos */
+const logoDataUri = "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
+
+/* ------------ 3. DOM generation --------------- */
+const skillBar = document.getElementById("skillBar");
+const grid     = document.getElementById("grid");
+
+/* Create skill chips */
+skills.forEach(skill=>{
+    const chip=document.createElement("div");
+    chip.className="chip"+(skill==="All"?" active":"");
+    chip.innerHTML=`<img src="${logoDataUri}" alt=""><span>${skill}</span>`;
+    chip.onclick=()=>filterBySkill(skill,chip);
+    skillBar.appendChild(chip);
+});
+
+/* Render all projects once */
+renderProjects();
+
+/* ------------ 4. Filtering logic -------------- */
+function filterBySkill(skill,chipEl){
+    document.querySelectorAll(".chip").forEach(c=>c.classList.toggle("active",c===chipEl));
+    renderProjects(skill==="All"?null:skill);
+}
+
+/* ------------ 5. Render grid ------------------ */
+function renderProjects(activeSkill=null){
+    grid.innerHTML="";
+    projects.forEach((p,i)=>{
+        if(activeSkill && !p.skills.includes(activeSkill)) return;
+
+        const card=document.createElement("div");
+        card.className="card";
+        card.style.animationDelay = (i*90)+'ms';   // stagger entrance
+
+        /* Image placeholder will be filled after DOM insertion */
+        card.innerHTML = `
+           <img id="img${i}" alt="${p.name}">
+           <div class="info">
+               <div class="title">${p.name}</div>
+               <div class="desc">${p.desc}</div>
+               <div class="tags">${p.skills.map(s=>`<span class="tag">${s}</span>`).join("")}</div>
+           </div>`;
+        grid.appendChild(card);
+
+        /* create procedural image */
+        generateCardImage(document.getElementById(`img${i}`),p.name,i);
+    });
+}
+
+/* ------------ 6. Procedural card images ------- */
+function generateCardImage(imgEl,title,seed){
+    const w=400,h=250;
+    const c=document.createElement("canvas");
+    c.width=w; c.height=h;
+    const ctx=c.getContext("2d");
+    /* radial gradient backdrop */
+    const grad=ctx.createRadialGradient(w/2,h/2,10,w/2,h/2,w/1.2);
+    grad.addColorStop(0,`hsl(${seed*40},85%,65%)`);
+    grad.addColorStop(1,`hsl(${(seed*40+180)%360},85%,35%)`);
+    ctx.fillStyle=grad; ctx.fillRect(0,0,w,h);
+
+    /* abstract squares */
+    for(let i=0;i<25;i++){
+        ctx.fillStyle=`hsla(${(seed*50+i*15)%360},90%,70%,0.12)`;
+        const size=20+Math.random()*60;
+        ctx.save();
+        ctx.translate(Math.random()*w,Math.random()*h);
+        ctx.rotate(Math.random()*Math.PI);
+        ctx.fillRect(-size/2,-size/2,size,size);
+        ctx.restore();
+    }
+    /* title watermark */
+    ctx.font="600 28px sans-serif";
+    ctx.fillStyle="rgba(255,255,255,0.18)";
+    ctx.textAlign="center";
+    ctx.fillText(title,w/2,h-24);
+
+    imgEl.src=c.toDataURL();
+}
+
+</script>
+</body>
+</html>
