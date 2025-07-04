@@ -1,77 +1,488 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Parker Diard – Resume</title>
-  <style>
-    body { font-family: sans-serif; max-width: 800px; margin: auto; padding: 20px; }
-    header { text-align: center; margin-bottom: 2em; }
-    h1 { margin: 0; }
-    .contact { margin: 0.5em 0; }
-    section { margin-bottom: 1.5em; }
-    h2 { border-bottom: 1px solid #ccc; padding-bottom: 0.3em; }
-    h3 { margin-bottom: 0.3em; }
-    ul { list-style-type: none; padding-left: 0; }
-    li { margin-bottom: 0.5em; }
-    small { color: #666; }
-  </style>
+<meta charset="UTF-8" />
+<title>Parker Diard - Graphics Engineer</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+
+<!-- ==========  F L A S H Y   S T Y L E S  ========== -->
+<style>
+:root{
+    --accent:#00d9ff;
+    --bg:#0e0f19;
+    --card-bg:#1b1d2b;
+    --text:#f3f6ff;
+    --duration:.6s;
+    --easing:cubic-bezier(.25,.8,.25,1);
+    font-size:16px;
+    font-family: "Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+
+body{
+    background:radial-gradient(ellipse at top,var(--accent)10%,transparent 70%) var(--bg);
+    min-height:100vh;color:var(--text);overflow-x:hidden;
+}
+
+/* ---- top hero ---- */
+header{padding:3rem 1rem 2rem;text-align:center;display:flex;flex-direction:column;align-items:center;gap:1.25rem;}
+#headshot{width:140px;height:140px;border-radius:50%;object-fit:cover;border:4px solid var(--accent);box-shadow:0 0 12px rgba(0,0,0,.55);}
+h1{font-size:2.5rem;margin-bottom:.4rem;letter-spacing:.03em;}
+h2{font-weight:400;opacity:.8;}
+
+/* ---- sticky navigation ---- */
+nav{
+    position:sticky;top:0;z-index:20;
+    backdrop-filter:blur(8px);
+    background:rgba(14,15,25,.75);
+    padding:.5rem 1rem;margin-bottom:1.5rem;
+}
+nav ul{display:flex;gap:2.5rem;justify-content:center;flex-wrap:wrap;list-style:none;}
+nav a{
+    color:var(--text);text-decoration:none;font-size:1rem;letter-spacing:.03em;
+    border-bottom:2px solid transparent;transition:border-color .25s;
+}
+nav a:hover,nav a:focus{border-color:var(--accent);}
+
+/* ---- filter bar ---- */
+#skillBar{display:flex;flex-wrap:wrap;gap:.5rem;justify-content:center;margin:2rem 0 0;}
+.filter-btn{
+    display:flex;align-items:center;gap:.45rem;
+    background:linear-gradient(135deg,#2e3043 0%,#171822 100%);
+    border:2px solid transparent;border-radius:2rem;
+    color:var(--text);padding:.45rem 1rem .45rem .6rem;
+    cursor:pointer;transition:background .3s;
+    position:relative;font-size:.95rem;
+}
+.filter-btn::after{content:'';position:absolute;inset:0;border-radius:inherit;
+    background:var(--accent);opacity:0;transition:opacity .3s;}
+.filter-btn.active::after{opacity:.4;}
+.filter-btn:hover{background:#2c2e40;}
+.filter-btn > img{width:22px;height:22px;border-radius:50%;background:#d6d6d6;object-fit:cover;}
+.stars{font-size:.8rem;letter-spacing:-.05em;user-select:none;}
+
+/* ---- grid ---- */
+#grid{display:grid;gap:1.5rem;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));
+      padding:2rem 1rem 4rem;width:100%;max-width:1400px;margin:0 auto;}
+.card{
+    background:var(--card-bg);border-radius:1rem;overflow:hidden;
+    box-shadow:0 10px 20px rgba(0,0,0,.45);
+    transform:translateY(40px) scale(.95);opacity:0;
+    animation:enter var(--duration) var(--easing) forwards;
+    text-decoration:none;color:inherit;
+}
+@keyframes enter{to{transform:none;opacity:1;}}
+.card img.banner{width:100%;display:block;height:160px;object-fit:cover;}
+.card-content{padding:1rem;}
+.card h3{margin:0 0 .25rem;font-size:1.25rem;}
+.card p{font-size:.9rem;line-height:1.45;opacity:.85;margin-bottom:.9rem;}
+.tag{
+     display:inline-flex;align-items:center;gap:.35rem;
+     font-size:.75rem;background:var(--accent);
+     color:#000;border-radius:.4rem;padding:.15rem .55rem;margin:.15rem .25rem 0 0;
+}
+.tag img{width:16px;height:16px;object-fit:cover;border-radius:50%;}
+.tag .stars{font-size:.65rem;}
+/* subtle hover lift */
+.card:hover{transform:translateY(-6px) scale(1.02);}
+.card:hover img.banner{filter:brightness(1.08) contrast(1.1);}
+.hidden{display:none!important;}
+
+/* ---- About & Contact Sections ---- */
+section{padding:4rem 1rem 5rem;max-width:900px;margin:0 auto;}
+section h2{font-size:2rem;margin-bottom:1.5rem;text-align:center;}
+.about-card{
+    background:var(--card-bg);padding:2rem;border-radius:1rem;
+    line-height:1.6;font-size:1rem;box-shadow:0 10px 20px rgba(0,0,0,.45);
+}
+#contact .contact-links a{
+    color:var(--accent);text-decoration:none;margin-right:1.25rem;font-weight:500;
+}
+#contact iframe{width:100%;height:280px;border:0;border-radius:1rem;box-shadow:0 10px 20px rgba(0,0,0,.45);}
+@media(max-width:600px){
+    nav ul{gap:1.2rem;}
+    #contact .contact-links a{display:block;margin:.4rem 0;}
+}
+</style>
 </head>
+
 <body>
-  <header>
-    <h1>Parker Diard</h1>
-    <p class="contact"><a href="mailto:prdiard@gmail.com">prdiard@gmail.com</a> • (919) 961-4927 • Mountain View, CA</p>
-  </header>
-  <section id="summary">
-    <h2>Summary</h2>
-    <p>I am a C++ and GPU compute specialist with proven experience in real-time rendering pipelines, AR/VR frameworks, and low-latency graphics optimizations. I have a track record of integrating advanced rendering technologies—OpenGL, OpenCL—and delivering robust systems from concept to deployment.</p>
-  </section>
-  <section id="experience">
-    <h2>Experience</h2>
-    <h3>Relentless Adrenaline (Google DeepMind) – Robot Wrangler (Contract) <small>Aug 2024 - Present</small></h3>
-    <ul>
-      <li>Aid and operate robots so that they can perform useful tasks for humans.</li>
-      <li>Improve robot operations by modifying scripts and making “critiques” in internal Google systems (Python, C++, Linux, ROS2).</li>
-    </ul>
-    <h3>Parkerspace – Founder <small>Jul 2023 - Present</small></h3>
-    <ul>
-      <li>Built a proprietary rendering engine tailored for AR environments using OpenGL, geometry shaders, OpenCL kernels, and Java/C++ FFIs to achieve sub-16 ms frame render times.</li>
-      <li>Incorporated OpenXR for device-agnostic headset support; tested on Meta Quest 3.</li>
-      <li>Attracted over 100 early adopters who launched and evaluated the engine, generating feedback on user comfort and stability.</li>
-      <li>215 Steam wishlists as of January 13, 2025.</li>
-    </ul>
-    <h3>WorldLink (Samsung Research America) – Software Engineer, Graphics <small>Aug 2022 - Jul 2023</small></h3>
-    <ul>
-      <li>Contributed to a $2M+ AR/VR prototype project, enhancing rendering quality on custom shaders.</li>
-      <li>Debugged critical rendering blockers on a Vulkan-based pipeline for Unity and Chromium integration.</li>
-      <li>Coordinated weekly with a global team to refine rendering fidelity and stability.</li>
-      <li>Worked extensively with AOSP for VR headsets including ADB, intents, and ARCore.</li>
-    </ul>
-    <h3>Genesys Cloud Inc. – Associate Software Engineer, Full Stack <small>Mar 2018 - May 2019</small></h3>
-    <ul>
-      <li>Maintained a high-availability customer engagement platform using Redis, AWS S3, EC2, and modern frontend technologies.</li>
-      <li>Wrote unit tests with Mocha, Chai, and Puppeteer, improving frontend resilience.</li>
-    </ul>
-    <h3>Altec Industries – Plant Systems Developer II <small>Jan 2016 - Mar 2018</small></h3>
-    <ul>
-      <li>Developed plant systems and automation tools to improve manufacturing efficiency.</li>
-    </ul>
-  </section>
-  <section id="education">
-    <h2>Education</h2>
-    <p><strong>North Carolina State University</strong><br>Computer Science, Magna Cum Laude (3.55 GPA) • 2017 - Present</p>
-  </section>
-  <section id="skills">
-    <h2>Skills</h2>
-    <p><strong>Graphics &amp; Compute:</strong> OpenGL, Vulkan, OpenCL, CUDA, GLSL, HLSL, Geometry Shaders, GPU Profiling &amp; Optimization</p>
-    <p><strong>Programming Languages:</strong> C++, C, Java, Python, JavaScript</p>
-  </section>
-  <a href="triangles.html">plain webgl triangles shader</a>
-  <a href="bluetriangle.html">blue webxr triangles example</a>
-  <a href="portfolio.html">another</a>
-  <a href="nice.html">another</a>
-  <a href="lavalamp3.html">another</a>
-  <a href="sphere_shader.html">another</a>
+<header>
+    <!-- HEADSHOT -->
+    <img id="headshot" src="images/headshot.jpg" alt="Jane Doe headshot">
+    <div>
+      <h1>⛰️ Parker Diard — Graphics Engineer</h1>
+      <h2>inventing creative tools for the new age</h2>
+    </div>
+
+    <!-- skills filter -->
+    <div id="skillBar"></div>
+</header>
+
+<!-- sticky nav -->
+<nav>
+  <ul>
+    <li><a href="#grid">Portfolio</a></li>
+    <li><a href="#about">About Me</a></li>
+    <li><a href="#contact">Contact</a></li>
+  </ul>
+</nav>
+
+<!-- project grid -->
+<main id="grid"></main>
+
+<!-- ==========  A B O U T   M E ========== -->
+<section id="about">
+  <h2>About Me</h2>
+  <div class="about-card">
+
+    <p>Hi, I'm Parker, a graphics engineer who is focused on making powerful tools
+      to help people remember better. I moved out to California after listening to
+      Peter Thiel explain how my personal heroes were able to change the world with
+      new technologies by being non-imitative.
+    </p>
+    <p>
+      I believe that in the future, many of the current computer usage methods will
+      give way to an environment that is more human-brain ergonomic. 
+      The brain is adapted to memorizing a 3D environment, sound, song, smell, or through
+      conversational cues -- and not through a giant chronologically sorted list.
+      I intend to invent that project, or join a company that has that mission.
+    </p>
+    <!-- <p>Hi — I’m Parker, a graphics engineer who loves turning math into magic on screen.  
+       My happy place is somewhere between a vertex shader and a spiral‑bound notebook full of doodles, 
+       and I’m currently building creative tooling that helps artists work at the speed of imagination.</p>
+    <p>When I’m not bending triangles you’ll find me exploring California’s coastal trails, 
+       experimenting with home‑roasted coffee, or hacking together tiny web toys (like this site!).</p> -->
+  </div>
+</section>
+<!-- ==========  J O U R N E Y  (vertical timeline)  ========== -->
+<section id="journey">
+
+  <!-- ----------  S T Y L E  ---------- -->
+  <style>
+  /* layout */
+  #journey{padding:4rem 1rem;max-width:1000px;margin:0 auto;position:relative;font-family:inherit}
+  #journey h2{font-size:2rem;margin-bottom:3rem;text-align:center;color:#fff;font-weight:600}
+
+  /* central red line */
+  #journey .line{
+      position:absolute;left:50%;top:0;transform:translateX(-50%);
+      width:3px;background:#e61c23;height:0; /* grows on scroll */
+      transition:height 1.2s ease-out;
+  }
+
+  /* list + items */
+  #journey ul{list-style:none;padding:0;margin:0}
+  #journey li{
+      position:relative;padding:0 0 3.5rem;opacity:0;transform:translateX(var(--offset,0));
+      transition:opacity .6s ease-out,transform .6s ease-out;
+  }
+  #journey li.in-view{opacity:1;transform:none}
+
+  /* marker dot */
+  #journey .marker{
+      position:absolute;left:50%;top:0;transform:translate(-50%,-50%);
+      width:10px;height:10px;background:#e61c23;border-radius:50%;
+  }
+
+  /* card box */
+  #journey .card{
+      position:relative;width:calc(50% - 50px);background:#fff;border-radius:4px;
+      box-shadow:0 2px 8px rgba(0,0,0,.15);padding:1.25rem 1.5rem;
+  }
+  #journey .card h4{margin:.25rem 0 .15rem;font-size:1.1rem;color:#111}
+  #journey .card h5{margin:0 0 .5rem;font-weight:500;font-size:.9rem;color:#555}
+  #journey .card p{margin:.4rem 0 0;font-size:.9rem;line-height:1.45;color:#333}
+  #journey .card time{font-size:.8rem;font-weight:600;color:#e61c23;text-transform:uppercase;letter-spacing:.025em}
+
+  /* pointer triangles */
+  #journey .card::after{
+      content:"";position:absolute;top:1rem;
+      border:8px solid transparent;
+  }
+  /* left / right placement */
+  #journey li.left  {--offset:-40px;text-align:right}
+  #journey li.left  .card{margin-right:auto}
+  #journey li.left  .card::after{right:-8px;border-left-color:#fff}
+  #journey li.right {--offset:40px;text-align:left}
+  #journey li.right .card{margin-left:auto}
+  #journey li.right .card::after{left:-8px;border-right-color:#fff}
+
+  /* image grid inside card (optional) */
+  #journey .imgs{display:grid;grid-template-columns:repeat(2,1fr);gap:.5rem;margin-top:.7rem}
+  #journey .imgs img{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:3px}
+
+  /* responsive single‑column */
+  @media(max-width:639px){
+      #journey .card{width:100%;margin:0}
+      #journey li{--offset:0;text-align:left}
+      #journey li .card::after{left:calc(50% - 8px);transform:translateX(-50%) rotate(90deg);border:none;border-top:8px solid #fff;border-left:8px solid transparent;border-right:8px solid transparent;}
+  }
+  </style>
+
+  <!-- <h2>My Journey</h2> -->
+  <div class="line" id="journeyLine"></div>
+  <ul id="journeyList"></ul>
+
+  <!-- ----------  S C R I P T  ---------- -->
+  <script>
+  // chronological data ‑‑ add up to six items with two images each
+  const journeyData = [
+    {
+      date:"August 2024 – present",
+      title:"Robot Wrangler",
+      company:"Relentless Adrenaline (Deepmind contractor)",
+      desc:"Streamline the process for 2-armed and humanoid robots",
+      imgs:["images/xmoonshot.jpg","images/aloha2.png"]
+    },
+    {
+      date:"Aug 2023 – July 2024",
+      title:"Mind Palace Project",
+      company:"Entrepreneurial",
+      desc:"Brought it to market, receiving over 100 launches",
+      imgs:["images/ps2.png","images/ps3.png"]
+    },
+    {
+      date:"Jun 2022 – Jul 2023",
+      title:"Graphics Software Engineer",
+      company:"WorldLink (Samsung Contractor)",
+      desc:"Progressed Unity app that used IPC with chromium. Custom chromium build. Interfaced with AndroidXR team.",
+      imgs:["images/samsung.jpg","images/moohan.png"]
+    },
+    {
+      date:"Jan 2022 – Jun 2022",
+      title:"Mind palace V0",
+      company:"Entrepreneurial",
+      desc:"This is a long running project for me and I began it here and it was my first 3d engine ",
+      imgs:["images/ps4.png","images/ps5.png"]
+    },
+    {
+      date:"2021",
+      title:"Rogue World Kickstarter",
+      company:"Entrepreneurial",
+      desc:"With my two friends we made a fully multiplayer procedural mmo with an expansive world and exhaustible resources",
+      imgs:["images/rw-team.avif","images/rw-zoom.webp"]
+    },
+    {
+      date:"2020",
+      title:"NovelBase Kickstarter (Successful)",
+      company:"Entrepreneurial",
+      desc:"Zettelkasten project while I taught myself opengl. Profit: $4k",
+      imgs:["images/novelbase.png"]
+    },
+    {
+      date:"2018 – 2019",
+      title:"Full Stack Engineer",
+      company:"Genesys Telecommunications",
+      desc:"Worked on frontend and backend all in node and vanilla js",
+      imgs:["images/genesys.png","images/cobrowse.png"]
+    },
+    {
+      date:"2017",
+      title:"Computer Science BS",
+      company:"NCSU",
+      desc:"3.55 gpa",
+      imgs:["images/EB2-Cover.jpg"]
+    }
+  ];
+
+  /* ---------- build DOM ---------- */
+  const list = document.getElementById("journeyList");
+  journeyData.forEach((e,i)=>{
+      const li = document.createElement("li");
+      li.className = i%2 ? "right" : "left";
+      li.innerHTML = `
+          <span class="marker"></span>
+          <div class="card">
+              <time>${e.date}</time>
+              <h4>${e.title}</h4>
+              <h5>${e.company}</h5>
+              <p>${e.desc}</p>
+              ${e.imgs?.length?
+                 `<div class="imgs">${e.imgs.slice(0,2).map(src=>`<img src="${src}" loading="lazy" alt="">`).join("")}</div>`:""}
+          </div>`;
+      list.appendChild(li);
+  });
+
+  /* ---------- animations ---------- */
+  const items = [...document.querySelectorAll("#journey li")];
+  const line  = document.getElementById("journeyLine");
+
+  /* grow red line once section itself is visible */
+  const sectionObserver = new IntersectionObserver(ent=>{
+      if(ent[0].isIntersecting){
+          line.style.height = list.scrollHeight+"px";
+          sectionObserver.disconnect();
+      }
+  },{threshold:.1});
+  sectionObserver.observe(document.getElementById("journey"));
+
+  /* fade / slide in cards */
+  const itemObserver = new IntersectionObserver(entries=>{
+      entries.forEach(e=>{
+          if(e.isIntersecting){
+              e.target.classList.add("in-view");
+              itemObserver.unobserve(e.target);
+          }
+      });
+  },{threshold:.2});
+  items.forEach(i=>itemObserver.observe(i));
+  </script>
+
+</section>
+
+<!-- ==========  C O N T A C T ========== -->
+<section id="contact">
+  <h2>Let’s Get in Touch</h2>
+  <div class="about-card">
+    <!-- Map -->
+    <iframe
+      loading="lazy"
+      allowfullscreen
+      referrerpolicy="no-referrer-when-downgrade"
+      src="https://www.google.com/maps/embed?pb=!1m14!1m8!1m3!1d25334.840191303998!2d-122.0839!3d37.3861!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x0%3A0x0!2zMzfCsDIzJzExLjkiTiAxMjLCsDA1JzAxLjkiVw!5e0!3m2!1sen!2sus!4v1717440000000">
+    </iframe>
+
+    <!-- quick links -->
+    <div class="contact-links" style="margin-top:1.5rem;">
+      <a href="mailto:prdiard@gmail.com">prdiard@gmail.com</a>
+      <a href="https://github.com/pipewriter" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://www.linkedin.com/in/parkerdiard" target="_blank" rel="noopener">LinkedIn</a>
+    </div>
+  </div>
+</section>
+
+<!-- ==========  P O R T F O L I O   L O G I C  ========== -->
+<script>
+// -----------------------------
+// a 1×1 px transparent placeholder
+const blankLogo = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAAWgmWQ0AAAAASUVORK5CYII=";
+// -----------------------------
+// SKILL METADATA
+const skillMeta = {
+    "C++":         {rating:3, img:"logos/cpp.svg"},
+    "Java ":         {rating:5, img:"logos/java.svg"},
+    "OpenGL":      {rating:4, img:"logos/opengl.svg"},
+    "WebGL":      {rating:4, img:"logos/webgl.svg"},
+    "JavaScript":  {rating:5, img:"logos/js.svg"},
+    "Supabase":    {rating:2, img:"logos/supabase.png"},
+    "DevOps":      {rating:4, img:"logos/devops.svg"},
+    "OpenCL":      {rating:3, img:"logos/opencl.svg"},
+    "AI":          {rating:4, img:"logos/ai.svg"},
+    "React":       {rating:3, img:"logos/react.svg"},
+    "WebXR":       {rating:4, img:"logos/webxr.png"},
+    "ThreeJS":       {rating:3, img:"logos/threejs-original.svg"},
+    "GLSL":       {rating:4, img:"logos/glsl.png"},
+    "WebGL":       {rating:4, img:"logos/webgl.png"},
+};
+// -----------------------------
+// PROJECTS
+const projects = [
+  { title:"Procedural Mind Palace ",
+    desc:"\"A Shared Memory\" is the first of its kind to allow for all media to be embeddable in a procedural, distinctive world",
+    skills:["Java ","OpenGL", "GLSL"],
+    url:"https://store.steampowered.com/app/2367280/A_Shared_Memory/",
+    img:"images/ps.png" },
+  { title:"Unnamed VR Shared Image Viewer App",
+    desc:"Browse a set of images inside of a Lava Lamp with a friend seeing the same thing -- even permits supine browsing. Try in VR!",
+    skills:["JavaScript","WebXR","ThreeJS"],
+    url:"https://pipewriter.github.io/webxr-get-rooms-shared.html?rooms=rooms.json&room=expression2",
+    img: "images/attentionfocus.png" },
+  { title:"React Native Supabase Takehome",
+    desc:"Made this for an interview",
+    skills:["JavaScript","React","Supabase"],
+    url:"https://github.com/pipewriter/react-native-supabase",
+    img:"images/reactsupabase.jpg" },
+  { title:"Rogue World Java MMO",
+    desc:"like the game RuneScape but everything is procedural",
+    skills:["Java ","OpenGL", "GLSL"],
+    url:"https://www.youtube.com/watch?v=1v4U8AQpIE8",
+    img:"images/rw6.png" },
+  { title:"NovelBase Zettelkasten Tool",
+    desc:"Zettelkasten but each link has a memorable identifier. The traversal also has a twist",
+    skills:["Java ","OpenGL", "GLSL"],
+    url:"https://novelbase.itch.io/novelbase",
+    img:"images/novelbase.gif" },
+  { title:"Triangle WebGL",
+    desc:"fun day project when I was learning webgl.",
+    skills:["JavaScript","WebGL", "GLSL"],
+    url:"https://github.com/pipewriter/TriangleWebGL",
+    img:"images/triangles.png" }
+];
+
+// =============================================================
+//                BUILD  SKILL  FILTER  BAR
+// =============================================================
+const allSkills = [...new Set(projects.flatMap(p=>p.skills))].sort();
+const skillBar = document.getElementById("skillBar");
+let activeSkill = null;
+const starHTML = r => `<span class="stars">${"★".repeat(r)}${"☆".repeat(5-r)}</span>`;
+allSkills.forEach(skill=>{
+  const meta = skillMeta[skill] || {rating:3,img:null};
+  const btn = document.createElement("button");
+  btn.className="filter-btn";
+  const imgSrc = meta.img || blankLogo;
+  btn.innerHTML=`<img src="${imgSrc}" alt=""> ${skill} ${starHTML(meta.rating)}`;
+  btn.addEventListener("click",()=>{
+      activeSkill = (activeSkill===skill? null : skill);
+      updateFilter();
+      [...skillBar.children].forEach(b=>b.classList.toggle("active", b.dataset.skill===activeSkill));
+  });
+  btn.dataset.skill = skill;
+  skillBar.appendChild(btn);
+});
+
+// =============================================================
+//                BUILD  PROJECT  CARDS
+// =============================================================
+const grid = document.getElementById("grid");
+projects.forEach((p,i)=>{
+  const card = document.createElement("a");
+  card.className="card";
+  card.href = p.url; card.target="_blank" ; card.rel="noopener";
+  card.dataset.skills = p.skills.join("|");
+  let bannerURL = p.img;
+  if(!bannerURL){
+      const canvas = document.createElement("canvas");
+      canvas.width=800; canvas.height=400;
+      const ctx = canvas.getContext("2d");
+      const g = ctx.createLinearGradient(0,0,canvas.width,canvas.height);
+      g.addColorStop(0,`hsl(${(i*47)%360},90%,55%)`);
+      g.addColorStop(1,`hsl(${(i*47+80)%360},80%,35%)`);
+      ctx.fillStyle=g; ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.globalAlpha=0.2; ctx.lineWidth=40;
+      for(let x=-canvas.height;x<canvas.width*1.5;x+=80){
+        ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x+canvas.height,canvas.height);
+        ctx.strokeStyle="#fff";ctx.stroke();
+      }
+      bannerURL = canvas.toDataURL();
+  }
+  card.innerHTML = `
+      <img class="banner" src="${bannerURL}" alt="${p.title} banner">
+      <div class="card-content">
+          <h3>${p.title}</h3>
+          <p>${p.desc}</p>
+          ${p.skills.map(s=>{
+              const m = skillMeta[s] || {rating:3,img:null};
+              return `<span class="tag">
+                         ${m.img?`<img src="${m.img}" alt="">`:""}
+                         ${s} ${starHTML(m.rating)}
+                      </span>`
+          }).join("")}
+      </div>`;
+  grid.appendChild(card);
+});
+
+// =============================================================
+//                FILTER  HANDLING
+// =============================================================
+function updateFilter(){
+  [...grid.children].forEach(card=>{
+    const match = !activeSkill || card.dataset.skills.includes(activeSkill);
+    card.classList.toggle("hidden", !match);
+  });
+}
+[...grid.children].forEach((c,idx)=>c.style.animationDelay=`${idx*80}ms`);
+</script>
 </body>
 </html>
-

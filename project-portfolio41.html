@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Mind Palace – Project Deep Dive</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+
+<!-- ==========  S H A R E D   S T Y L E S  (copied from portfolio)  ========== -->
+<style>
+:root{
+    --accent:#00d9ff;
+    --bg:#0e0f19;
+    --card-bg:#1b1d2b;
+    --text:#f3f6ff;
+    --duration:.6s;
+    --easing:cubic-bezier(.25,.8,.25,1);
+    font-size:16px;
+    font-family:"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+body{
+    background:radial-gradient(ellipse at top,var(--accent)10%,transparent 70%) var(--bg);
+    min-height:100vh;color:var(--text);overflow-x:hidden;
+    scroll-behavior:smooth;
+}
+
+/* ---------- Hero ---------- */
+header.project-hero{
+    text-align:center;padding:5rem 1rem 4rem;max-width:1100px;margin:0 auto;
+    display:flex;flex-direction:column;align-items:center;gap:2rem;
+}
+header h1{font-size:2.8rem;letter-spacing:.03em;}
+header p.tagline{opacity:.85;font-size:1.2rem;}
+header .hero-video{width:100%;max-width:900px;border-radius:1rem;
+    box-shadow:0 10px 30px rgba(0,0,0,.55);}
+
+/* ---------- Sticky TOC ---------- */
+nav#toc{
+    position:sticky;top:0;z-index:20;
+    backdrop-filter:blur(8px);
+    background:rgba(14,15,25,.75);
+    padding:.5rem 1rem;margin-bottom:2.5rem;
+}
+nav#toc ul{display:flex;gap:2rem;justify-content:center;flex-wrap:wrap;list-style:none;}
+nav#toc a{
+    color:var(--text);text-decoration:none;font-size:1rem;letter-spacing:.03em;
+    border-bottom:2px solid transparent;transition:border-color .25s;
+}
+nav#toc a:hover,nav#toc a:focus,nav#toc a.active{border-color:var(--accent);}
+
+/* ---------- Feature slices ---------- */
+.feature{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));
+    gap:2.5rem;align-items:center;max-width:1200px;margin:0 auto 6rem;padding:0 1rem;
+    opacity:0;transform:translateY(40px);animation:enter var(--duration) var(--easing) forwards;
+}
+@keyframes enter{to{opacity:1;transform:none;}}
+.feature-media video,.feature-media iframe{
+    width:100%;border:none;border-radius:1rem;display:block;
+    box-shadow:0 10px 30px rgba(0,0,0,.55);
+}
+.feature h2{font-size:1.8rem;margin-bottom:1rem;}
+.feature p{font-size:1rem;line-height:1.55;opacity:.9;}
+/* alternate left‑right */
+.feature:nth-of-type(even) .feature-media{order:2;}
+
+/* ---------- Footer ---------- */
+footer{
+    text-align:center;padding:4rem 1rem 6rem;font-size:.9rem;opacity:.75;
+}
+
+/* ---------- Responsive tweaks ---------- */
+@media(max-width:600px){
+    nav#toc ul{gap:1.2rem;}
+}
+</style>
+</head>
+
+<body>
+
+<!-- **********  HERO  ********** -->
+<header class="project-hero">
+    <h1>🌀 Mind Palace — Deep Dive</h1>
+    <p class="tagline">Exploring the tech &amp; design behind a procedural shared‑memory world</p>
+
+    <!-- Looping overview clip (replace with your own) -->
+    <video class="hero-video" autoplay muted loop playsinline>
+        <source src="videos/overview.mp4" type="video/mp4">
+    </video>
+</header>
+
+<!-- **********  TABLE OF CONTENTS  ********** -->
+<nav id="toc">
+  <ul>
+    <li><a href="#rooms">Procedural Rooms</a></li>
+    <li><a href="#media">Embeddable Media</a></li>
+    <li><a href="#sync">Real‑time Sync</a></li>
+  </ul>
+</nav>
+
+<!-- **********  FEATURE 1  ********** -->
+<section class="feature" id="rooms">
+  <div class="feature-media">
+    <video controls poster="images/rooms-poster.jpg">
+      <source src="videos/rooms.mp4" type="video/mp4">
+    </video>
+  </div>
+  <div class="feature-text">
+    <h2>Procedural Rooms</h2>
+    <p>
+      Every “memory” you create spins up its own <strong>deterministic room seed</strong>.
+      The engine stitches modular hallway and chamber pieces together in&nbsp;~2 ms,
+      giving players an instantly explorable space that still loads as a byte‑sized diff.
+    </p>
+    <p>
+      A weighted <em>Wave‑Function‑Collapse</em> pass refines decoration, ensuring
+      no two rooms feel the same while obeying author‑placed landmarks.
+    </p>
+  </div>
+</section>
+
+<!-- **********  FEATURE 2  ********** -->
+<section class="feature" id="media">
+  <div class="feature-media">
+    <!-- Example YouTube embed; swap to <video> if you prefer local mp4 -->
+    <iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ"
+            title="Embeddable media demo"
+            allowfullscreen loading="lazy"></iframe>
+  </div>
+  <div class="feature-text">
+    <h2>Drag‑&‑Drop Embeddable Media</h2>
+    <p>
+      PDFs, audio stems, Figma prototypes, even live Notion pages—drop anything onto the floor
+      and it <strong>materialises as a 3‑D artefact</strong>.  
+      The client introspects MIME type, fetches a thumbnail / live preview, and
+      stores only a link‑hash, so your project size stays tiny.
+    </p>
+  </div>
+</section>
+
+<!-- **********  FEATURE 3  ********** -->
+<section class="feature" id="sync">
+  <div class="feature-media">
+    <video controls poster="images/sync.jpg">
+      <source src="videos/sync.mp4" type="video/mp4">
+    </video>
+  </div>
+  <div class="feature-text">
+    <h2>Real‑time Co‑Presence</h2>
+    <p>
+      A lightweight CRDT layer means everyone in the room receives updates
+      at 90 fps without conflict resolution pauses.  
+      For demo purposes we run over WebRTC with a fallback to Supabase’s Realtime
+      channel so it “just works” behind corporate NATs.
+    </p>
+  </div>
+</section>
+
+<!-- **********  FOOTER  ********** -->
+<footer>
+  © 2025 Parker Diard — Built with vanilla&nbsp;JS &amp; caffeine
+</footer>
+
+<!-- **********  SMALL JS  (active TOC link + staggered animation delay)  ********** -->
+<script>
+/* stagger entrance for feature blocks */
+[...document.querySelectorAll('.feature')].forEach((el,i)=>el.style.animationDelay=`${i*120}ms`);
+
+/* highlight current section in TOC */
+const tocLinks=[...document.querySelectorAll('#toc a')];
+const observer=new IntersectionObserver(entries=>{
+  entries.forEach(e=>{
+    if(e.isIntersecting){
+      tocLinks.forEach(l=>l.classList.toggle('active',l.hash===`#${e.target.id}`));
+    }
+  });
+},{rootMargin:"-40% 0px -40% 0px"});   // middle of viewport
+[...document.querySelectorAll('.feature')].forEach(sec=>observer.observe(sec));
+</script>
+</body>
+</html>
