@@ -121,7 +121,12 @@ const raycaster   = new THREE.Raycaster();  // used for panel hit‑testing
 const panelGroup  = new THREE.Group();      // container for the picker UI
 const roomSprites = [];                     // one SpriteText per room
 const LABEL_LEN   = 12;                     // how many chars of a name to show
-
+// ── Hover‑highlight colours ─────────────────────────────────────────────
+const NORMAL_COLOR = 'white';
+const NORMAL_BG    = 'rgba(0,0,0,0)';          // transparent
+const HOVER_COLOR  = 'yellow';
+const HOVER_BG     = 'rgba(255,255,0,0.25)';   // translucent yellow
+let   currentlyHovered = null;                 // sprite currently under the ray
 const clock = new THREE.Clock();
 let sound, listener;
 let sphereUniforms;
@@ -141,7 +146,8 @@ animate();
     panelGroup.clear();
     const SPACING = 0.25;
     rooms.forEach((name,i) => {
-        const label = new SpriteText(name.slice(0,LABEL_LEN), 0.1, 'white');
+        const label = new SpriteText(name.slice(0,LABEL_LEN), 0.1, NORMAL_COLOR);
+        label.backgroundColor = NORMAL_BG;     // default (no highlight)
         label.position.set(0, (rooms.length/2 - i) * SPACING, 0);
         roomSprites.push(label);
         panelGroup.add(label);
@@ -182,6 +188,15 @@ async function init() {
   scene = new THREE.Scene();
   camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.1, 100);
   scene.add(camera);
+
+
+  /* --------------------------------------------------------------------
+   * Tell the raycaster which camera we’ll be casting from.
+   * SpriteText (THREE.Sprite) needs this; without it you get
+   *   "THREE.Sprite: 'Raycaster.camera' needs to be set …"
+   * and eventually a TypeError when it tries to read matrixWorld.
+   * ------------------------------------------------------------------ */
+  raycaster.camera = camera;
 
   /* ----------  ROOM‑PICKER PANEL (hidden until summoned)  ---------- */
 
@@ -611,6 +626,42 @@ function render(){
     });
   // Throttle automatic sending to 20 Hz (every 50 ms)
   sendState();
+
+
+
+  /* ───────────── Highlight menu items while the ray is hovering ───────── */
+  if (panelGroup.visible){
+    let newHover = null;
+    for (const ctrl of controllers){
+      if (!ctrl.userData.gamepad) continue;    // ignore vacant slots
+      const m = new THREE.Matrix4().extractRotation(ctrl.matrixWorld);
+      raycaster.ray.origin.setFromMatrixPosition(ctrl.matrixWorld);
+      raycaster.ray.direction.set(0,0,-1).applyMatrix4(m);
+      const hit = raycaster.intersectObjects(roomSprites,false)[0];
+      if (hit){                                // first hit wins
+        newHover = hit.object;
+        break;
+      }
+    }
+    if (newHover !== currentlyHovered){
+      // ── clear previous highlight ──
+      if (currentlyHovered){
+        currentlyHovered.color           = NORMAL_COLOR;
+        currentlyHovered.backgroundColor = NORMAL_BG;
+      }
+      // ── apply new highlight ──
+      if (newHover){
+        newHover.color           = HOVER_COLOR;
+        newHover.backgroundColor = HOVER_BG;
+      }
+      currentlyHovered = newHover;
+    }
+  } else if (currentlyHovered){                // panel just closed
+    currentlyHovered.color           = NORMAL_COLOR;
+    currentlyHovered.backgroundColor = NORMAL_BG;
+    currentlyHovered = null;
+  }
+
   renderer.render(scene, camera);
 }
 function sendState(){
