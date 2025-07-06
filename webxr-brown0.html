@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Brown‑Calm VR • WebXR + Three.js single file demo</title>
+<meta name="description" content="A minimal, brown‑centric VR space designed to evoke warmth, security and calm.">
+<style>
+ html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#4a3728;}
+ #overlay{
+   position:absolute;top:0;left:0;width:100%;color:#d2c4b4;
+   font-family:system-ui, sans-serif;font-size:14px;line-height:1.4;
+   padding:10px;background:rgba(0,0,0,0.35);pointer-events:none;
+ }
+ a{color:#f0e1d0}
+</style>
+
+<!-- FIXES THE WEIRD IMPORT BUG -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.178.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.178.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="overlay">
+  Click “ENTER VR”, put on your headset, and breathe.<br>
+  <small>Slow controller movements enhance the calming effect.</small>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { VRButton } from 'three/addons/webxr/VRButton.js';
+
+/* ---------- Scene & camera ---------- */
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x4a3728);              // Deep brown backdrop
+
+const camera = new THREE.PerspectiveCamera(
+  70, window.innerWidth / window.innerHeight, 0.01, 50
+);
+camera.position.set(0, 1.6, 3);
+
+/* ---------- Warm, brown‑tinted lighting ---------- */
+scene.add(new THREE.HemisphereLight(0xffeedd, 0x3b2a1d, 0.6)); // Warm white from above, cocoa brown below
+
+const warm = 0xffbb88, radius = 3;
+for (let i = 0; i < 6; i++) {
+  const p = new THREE.PointLight(warm, 0.25, 10);
+  p.position.set(Math.cos(i*Math.PI/3)*radius, 1.5, Math.sin(i*Math.PI/3)*radius);
+  scene.add(p);
+}
+
+/* ---------- Floor ---------- */
+const floor = new THREE.Mesh(
+  new THREE.CircleGeometry(10, 64).rotateX(-Math.PI/2),
+  new THREE.MeshStandardMaterial({ color:0x6e4f33, roughness:0.9 })
+);
+scene.add(floor);
+
+/* ---------- Gentle floating dust motes ---------- */
+const moteGeo = new THREE.SphereGeometry(0.02, 8, 8);
+const moteMat = new THREE.MeshBasicMaterial({ color:0xd8c3a5, transparent:true, opacity:0.25 });
+const motes   = new THREE.InstancedMesh(moteGeo, moteMat, 200);
+scene.add(motes);
+const dummy = new THREE.Object3D();
+for (let i = 0; i < 200; i++) {
+  dummy.position.set(
+    THREE.MathUtils.randFloatSpread(6),
+    THREE.MathUtils.randFloatSpread(2) + 1,
+    THREE.MathUtils.randFloatSpread(6)
+  );
+  dummy.updateMatrix();
+  motes.setMatrixAt(i, dummy.matrix);
+}
+
+/* ---------- Breathing brown sky dome ---------- */
+const sky = new THREE.Mesh(
+  new THREE.SphereGeometry(30, 32, 16, 0, Math.PI*2, 0, Math.PI/2),
+  new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    uniforms: { time: { value: 0 } },
+    vertexShader: /* glsl */`
+      varying vec3 vPos;
+      void main(){ vPos = position;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);
+      }`,
+    fragmentShader: /* glsl */`
+      varying vec3 vPos;
+      uniform float time;
+      void main(){
+        float h = normalize(vPos).y * 0.5 + 0.5;      // 0 at horizon, 1 at zenith
+        float wave = sin((h + time * 0.02) * 6.283) * 0.02;
+        vec3 top    = vec3(0.33, 0.25, 0.19);         // Lighter brown
+        vec3 bottom = vec3(0.16, 0.11, 0.08);         // Darker brown
+        gl_FragColor = vec4(mix(bottom, top, h + wave), 1.0);
+      }`
+  })
+);
+scene.add(sky);
+
+/* ---------- Renderer ---------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.xr.enabled = true;
+document.body.appendChild(renderer.domElement);
+document.body.appendChild(VRButton.createButton(renderer));
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+/* ---------- Animation loop ---------- */
+const clock = new THREE.Clock();
+renderer.setAnimationLoop(() => {
+  const t = clock.getElapsedTime();
+  sky.material.uniforms.time.value = t;
+  motes.rotation.y = t * 0.03;          // Slow orbital drift
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>

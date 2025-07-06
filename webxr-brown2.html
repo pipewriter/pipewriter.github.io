@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Brown‑Centric Calming WebXR Demo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- FIXES THE WEIRD IMPORT BUG -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.178.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.178.0/examples/jsm/"
+      }
+    }
+  </script>
+
+  <style>
+    html,body{margin:0;height:100%;overflow:hidden;background:#352a24;}
+    #overlay{
+      position:fixed;
+      top:1rem;left:1rem;
+      font-family:system-ui, sans-serif;
+      color:#d6c4ae;
+      background:rgba(53,42,36,.65);
+      padding:.6rem 1rem;
+      border-radius:.5rem;
+      max-width:24rem;
+      line-height:1.35em;
+      user-select:none;
+    }
+    a{color:#f0e3d2}
+  </style>
+</head>
+
+<body>
+<div id="overlay">
+  <strong>Earth‑Tone Chill Space</strong><br>
+  Put on your headset and click “Enter VR”.<br>
+  • Slow, warm lighting (≈2 700 K)<br>
+  • Low‑saturation ochres & chocolates<br>
+  • Gentle motion ↓ HR & cortisol¹
+  <hr>
+  ¹ Summaries from wood‑interior & biophilic‑design studies.
+</div>
+
+<script type="module">
+  import * as THREE from 'three';
+  import { VRButton } from 'three/addons/webxr/VRButton.js';
+
+  /* ---------- renderer & DOM ---------- */
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.xr.enabled = true;
+  document.body.appendChild(renderer.domElement);
+  document.body.appendChild(VRButton.createButton(renderer));
+
+  /* ---------- scene background ---------- */
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x352a24);      // dark roasted‑coffee brown
+
+  /* ---------- camera ---------- */
+  const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 100);
+  camera.position.set(0, 1.6, 0); // eye‑height
+
+  /* ---------- lights (warm & soft) ---------- */
+  const hemi = new THREE.HemisphereLight(0xffe6cc, 0x201810, 0.35); // warm “sunset” top‑down
+  scene.add(hemi);
+
+  const key = new THREE.PointLight(0xffd8b4, 1.0, 8, 2); // warm key light
+  key.position.set(1.2, 2.0, 1.8);
+  scene.add(key);
+
+  /* ---------- immersive brown shell ---------- */
+  const shell = new THREE.Mesh(
+    new THREE.SphereGeometry(20, 32, 32),
+    new THREE.MeshBasicMaterial({
+      side: THREE.BackSide,
+      color: 0x4e3b31   // rich chocolate brown
+    })
+  );
+  scene.add(shell);
+
+  /* ---------- slow‑moving low‑poly “driftwood” chunks ---------- */
+  const driftGroup = new THREE.Group();
+  scene.add(driftGroup);
+
+  const brownPalette = [0x776052, 0x5c4638, 0x8a6d56, 0x3e2e26]; // subdued earth tones
+
+  for (let i = 0; i < 24; i++) {
+    const size = THREE.MathUtils.randFloat(0.15, 0.35);
+    const geo  = new THREE.DodecahedronGeometry(size, 0);
+    const mat  = new THREE.MeshStandardMaterial({
+      color: brownPalette[i % brownPalette.length],
+      roughness: 0.8,
+      metalness: 0.1
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+
+    // random spherical shell placement
+    const radius = THREE.MathUtils.randFloat(2.5, 4.5);
+    const phi    = THREE.MathUtils.randFloat(0, Math.PI);
+    const theta  = THREE.MathUtils.randFloat(0, Math.PI * 2);
+    mesh.position.setFromSphericalCoords(radius, phi, theta);
+
+    // store individual rotation speeds for micro‑motion
+    mesh.userData.rotSpd = new THREE.Vector3(
+      THREE.MathUtils.randFloat(0.01, 0.03),
+      THREE.MathUtils.randFloat(0.01, 0.03),
+      THREE.MathUtils.randFloat(0.01, 0.03)
+    );
+
+    driftGroup.add(mesh);
+  }
+
+  /* ---------- gentle radial audio (optional) ---------- */
+  // You can drop a ~2 min 60‑bpm ambient loop at ./audio/earth‑pulse.mp3
+  // and uncomment the next block to add a quiet heartbeat‑like soundtrack.
+  /*
+  import { AudioListener, Audio, AudioLoader } from 'three';
+  const listener = new AudioListener();
+  camera.add(listener);
+  const sound = new Audio(listener);
+  new AudioLoader().load('audio/earth-pulse.mp3', buffer => {
+    sound.setBuffer(buffer);
+    sound.setLoop(true);
+    sound.setVolume(0.35);
+    sound.play();
+  });
+  */
+
+  /* ---------- animation loop ---------- */
+  renderer.setAnimationLoop(time => {
+    driftGroup.children.forEach(mesh => {
+      mesh.rotation.x += mesh.userData.rotSpd.x * 0.5;
+      mesh.rotation.y += mesh.userData.rotSpd.y * 0.5;
+      mesh.rotation.z += mesh.userData.rotSpd.z * 0.5;
+    });
+
+    // very slow global rotation for subtle parallax
+    driftGroup.rotation.y = time * 0.00004;
+    shell.rotation.y      = time * 0.00002;
+
+    renderer.render(scene, camera);
+  });
+
+  /* ---------- responsive resize ---------- */
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+</script>
+</body>
+</html>

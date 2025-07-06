@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Soothing Browns – WebXR Demo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- FIXES THE WEIRD IMPORT BUG -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.178.0/build/three.module.js"
+      }
+    }
+  </script>
+
+  <style>
+    body { margin: 0; overflow: hidden; background: #3e2f2f; } /* fallback color */
+    #info {
+      position: absolute; top: 12px; left: 12px; font-family: Arial, sans-serif;
+      color: #d7c9b8; background: rgba(0,0,0,0.35); padding: 8px 12px; border-radius: 6px;
+    }
+    a { color: #fff; }
+  </style>
+</head>
+
+<body>
+  <div id="info">
+    <strong>Soothing Browns</strong><br />
+    Earth‑tone WebXR ambience inspired by biophilic and color‑psychology research.
+  </div>
+
+  <script type="module">
+    /* ----------------------------------------------------------
+       Imports
+    ---------------------------------------------------------- */
+    import * as THREE from 'three';
+    import { VRButton } from 'https://cdn.jsdelivr.net/npm/three@0.178.0/examples/jsm/webxr/VRButton.js';
+
+    /* ----------------------------------------------------------
+       Renderer + VR
+    ---------------------------------------------------------- */
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio( window.devicePixelRatio );
+    renderer.setSize( window.innerWidth, window.innerHeight );
+    renderer.xr.enabled = true;
+    document.body.appendChild( renderer.domElement );
+    document.body.appendChild( VRButton.createButton( renderer ) );
+
+    /* ----------------------------------------------------------
+       Scene & Camera
+    ---------------------------------------------------------- */
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color( 0x3e2f2f );           // rich umber
+    scene.fog        = new THREE.FogExp2( 0x3e2f2f, 0.05 );   // gentle, enveloping
+
+    const camera = new THREE.PerspectiveCamera(
+      70,
+      window.innerWidth / window.innerHeight,
+      0.1, 100
+    );
+    camera.position.set( 0, 1.6, 3 ); // approximate standing height
+
+    /* ----------------------------------------------------------
+       Lighting  — warm, low‑blue spectrum
+    ---------------------------------------------------------- */
+    const hemi = new THREE.HemisphereLight( 0xd9c0a4, 0x32251e, 0.35 ); // soft skylight
+    scene.add( hemi );
+
+    const warmKey = new THREE.DirectionalLight( 0xffe1c4, 1.0 );        // ~2700 K
+    warmKey.position.set( 3, 5, 2 );
+    scene.add( warmKey );
+
+    /* ----------------------------------------------------------
+       Ground plane  — textured earth‑tone
+    ---------------------------------------------------------- */
+    const groundGeo  = new THREE.PlaneGeometry( 100, 100 );
+    const groundMat  = new THREE.MeshStandardMaterial({
+      color: 0x59422a,
+      roughness: 1,
+      metalness: 0
+    });
+    const ground     = new THREE.Mesh( groundGeo, groundMat );
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add( ground );
+
+    /* ----------------------------------------------------------
+       Minimal “natural” geometry  — low‑poly logs & stones
+    ---------------------------------------------------------- */
+    const brownPalette = [ 0x5a412b, 0x7b5f3c, 0x3d2b1f ];
+    const stonePalette = [ 0x54483f, 0x64584a ];
+
+    function addLog( x, z ) {
+      const geo = new THREE.CylinderGeometry( 0.15, 0.15, 1.2, 8 );
+      const mat = new THREE.MeshStandardMaterial({
+        color: brownPalette[ Math.floor( Math.random() * brownPalette.length ) ],
+        roughness: 0.9
+      });
+      const log = new THREE.Mesh( geo, mat );
+      log.rotation.z = Math.random() * Math.PI;
+      log.position.set( x, 0.15, z );
+      scene.add( log );
+    }
+
+    function addStone( x, z ) {
+      const geo = new THREE.DodecahedronGeometry( 0.25, 0 );
+      const mat = new THREE.MeshStandardMaterial({
+        color: stonePalette[ Math.floor( Math.random() * stonePalette.length ) ],
+        roughness: 1
+      });
+      const stone = new THREE.Mesh( geo, mat );
+      stone.position.set( x, 0.25, z );
+      scene.add( stone );
+    }
+
+    // Sprinkle items in a circle
+    for ( let i = 0; i < 30; i++ ) {
+      const angle = ( i / 30 ) * Math.PI * 2;
+      const radius = 2 + Math.random() * 3;
+      const x = Math.cos( angle ) * radius;
+      const z = Math.sin( angle ) * radius;
+      ( Math.random() < 0.5 ? addLog : addStone )( x, z );
+    }
+
+    /* ----------------------------------------------------------
+       Subtle ambient animation  — very slow sky‑hue drift
+    ---------------------------------------------------------- */
+    let hueShift = 0;
+    function animate() {
+      renderer.setAnimationLoop( render );
+    }
+
+    function render( timestamp, frame ) {
+      // Slowly modulate background toward red‑brown ↔︎ chocolate
+      hueShift += 0.00005; // cycles ~5 min
+      const h = 20 / 360;                  // fixed warm hue (approx. brown orange)
+      const s = 0.5;
+      const v = 0.35 + 0.05 * Math.sin( hueShift * Math.PI * 2 );
+      scene.background.setHSL( h, s, v );
+      scene.fog.color.copy( scene.background );
+      renderer.render( scene, camera );
+    }
+
+    animate();
+
+    /* ----------------------------------------------------------
+       Resize handling
+    ---------------------------------------------------------- */
+    window.addEventListener( 'resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize( window.innerWidth, window.innerHeight );
+    } );
+  </script>
+</body>
+</html>

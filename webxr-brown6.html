@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Brown‑Centric Calm Space – WebXR + Three.js</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- FIXES THE WEIRD IMPORT BUG -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.178.0/build/three.module.js"
+    }
+  }
+  </script>
+
+  <style>
+    html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#3d3027;}
+    canvas{display:block;}
+    #enterVR {position:absolute;top:1rem;left:1rem;z-index:10;}
+  </style>
+</head>
+<body>
+<script type="module">
+/* ---------------------------------------------------
+ * Imports
+ * ------------------------------------------------- */
+import * as THREE from 'three';
+import { VRButton }   from 'https://cdn.jsdelivr.net/npm/three@0.178.0/examples/jsm/webxr/VRButton.js';
+import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.178.0/examples/jsm/controls/OrbitControls.js';
+
+/* ---------------------------------------------------
+ * Renderer & Scene
+ * ------------------------------------------------- */
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setPixelRatio( window.devicePixelRatio );
+renderer.setSize( window.innerWidth, window.innerHeight );
+renderer.xr.enabled = true;            // Enable WebXR
+document.body.appendChild( renderer.domElement );
+document.body.appendChild( VRButton.createButton( renderer ) );
+
+const scene  = new THREE.Scene();
+scene.background = new THREE.Color( 0x3d3027 ); // deep chocolate
+scene.fog = new THREE.Fog( 0x3d3027, 2, 30 );   // soft fade to brown
+
+/* ---------------------------------------------------
+ * Camera
+ * ------------------------------------------------- */
+const camera = new THREE.PerspectiveCamera( 70, window.innerWidth / window.innerHeight, 0.1, 100 );
+camera.position.set( 0, 1.6, 3 ); // user eye height
+
+/* Optional desktop controls */
+const controls = new OrbitControls( camera, renderer.domElement );
+controls.target.set( 0, 1.6, 0 );
+controls.enableDamping = true;
+
+/* ---------------------------------------------------
+ * Lighting – warm “2250 K” feel
+ * ------------------------------------------------- */
+const hemi = new THREE.HemisphereLight( 0xffe8d5, 0x2b211a, 0.6 ); // sky, ground
+scene.add( hemi );
+
+const warmKey = new THREE.DirectionalLight( 0xffd6ae, 0.8 );
+warmKey.position.set( 1, 2, 1 );
+scene.add( warmKey );
+
+/* ---------------------------------------------------
+ * Earthen Dome (inside‑out sphere with gradient)
+ * ------------------------------------------------- */
+const domeGeo  = new THREE.SphereGeometry( 15, 64, 32 );
+const domeMat  = new THREE.ShaderMaterial({
+  side : THREE.BackSide,
+  uniforms : {
+    topColor   : { value: new THREE.Color(0x4e3b2e) }, // darker zenith
+    bottomColor: { value: new THREE.Color(0x8c6a4d) }, // lighter horizon
+  },
+  vertexShader: /* glsl */`
+      varying vec3 vPos;
+      void main() {
+        vPos = position;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.);
+      }
+    `,
+  fragmentShader: /* glsl */`
+      varying vec3 vPos;
+      uniform vec3 topColor;
+      uniform vec3 bottomColor;
+      void main() {
+        float h = (vPos.y + 15.0) / 30.0;        // 0 at bottom, 1 at top
+        gl_FragColor = vec4( mix( bottomColor, topColor, h ), 1.0 );
+      }
+    `
+});
+const dome = new THREE.Mesh( domeGeo, domeMat );
+scene.add( dome );
+
+/* ---------------------------------------------------
+ * Ground plane – muted wood‑brown
+ * ------------------------------------------------- */
+const groundMat = new THREE.MeshStandardMaterial({ color:0x5c4736, roughness:0.9, metalness:0.0 });
+const ground    = new THREE.Mesh( new THREE.CircleGeometry( 10, 64 ), groundMat );
+ground.rotation.x = -Math.PI/2;
+ground.receiveShadow = true;
+scene.add( ground );
+
+/* ---------------------------------------------------
+ * Calm “dust mote” particles
+ * ------------------------------------------------- */
+const moteCount = 600;
+const positions = new Float32Array( moteCount * 3 );
+for ( let i = 0; i < moteCount; i++ ) {
+  positions[ 3*i   ] = (Math.random()-0.5) * 12;
+  positions[ 3*i+1 ] = Math.random() * 5 + 0.5;
+  positions[ 3*i+2 ] = (Math.random()-0.5) * 12;
+}
+const moteGeo = new THREE.BufferGeometry();
+moteGeo.setAttribute( 'position', new THREE.BufferAttribute( positions, 3 ) );
+const moteMat = new THREE.PointsMaterial({
+  color: 0xcab79c,
+  size : 0.04,
+  transparent:true,
+  opacity:0.6,
+});
+const motes = new THREE.Points( moteGeo, moteMat );
+scene.add( motes );
+
+/* ---------------------------------------------------
+ * Animation loop
+ * ------------------------------------------------- */
+renderer.setAnimationLoop( animate );
+function animate( time ){
+  // gentle vertical drift of motes
+  motes.rotation.y = time * 0.00004;
+  const pos = moteGeo.attributes.position;
+  for ( let i = 0; i < pos.count; i++ ){
+    pos.array[ 3*i+1 ] += 0.0002;         // rise slowly
+    if ( pos.array[ 3*i+1 ] > 6 ) pos.array[ 3*i+1 ] = 0.5; // reset
+  }
+  pos.needsUpdate = true;
+
+  controls.update();
+  renderer.render( scene, camera );
+}
+
+/* ---------------------------------------------------
+ * Resize handler
+ * ------------------------------------------------- */
+window.addEventListener( 'resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize( window.innerWidth, window.innerHeight );
+});
+</script>
+
+<!-- Optional looping brown‑noise ambience (comment out if not desired) -->
+<!-- <audio src="https://cdn.jsdelivr.net/gh/anp644/brown-noise-loop@main/brown-noise.mp3" autoplay loop></audio> -->
+
+</body>
+</html>

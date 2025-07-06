@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Soothing Browns – WebXR Demo</title>
+  <meta name="description"
+        content="A calming, brown‑centric VR space inspired by biophilic and color‑psychology findings." />
+
+  <!-- FIXES THE WEIRD IMPORT BUG -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.178.0/build/three.module.js"
+      }
+    }
+  </script>
+
+  <style>
+    html,body { margin:0; height:100%; overflow:hidden; background:#381f12; }
+    canvas { display:block; }
+    #enter { position: absolute; bottom: 1rem; left: 50%; transform: translateX(-50%);
+             font: 1rem sans-serif; padding:.6rem 1.2rem; border:none; border-radius:6px;
+             background:#7a563b; color:#fff; cursor:pointer }
+    #enter:hover { background:#8c6244; }
+  </style>
+</head>
+<body>
+<script type="module">
+/* ------------------------------------------------
+   Imports
+------------------------------------------------- */
+import * as THREE from 'three';
+import { VRButton } from 'https://cdn.jsdelivr.net/npm/three@0.178.0/examples/jsm/webxr/VRButton.js';
+
+/* ------------------------------------------------
+   Basic three.js / WebXR setup
+------------------------------------------------- */
+const scene    = new THREE.Scene();
+scene.fog      = new THREE.FogExp2(0x4e3425, 0.05);   // hazy brownish fog
+scene.background = new THREE.Color(0x4e3425);         // match fog base
+
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.xr.enabled = true;
+document.body.appendChild(renderer.domElement);
+document.body.appendChild(VRButton.createButton(renderer));
+
+const camera = new THREE.PerspectiveCamera(
+  70, window.innerWidth / window.innerHeight, 0.1, 100
+);
+camera.position.set(0, 1.6, 0); // eye‑level
+
+/* ------------------------------------------------
+   Warm ambient + subtle directional light
+------------------------------------------------- */
+const ambient = new THREE.HemisphereLight(0xffe2c5, 0x392214, 0.7); // warm top, deep brown bottom
+scene.add(ambient);
+
+const sun = new THREE.DirectionalLight(0xffddb1, 0.6);
+sun.position.set(5,10,3);
+scene.add(sun);
+
+/* ------------------------------------------------
+   Ground plane (packed earth)
+------------------------------------------------- */
+const groundMat = new THREE.MeshStandardMaterial({
+  color: 0x5c3d27,
+  roughness: 0.9,
+  metalness: 0.0
+});
+const ground = new THREE.Mesh(
+  new THREE.CircleGeometry(40, 64),
+  groundMat
+);
+ground.rotation.x = -Math.PI/2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+/* ------------------------------------------------
+   Slow‑moving dome with brown radial gradient
+------------------------------------------------- */
+const skyGeo = new THREE.SphereGeometry(50, 32, 32);
+const skyMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide,
+  uniforms: {
+    color1: { value: new THREE.Color(0x3d2617) },
+    color2: { value: new THREE.Color(0x90735b) }
+  },
+  vertexShader: /* glsl */`
+    varying vec3 vDir;
+    void main() {
+      vDir = normalize(position);
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);
+    }`,
+  fragmentShader: /* glsl */`
+    varying vec3 vDir;
+    uniform vec3 color1;
+    uniform vec3 color2;
+    void main() {
+      float h = max(vDir.y*0.5+0.5, 0.0);  // 0 bottom – 1 zenith
+      vec3 col = mix(color1, color2, h*h); // gentle lift toward apex
+      gl_FragColor = vec4(col, 1.0);
+    }`
+});
+const sky = new THREE.Mesh(skyGeo, skyMat);
+scene.add(sky);
+
+/* ------------------------------------------------
+   Very slow “breathing” brightness cycle
+------------------------------------------------- */
+let start = performance.now();
+function animateLight(t) {
+  const elapsed = (t - start) * 0.00015; // very slow
+  const breathe = 0.1 * Math.sin(elapsed * 2 * Math.PI) + 0.9; // 0.8–1.0
+  ambient.intensity = breathe;
+  sun.intensity     = 0.5 * breathe;
+}
+
+/* ------------------------------------------------
+   Optional: quiet wind‑chime ambience
+   (uncomment if you have a small MP3/OGG file hosted
+    under same origin or CORS‑enabled)
+------------------------------------------------- */
+// const audioListener = new THREE.AudioListener();
+// camera.add(audioListener);
+// const sound = new THREE.Audio(audioListener);
+// new THREE.AudioLoader().load('windchimes.mp3', buffer => {
+//   sound.setBuffer(buffer);
+//   sound.setLoop(true);
+//   sound.setVolume(0.3);
+//   sound.play();
+// });
+
+/* ------------------------------------------------
+   Simple user “presence” cue – low mound
+------------------------------------------------- */
+const mound = new THREE.Mesh(
+  new THREE.CylinderGeometry(0, 0.4, 0.15, 24, 1),
+  new THREE.MeshStandardMaterial({ color: 0x6b4d33, roughness:0.95 })
+);
+mound.position.y = 0.075;
+scene.add(mound);
+
+/* ------------------------------------------------
+   Render loop
+------------------------------------------------- */
+renderer.setAnimationLoop(time => {
+  animateLight(time);
+  renderer.render(scene, camera);
+});
+
+/* ------------------------------------------------
+   Resize
+------------------------------------------------- */
+window.addEventListener('resize', () => {
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+});
+</script>
+
+<!-- Fallback “Enter VR” button hint for devices without WebXR -->
+<noscript><p style="color:#fff;text-align:center">
+  This demo requires JavaScript and a WebXR‑compatible browser.
+</p></noscript>
+</body>
+</html>

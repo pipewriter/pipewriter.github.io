@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Soothing Brown XR Space</title>
+<meta name="description" content="A brown‑centric WebXR experience built with Three.js">
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background:#4b3621; }
+  canvas { display: block; }
+</style>
+
+<!-- FIXES THE WEIRD IMPORT BUG -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.178.0/build/three.module.js"
+  }
+}
+</script>
+</head>
+<body>
+<script type="module">
+import * as THREE from 'three';
+import { VRButton } from 'https://cdn.jsdelivr.net/npm/three@0.178.0/examples/jsm/webxr/VRButton.js';
+
+///////////////////////////
+// Scene & Background
+///////////////////////////
+const scene = new THREE.Scene();
+
+// Create a subtle brown cube‑map backdrop (six tiny 2 px textures)
+const cubeloader = new THREE.CubeTextureLoader();
+const faces = [ '#3e2a1b', '#3e2a1b', '#4d3522', '#2b1c12', '#4d3522', '#3e2a1b' ]
+  .map(hex => solidColorDataURL(hex));
+scene.background = cubeloader.load(faces);
+
+function solidColorDataURL(hex) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 2;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = hex;
+  ctx.fillRect(0,0,2,2);
+  return c.toDataURL();
+}
+
+///////////////////////////
+// Lighting (warm, candle‑like)
+///////////////////////////
+scene.add(new THREE.AmbientLight(0x8d6e63, 0.6));                   // warm ambient
+const candle = new THREE.PointLight(0xffb27e, 0.8, 15, 2);          // flickering “flame”
+candle.position.set(0, 1.6, 0);
+scene.add(candle);
+
+///////////////////////////
+// Ground & Calming “stones”
+///////////////////////////
+const ground = new THREE.Mesh(
+  new THREE.CircleGeometry(8, 64),
+  new THREE.MeshStandardMaterial({ color: 0x5d432c, roughness: 1 })
+);
+ground.rotation.x = -Math.PI / 2;
+scene.add(ground);
+
+const stoneGeo = new THREE.BoxGeometry(0.4, 0.2, 0.4).toNonIndexed();
+stoneGeo.computeVertexNormals();
+const tones = [0x8d6e63, 0x7b5e47, 0x9f815f, 0x6d4e37];
+
+tones.forEach((tone, i) => {
+  const m = new THREE.Mesh(
+    stoneGeo,
+    new THREE.MeshStandardMaterial({ color: tone, roughness: 0.9 })
+  );
+  m.position.set(Math.sin(i * Math.PI / 2) * 1.2, 0.1, Math.cos(i * Math.PI / 2) * 1.2);
+  m.rotation.y = Math.random() * Math.PI;
+  scene.add(m);
+});
+
+///////////////////////////
+// Renderer, Camera, VR
+///////////////////////////
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(devicePixelRatio);
+renderer.setSize(innerWidth, innerHeight);
+renderer.xr.enabled = true;
+document.body.appendChild(renderer.domElement);
+document.body.appendChild(VRButton.createButton(renderer));
+
+const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.1, 50);
+camera.position.set(0, 1.6, 3);
+scene.add(camera);
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+///////////////////////////
+// Animation Loop
+///////////////////////////
+renderer.setAnimationLoop((t) => {
+  candle.intensity = 0.75 + Math.sin(t*0.005)*0.05 + Math.sin(t*0.013)*0.03; // gentle flicker
+
+  // slow, almost imperceptible stone rotation
+  scene.children.forEach(obj => {
+    if (obj.geometry === stoneGeo) obj.rotation.y += 0.0005;
+  });
+
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>

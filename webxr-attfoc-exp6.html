@@ -69,6 +69,7 @@ import SpriteText from 'https://cdn.jsdelivr.net/npm/three-spritetext@1.10.0/+es
 // Replace with your actual host:port or wss://domain
 const WS_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') +
                location.hostname + ':8081';
+// const WS_URL = 'https://0062-24-7-118-187.ngrok-free.app';
 const ws = new WebSocket(WS_URL);
 
 // last values we sent – stops us flooding the wire with identical frames
