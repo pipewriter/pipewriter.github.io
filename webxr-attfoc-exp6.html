@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>WebXR Orbiting Lava & UI Demo (JSON-driven)</title>
+  <style>
+    body { margin: 0; overflow: hidden; }
+    canvas { display: block; }
+        /* #nextRoomBtn {
+        position: absolute;
+        top: 20px;
+        left: 20px;
+        padding: 10px 15px;
+        font-size: 14px;
+        z-index: 10;
+        } */
+
+    #nextRoomBtn{
+      position:absolute; top:20px; left:20px;
+      padding:10px 15px; font-size:14px; z-index:10;
+    }
+
+    /* — CUSTOM INSTRUCTIONS OVERLAY — */
+    #instructions{
+      position:absolute;              /* float above the canvas           */
+      top:20px; right:20px;
+      max-width:320px;
+      background:rgba(0,0,0,.75);
+      color:#fff; font:14px/1.4 sans-serif;
+      padding:12px 16px; border-radius:6px;
+      z-index:20;
+      backdrop-filter:blur(4px);
+    }
+    #instructions table{
+      width:100%; border-collapse:collapse; margin:4px 0 0;
+    }
+    #instructions th, #instructions td{
+      padding:3px 4px; text-align:left; vertical-align:top;
+    }
+    #instructions th{ font-weight:600; }
+    #instructions tr:not(:last-child) td{ border-bottom:1px solid #5554; }
+    #instructions h3{ margin:0 0 6px; font-size:15px; }
+  </style>
+</head>
+<body>
+<button id="nextRoomBtn">Next Room</button>
+<!-- ② ADD THE OVERLAY ITSELF ............................................. -->
+<div id="instructions">
+  <h3>How to use this demo</h3>
+  <table>
+    <tr><th>Action</th>                  <th>Control</th></tr>
+    <tr><td>Enter VR</td>                <td><em>Click “Enter&nbsp;VR” button</em></td></tr>
+    <tr><td>Next room</td>               <td>    A button  or  on‑screen “Next Room”</td></tr>
+    <tr><td>Previous room</td>           <td>    B button</td></tr>
+    <tr><td>Orbit left / right</td>      <td>    Thumb‑stick ← / →</td></tr>
+    <tr><td>Orbit radius (zoom)</td>     <td>    Thumb‑stick ↑ / ↓</td></tr>
+    <tr><td>Adjust to Supine</td>    <td>    <kbd>Hold lower trigger</kbd> + thumb‑stick ↑/↓</td></tr>
+    <tr><td>Focus in / show all</td>     <td>    Trigger button (index‑finger)</td></tr>
+  </table>
+</div>
+<script type="module">
+import * as THREE from 'https://unpkg.com/three@0.178.0/build/three.module.js';
+import { VRButton } from 'https://unpkg.com/three@0.178.0/examples/jsm/webxr/VRButton.js';
+import SpriteText from 'https://cdn.jsdelivr.net/npm/three-spritetext@1.10.0/+esm';
+
+
+
+// ----------  WEBSOCKET SYNC  ----------------------------------------------
+// Replace with your actual host:port or wss://domain
+const WS_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') +
+               location.hostname + ':8081';
+const ws = new WebSocket(WS_URL);
+
+// last values we sent – stops us flooding the wire with identical frames
+let lastSent   = { orbitRadius: null, orbitang: null,
+                   viewingangle: null, hideToggled: null, focusIndex: null };
+
+let focusIndex = null;                       // NEW: which slot stays visible
+
+ws.addEventListener('open',   () => console.log('[sync] WS open'));
+ws.addEventListener('close',  () => console.warn('[sync] WS closed'));
+ws.addEventListener('error',  e  => console.error('[sync] WS error', e));
+
+//ws.addEventListener('message', ({data}) => {
+function applyFocusVisibility() {            // NEW helper (called from several places)
+  if (!orbitItems.length) return;            // room not ready yet
+  if (hideToggled && focusIndex != null) {
+    orbitItems.forEach((it, i) => it.visible = (i === focusIndex));
+  } else {
+    orbitItems.forEach(it => it.visible = true);
+  }
+}
+ws.addEventListener('message', ({data}) => {
+  const { type, data: s } = JSON.parse(data);
+  if (type !== 'state') return;
+
+  // Only apply if something actually differs.
+  
+  // Don’t snap – store as new targets; render() will interpolate toward them
+  if (s.orbitRadius  !== targetOrbitRadius)   targetOrbitRadius  = s.orbitRadius;
+  if (s.orbitang     !== targetOrbitang)      targetOrbitang     = s.orbitang;
+  if (s.viewingangle !== targetViewingangle)  targetViewingangle = s.viewingangle;
+  if (s.hideToggled !== hideToggled) {
+    hideToggled = s.hideToggled;
+    // Re‑apply visibility when the flag arrived from someone else
+    orbitItems.forEach(item => item.visible = !hideToggled);
+  }
+  // NEW: keep track of which item is focused remotely
+  if (s.focusIndex !== undefined && s.focusIndex !== focusIndex) {
+    focusIndex = s.focusIndex;
+  }
+
+  // Always (re)apply after state changes arrived
+  applyFocusVisibility();
+});
+
+
+let scene, camera, renderer;
+    const controllers = [];
+const raycaster   = new THREE.Raycaster();  // used for panel hit‑testing
+const panelGroup  = new THREE.Group();      // container for the picker UI
+const roomSprites = [];                     // one SpriteText per room
+const LABEL_LEN   = 12;                     // how many chars of a name to show
+// ── Hover‑highlight colours ─────────────────────────────────────────────
+const NORMAL_COLOR = 'white';
+const NORMAL_BG    = 'rgba(0,0,0,0)';          // transparent
+const HOVER_COLOR  = 'yellow';
+const HOVER_BG     = 'rgba(255,255,0,0.25)';   // translucent yellow
+let   currentlyHovered = null;                 // sprite currently under the ray
+const clock = new THREE.Clock();
+let sound, listener;
+let sphereUniforms;
+const orbitItems = [];
+let orbitRadius = 2.0;
+const orbitSpeed = 0.5;
+const camWorldPos = new THREE.Vector3();
+let rooms = [], currentIndex = 0;
+const params = new URLSearchParams(window.location.search);
+
+await init();
+animate();
+
+    /* ——————————————————————————————— helpers —————————————————————————————— */
+    function buildRoomPanel(){
+    roomSprites.length = 0;
+    panelGroup.clear();
+    /* ----------------‑ GRID LAYOUT ‑----------------
+     * Make the picker roughly square instead of a tall
+     * column so it stays inside the “orb”.
+     * ----------------------------------------------*/
+    const SPACING = 0.25;                         // gap between cells
+    const cols    = Math.ceil(Math.sqrt(rooms.length));
+    const rows    = Math.ceil(rooms.length / cols);
+
+    rooms.forEach((name,i) => {
+        const label = new SpriteText(name.slice(0,LABEL_LEN), 0.05, NORMAL_COLOR);
+        label.backgroundColor = NORMAL_BG;
+
+        /* convert linear index → grid coordinates */
+        const col =  i % cols;
+        const row = (i / cols) | 0;
+
+        /* centre the grid on (0,0) so the whole panel
+         * can later be dropped two metres in front of
+         * the camera and look nicely centred.       */
+        const x = (col - (cols-1)/2) * SPACING;
+        const y = ((rows-1)/2 - row) * SPACING;
+        label.position.set(x, y, 0);
+
+        roomSprites.push(label);
+        panelGroup.add(label);
+    });
+    }
+
+    function togglePanel(){
+    panelGroup.visible = !panelGroup.visible;
+    /* Laser appears/disappears together with the picker UI */
+    controllers.forEach(c=>{
+        if(c.userData.laser) c.userData.laser.visible = panelGroup.visible;
+    });
+    if(panelGroup.visible){
+        const dir = new THREE.Vector3();
+        camera.getWorldDirection(dir);
+        panelGroup.position.copy(camWorldPos).add(dir.multiplyScalar(2));
+        panelGroup.quaternion.copy(camera.quaternion);     // face the user
+    }
+    }
+async function init() {
+  // 1) fetch the rooms list
+  const roomsParam = params.get('rooms');
+  if (!roomsParam) {
+    console.error('No ?rooms=… provided');
+    return;
+  }
+  const listUrl = `https://attentionfocus.s3.us-east-1.amazonaws.com/${roomsParam}`;
+  const listResp = await fetch(listUrl);
+  const listJson = await listResp.json();
+  rooms = listJson.rooms;
+  if (!Array.isArray(rooms) || rooms.length === 0) {
+    console.error('rooms.json has no rooms array');
+    return;
+  }
+
+  // 2) figure out which one we start on
+  const initialRoom = params.get('room');
+  currentIndex = rooms.indexOf(initialRoom);
+  if (currentIndex === -1) currentIndex = 0;
+
+  // 3) do the usual scene/camera/renderer/audio/sphere setup
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.1, 100);
+  scene.add(camera);
+
+
+  /* --------------------------------------------------------------------
+   * Tell the raycaster which camera we’ll be casting from.
+   * SpriteText (THREE.Sprite) needs this; without it you get
+   *   "THREE.Sprite: 'Raycaster.camera' needs to be set …"
+   * and eventually a TypeError when it tries to read matrixWorld.
+   * ------------------------------------------------------------------ */
+  raycaster.camera = camera;
+
+  /* ----------  ROOM‑PICKER PANEL (hidden until summoned)  ---------- */
+
+
+  buildRoomPanel();
+  panelGroup.visible = false;
+  scene.add(panelGroup);
+
+  renderer = new THREE.WebGLRenderer({ antialias:true });
+  renderer.setPixelRatio(devicePixelRatio);
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.xr.enabled = true;
+  // camera = renderer.xr.getCamera();
+  document.body.append(renderer.domElement, VRButton.createButton(renderer));
+
+    // set up two controller slots (0=left, 1=right)
+    for (let i = 0; i < 2; i++) {
+        const ctrl = renderer.xr.getController(i);
+
+    /* --------‑ SIMPLE WHITE POINTER RAY ‑----------
+     * Adds a 3‑unit line along –Z so users can see
+     * exactly where the controller is pointing.
+     * ---------------------------------------------*/
+    {
+      const rayGeom = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(0, 0, -1)
+      ]);
+      const rayMat  = new THREE.LineBasicMaterial({ color: 0xffffff });
+      const rayLine = new THREE.Line(rayGeom, rayMat);
+      rayLine.name  = 'laserPointer';
+      rayLine.scale.z = 3;             // pointer length in metres
+      rayLine.visible = false;         // only when menu is open
+      ctrl.add(rayLine);
+      ctrl.userData.laser = rayLine;   // keep reference for quick toggling
+    }
+    ctrl.userData.index = i;
+    ctrl.userData.gamepad = null;
+    ctrl.userData.prevButtons = [];
+    ctrl.addEventListener('connected', e => {
+        ctrl.userData.gamepad = e.data.gamepad;
+        console.log(`controller ${i} connected:`, e.data);
+    });
+    ctrl.addEventListener('disconnected', () => {
+        ctrl.userData.gamepad = null;
+        ctrl.userData.prevButtons = [];
+        console.log(`controller ${i} disconnected`);
+    });
+    scene.add(ctrl);
+    controllers.push(ctrl);
+    }
+    
+  listener = new THREE.AudioListener();
+  camera.add(listener);
+  sound = new THREE.Audio(listener);
+
+  // sphere
+  sphereUniforms = {
+    time: { value: 0.0 },
+    seed: { value: 0.5 }
+  };
+  const sphereGeo = new THREE.SphereGeometry(5,64,64);
+  const sphereMat = new THREE.ShaderMaterial({
+    uniforms: sphereUniforms,
+    side: THREE.BackSide,
+    vertexShader: `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);
+      }
+    `,
+    fragmentShader: `
+      // ---- Simplex noise (Ashima) ----
+      vec3 mod289(vec3 x){return x - floor(x*(1.0/289.0))*289.0;}
+      vec2 mod289(vec2 x){return x - floor(x*(1.0/289.0))*289.0;}
+      vec3 permute(vec3 x){return mod289(((x*34.0)+1.0)*x);}
+      float snoise(vec2 v) {
+        const vec4 C = vec4(0.2113248654,0.3660254038,-0.5773502692,0.0243902439);
+        vec2 i = floor(v + dot(v, C.yy));
+        vec2 x0 = v - i + dot(i, C.xx);
+        vec2 i1 = (x0.x > x0.y) ? vec2(1.0,0.0) : vec2(0.0,1.0);
+        vec4 x12 = x0.xyxy + C.xxzz;
+        x12.xy -= i1;
+        i = mod289(i);
+        vec3 p = permute(permute(i.y + vec3(0.0, i1.y, 1.0))
+                      + i.x + vec3(0.0, i1.x, 1.0));
+        vec3 m = max(0.5 - vec3(dot(x0,x0), dot(x12.xy,x12.xy), dot(x12.zw,x12.zw)), 0.0);
+        m = m*m*m*m;
+        vec3 x = 2.0 * fract(p * C.www) - 1.0;
+        vec3 h = abs(x) - 0.5;
+        vec3 ox = floor(x + 0.5);
+        vec3 a0 = x - ox;
+        m *= 1.79284291400159 - 0.85373472095314 * (a0*a0 + h*h);
+        vec3 g;
+        g.x  = a0.x * x0.x + h.x  * x0.y;
+        g.yz = a0.yz * x12.xz + h.yz * x12.yw;
+        return 130.0 * dot(m, g);
+      }
+
+      // ---- HSV → RGB helper ----
+      vec3 hsv2rgb(vec3 c){
+        vec3 p = abs(mod(c.x*6.0 + vec3(0.0,4.0,2.0), 6.0) - 3.0) - 1.0;
+        p = clamp(p, 0.0, 1.0);
+        return c.z * mix(vec3(1.0), p, c.y);
+      }
+
+      varying vec2 vUv;
+      uniform float time;
+      uniform float seed;
+
+      void main(){
+        // map uv to -1..1
+        vec2 uv = vUv * 2.0 - 1.0;
+
+        // pulsate factor, 0..1
+        float pulse = sin(time * 2.5 + seed * 6.28) * 0.5 + 0.5;
+
+        // two lava hues from seed
+        vec3 color1 = hsv2rgb(vec3(seed,      1.0, 0.5 + 0.4 * pulse));
+        vec3 color2 = hsv2rgb(vec3(fract(seed + 0.3), 1.0, 0.7 + 0.3 * pulse));
+
+        // swirling motion
+        float angle = time * (0.1 + seed*0.3);
+        mat2 rot = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
+        vec2 p = rot * uv;
+        p.y += time * (0.6 + seed*0.6);
+
+        // add seed offset into noise coords
+        p += seed * 10.0;
+
+        // two noise octaves
+        float n1 = snoise(p * (1.5 + seed*1.0));
+        float n2 = snoise((p + vec2(6.0, -4.0)) * (2.0 + seed*1.0));
+
+        // threshold shifts with pulse
+        float low  = mix(0.2, 0.4, pulse);
+        float high = mix(0.6, 0.8, pulse);
+
+        float blob = smoothstep(low, high, n1 + 0.6*n2);
+
+        // final color
+        vec3 col = mix(color1, color2, blob);
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `
+  });
+  scene.add(new THREE.Mesh(sphereGeo, sphereMat));
+
+  window.addEventListener('resize', onWindowResize);
+
+  // 4) hook up the Next Room button
+  document.getElementById('nextRoomBtn')
+    .addEventListener('click', () => loadRoom((currentIndex+1)%rooms.length));
+
+  // 5) finally load the very first room
+  await loadRoom(currentIndex);
+}
+
+async function loadRoom(indexOrName) {
+  // allow calling by name or index
+  if (typeof indexOrName === 'number') {
+    currentIndex = indexOrName;
+  } else {
+    currentIndex = rooms.indexOf(indexOrName);
+    if (currentIndex === -1) currentIndex = 0;
+  }
+  const roomName = rooms[currentIndex];
+
+  // update URL so it’s shareable
+  params.set('room', roomName);
+  window.history.replaceState(null,'', '?' + params.toString());
+
+  // clear out old orbit items
+  orbitItems.forEach(m=>scene.remove(m));
+  orbitItems.length = 0;
+
+  // fetch this room’s JSON
+  const url = `https://attentionfocus.s3.us-east-1.amazonaws.com/${roomName}.json`;
+  const resp = await fetch(url);
+  const { seed, song, objects } = await resp.json();
+
+  // update the lava seed
+  sphereUniforms.seed.value = seed;
+
+
+  // reload audio
+  if (sound.isPlaying) sound.stop();
+  new THREE.AudioLoader().load(song, buf=>{
+    sound.setBuffer(buf);
+    sound.setLoop(true);
+    sound.setVolume(0.5);
+    // if we’re already in an XR session, resume+play immediately
+    if (renderer.xr.getSession()) {
+        sound.context.resume().then(() => {
+        if (!sound.isPlaying) sound.play();
+        });
+    }
+  });
+
+  // load images & videos into orbitItems just like before
+  // helper for a generic grey placeholder
+function makePlaceholderMesh(isVideo) {
+  const geom = isVideo
+      ? new THREE.PlaneGeometry(1.6, 0.9)   // default 16:9 card for videos
+      : new THREE.PlaneGeometry(1, 1);      // square for images until we know AR
+  const mat  = new THREE.MeshBasicMaterial({ color: 0x222222, opacity: 0.25, transparent: true });
+  return new THREE.Mesh(geom, mat);
+}
+
+  objects.forEach((url, i) => {
+    const isImg = /\.(jpe?g|png)$/i.test(url);
+    const isVid = /\.(mp4|webm)$/i.test(url);
+    if (!isImg && !isVid) return;                       // ignore unknown types
+
+    // 1) create the slot in the correct position
+    const mesh = makePlaceholderMesh(isVid);
+    scene.add(mesh);
+    orbitItems.push(mesh);                              // order is fixed here!
+
+    // 2) start loading the real asset
+    if (isImg) {
+      new THREE.TextureLoader().load(
+        url,
+        tex => {                                        // --- success ------------
+          // adjust geometry to actual aspect ratio
+          const ar = tex.image.width / tex.image.height;
+          mesh.geometry.dispose();
+          mesh.geometry = new THREE.PlaneGeometry(ar, 1);
+
+          // swap in the real texture
+          mesh.material.map       = tex;
+          mesh.material.opacity   = 1;
+          mesh.material.color.set(0xffffff);
+          mesh.material.needsUpdate = true;
+        },
+        undefined,
+        err => {                                        // --- error -------------
+          console.error('Image failed:', url, err);
+          mesh.material.color.set(0xff0000);            // mark the gap visibly
+        }
+      );
+    } else if (isVid) {
+      const vid = document.createElement('video');
+      vid.src         = url;
+      vid.loop        = true;
+      vid.muted       = true;
+      vid.playsInline = true;
+      vid.crossOrigin = 'anonymous';
+      vid.style.display = 'none';
+      document.body.appendChild(vid);
+
+      const onReady = () => {
+        const tex = new THREE.VideoTexture(vid);
+
+        // optional: compute real aspect ratio from metadata
+        const ar = vid.videoWidth / vid.videoHeight || 16/9;
+        mesh.geometry.dispose();
+        mesh.geometry = new THREE.PlaneGeometry(ar, 1);
+
+        mesh.material.map       = tex;
+        mesh.material.opacity   = 1;
+        mesh.material.color.set(0xffffff);
+        mesh.material.needsUpdate = true;
+      };
+
+      vid.addEventListener('loadeddata', onReady);
+      vid.addEventListener('error',       e => {
+        console.error('Video failed:', url, e);
+        mesh.material.color.set(0xff0000);
+      });
+
+      // many browsers require a user gesture before playing
+      vid.play().catch(() =>
+        window.addEventListener('click', () => vid.play(), { once: true })
+      );
+    }
+  });
+}
+
+function onWindowResize(){
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+}
+
+function animate(){
+  renderer.setAnimationLoop(render);
+}
+let orbitang = 0;
+let hideToggled = false;
+let viewingangle = 0;
+// === Network‑smoothing targets ===========================================
+// Incoming values are written here; render() eases the live variables
+let targetOrbitRadius   = orbitRadius;
+let targetOrbitang      = orbitang;
+let targetViewingangle  = viewingangle;
+function render(){
+  const t = clock.getElapsedTime();
+//   (sphereUniforms.time.value = clock.getElapsedTime());
+  camera.getWorldPosition(camWorldPos);
+  /* ---------- smooth remote state ---------- */
+  const SMOOTH = 0.15;                 // 0 = snap, 1 = freeze – tweak to taste
+  orbitRadius  += (targetOrbitRadius  - orbitRadius)  * SMOOTH;
+  viewingangle += (targetViewingangle - viewingangle) * SMOOTH;
+  {
+    // shortest‑path blend for the circular angle
+    let diff = targetOrbitang - orbitang;
+    diff = ((diff + Math.PI) % (2*Math.PI)) - Math.PI;
+    orbitang += diff * SMOOTH;
+  }
+
+  orbitItems.forEach((item,i)=>{
+    const ang = orbitang + i * (2*Math.PI/orbitItems.length);
+    item.position.set(
+      camWorldPos.x + orbitRadius*Math.cos(ang),
+      camWorldPos.y+1,
+      camWorldPos.z + orbitRadius*Math.sin(ang)
+    );
+    // console.log(camera)
+    item.lookAt(0,1.6,0);
+    
+  });
+  const axis = new THREE.Vector3(1, 0, 0);
+  const angle = viewingangle;
+  // pivot point for rotation
+  const pivot = new THREE.Vector3(0, 1, 0);
+
+  orbitItems.forEach(item => {
+    // 1) translate position so pivot becomes the origin
+    item.position.sub(pivot);
+
+    // 2) rotate around that origin (i.e., around pivot)
+    item.position.applyAxisAngle(axis, angle);
+
+    // 3) translate back to world space
+    item.position.add(pivot);
+
+    // rotate the item's orientation to stay upright
+    item.quaternion.premultiply(
+      new THREE.Quaternion().setFromAxisAngle(axis, angle)
+    );
+  });
+  // console.log(renderer.xr)
+    // console.log('hi')
+    // for each controller, poll axes + A/B buttons
+      controllers.forEach(ctrl => {
+        const gp = ctrl.userData.gamepad;
+        if (gp) {
+          /* ---------- 1. Open / close panel (trigger 0 + grip 1) ---------- */
+          const combo      = gp.buttons[0]?.pressed && gp.buttons[1]?.pressed;
+          const prevCombo  = ctrl.userData.prevCombo || false;
+          if (combo && !prevCombo) togglePanel();
+          ctrl.userData.prevCombo = combo;
+
+          /* ---------- 2. Pick a room (panel open, trigger alone) ---------- */
+          const selecting     = panelGroup.visible && gp.buttons[0]?.pressed && !gp.buttons[1]?.pressed;
+          const prevSelecting = ctrl.userData.prevSelect || false;
+          if (selecting && !prevSelecting){
+            const m = new THREE.Matrix4().extractRotation(ctrl.matrixWorld);
+            raycaster.ray.origin.setFromMatrixPosition(ctrl.matrixWorld);
+            raycaster.ray.direction.set(0,0,-1).applyMatrix4(m);
+            const hit = raycaster.intersectObjects(roomSprites,false)[0];
+            if (hit){
+              const idx = roomSprites.indexOf(hit.object);
+              if (idx !== -1) loadRoom(idx);
+              togglePanel();                 // auto‑close after selection
+            }
+          }
+          ctrl.userData.prevSelect = selecting;
+          // Trigger button (idx 0) to toggle hiding images
+          const pressed0 = panelGroup.visible ? false : gp.buttons[0]?.pressed;
+          const prev0 = ctrl.userData.prevButtons[0] || false;
+          if (pressed0 && !prev0) {
+            hideToggled = !hideToggled;
+            if (hideToggled) {
+              // Compute which item is directly in front of the camera
+              const forward = new THREE.Vector3();
+              camera.getWorldDirection(forward);
+              let minAngle = Infinity;
+              let frontIndex = -1;
+              orbitItems.forEach((item, idx) => {
+                const dir = new THREE.Vector3().subVectors(item.position, camWorldPos).normalize();
+                const angle = forward.angleTo(dir);
+                if (angle < minAngle) {
+                  minAngle = angle;
+                  frontIndex = idx;
+                }
+              });
+              focusIndex  = frontIndex;                 // remember & share
+            } else {
+              focusIndex  = null;
+            }
+            applyFocusVisibility();
+          }
+          ctrl.userData.prevButtons[0] = pressed0;
+          // *joystick* – most XR thumbsticks live at axes[2]/[3], fall back to [0]/[1]
+          const x = gp.axes[2] !== undefined ? gp.axes[2] : gp.axes[0];
+          const y = gp.axes[3] !== undefined ? gp.axes[3] : gp.axes[1];
+          if (Math.abs(x) > 0.01 || Math.abs(y) > 0.01) {
+            orbitang += x/30;
+            targetOrbitang = orbitang;          // keep target in lock‑step
+            // if lower trigger is held, adjust viewing angle instead of radius
+            const lowerPressed = gp.buttons[1]?.pressed;
+            if (lowerPressed) {
+              viewingangle -= y/30;
+              targetViewingangle = viewingangle;
+            } else {
+              orbitRadius -= y/30;
+              targetOrbitRadius = orbitRadius;
+            }
+            sendState(); 
+            // sendState();        // every time the user moves something
+            console.log(
+              `controller ${ctrl.userData.index} stick:`,
+              x.toFixed(2),
+              y.toFixed(2),
+              lowerPressed ? '(adjusting view angle)' : '(adjusting radius)'
+            );
+          }
+
+          // *A/B buttons* – on Quest these usually land at buttons[4] (A) & [5] (B)
+          [
+            { name: 'A', idx: 4 },
+            { name: 'B', idx: 5 }
+          ].forEach(btn => {
+            const pressed = gp.buttons[btn.idx]?.pressed;
+            const prev    = ctrl.userData.prevButtons[btn.idx] || false;
+            // if (pressed && !prev){
+            //     console.log(`${btn.name} pressed`);
+            //     loadRoom((currentIndex+1)%rooms.length);
+            // }     
+            if(pressed && !prev){
+              if(btn.idx == 4){
+                console.log(`${btn.name} pressed`);
+                loadRoom((currentIndex+1)%rooms.length);
+              }else if(btn.idx == 5){
+                loadRoom((currentIndex-1 + rooms.length)%rooms.length);
+              }
+            }
+            else if (!pressed && prev) console.log(`${btn.name} released`);
+            ctrl.userData.prevButtons[btn.idx] = pressed;
+          });
+        }
+    });
+  // Throttle automatic sending to 20 Hz (every 50 ms)
+  sendState();
+
+
+
+  /* ───────────── Highlight menu items while the ray is hovering ───────── */
+  if (panelGroup.visible){
+    let newHover = null;
+    for (const ctrl of controllers){
+      if (!ctrl.userData.gamepad) continue;    // ignore vacant slots
+      const m = new THREE.Matrix4().extractRotation(ctrl.matrixWorld);
+      raycaster.ray.origin.setFromMatrixPosition(ctrl.matrixWorld);
+      raycaster.ray.direction.set(0,0,-1).applyMatrix4(m);
+      const hit = raycaster.intersectObjects(roomSprites,false)[0];
+      if (hit){                                // first hit wins
+        newHover = hit.object;
+        break;
+      }
+    }
+    if (newHover !== currentlyHovered){
+      // ── clear previous highlight ──
+      if (currentlyHovered){
+        currentlyHovered.color           = NORMAL_COLOR;
+        currentlyHovered.backgroundColor = NORMAL_BG;
+      }
+      // ── apply new highlight ──
+      if (newHover){
+        newHover.color           = HOVER_COLOR;
+        newHover.backgroundColor = HOVER_BG;
+      }
+      currentlyHovered = newHover;
+    }
+  } else if (currentlyHovered){                // panel just closed
+    currentlyHovered.color           = NORMAL_COLOR;
+    currentlyHovered.backgroundColor = NORMAL_BG;
+    currentlyHovered = null;
+  }
+
+  renderer.render(scene, camera);
+}
+function sendState(){
+  if (ws.readyState !== 1) return;
+  const now = performance.now();
+  // 20 Hz throttle without setInterval
+  if (!sendState.next || now >= sendState.next) {
+    const payload = { orbitRadius, orbitang, viewingangle, hideToggled, focusIndex };
+    // Skip if nothing changed since last push
+    const unchanged = Object.keys(payload).every(
+        k => payload[k] === lastSent[k]);
+    if (!unchanged) {
+      ws.send(JSON.stringify({ type: 'state', data: payload }));
+      lastSent = { ...payload };
+    }
+    sendState.next = now + 50;
+  }
+}
+
+</script>
+</body>
+</html>
