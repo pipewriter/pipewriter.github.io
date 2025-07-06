@@ -535,11 +535,11 @@ function render(){
     const ang = orbitang + i * (2*Math.PI/orbitItems.length);
     item.position.set(
       camWorldPos.x + orbitRadius*Math.cos(ang),
-      camWorldPos.y+1,
+      1,
       camWorldPos.z + orbitRadius*Math.sin(ang)
     );
     // console.log(camera)
-    item.lookAt(0,1.6,0);
+    item.lookAt(0,1,0);
     
   });
   const axis = new THREE.Vector3(1, 0, 0);
