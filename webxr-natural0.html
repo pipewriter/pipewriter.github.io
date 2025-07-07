@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Soothing Brown‑Green Cave Forest – WebXR</title>
+  <meta name="description" content="A claustrophobic brown cave with calming greens, built with Three.js and WebXR." />
+  <style>
+    html,body{margin:0;height:100%;overflow:hidden;background:#000;}
+    canvas{display:block}
+    #enter-audio{position:absolute;top:50%;left:50%;
+      transform:translate(-50%,-50%);padding:1em 2em;
+      font:700 1rem sans-serif;color:#fff;background:#3d2b1f;
+      border:2px solid #fff;border-radius:4px;cursor:pointer}
+  </style>
+
+  <!-- FIXES THE WEIRD IMPORT BUG -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.178.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.178.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+<button id="enter-audio">Click once for sound</button>
+
+<script type="module">
+import * as THREE from 'three';
+import { VRButton } from 'three/addons/webxr/VRButton.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* --------------------------------------------------------------------- */
+/*  Scene, camera, renderer, XR                                          */
+/* --------------------------------------------------------------------- */
+const scene   = new THREE.Scene();
+scene.fog     = new THREE.FogExp2(0x1e1a14, 0.15);               // brown mist
+
+const camera  = new THREE.PerspectiveCamera(
+  70, window.innerWidth / window.innerHeight, 0.1, 100
+);
+camera.position.set(0, 1.6, 2);                                  // eye‑level
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(devicePixelRatio);
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.xr.enabled = true;
+document.body.appendChild(renderer.domElement);
+document.body.appendChild(VRButton.createButton(renderer));
+
+/* --------------------------------------------------------------------- */
+/*  Enclosing cave (inverted sphere)                                     */
+/* --------------------------------------------------------------------- */
+const caveGeo = new THREE.SphereGeometry(15, 64, 64);
+caveGeo.scale(-1, 1, 1);                                          // flip normals
+const caveMat = new THREE.MeshStandardMaterial({
+  color: 0x3d2b1f, roughness: 0.9, metalness: 0.0
+});
+scene.add(new THREE.Mesh(caveGeo, caveMat));
+
+/* --------------------------------------------------------------------- */
+/*  Ground disc – keeps the user visually anchored                       */
+/* --------------------------------------------------------------------- */
+const floorGeo = new THREE.CircleGeometry(5, 64);
+const floorMat = new THREE.MeshStandardMaterial({
+  color: 0x4f3a24, roughness: 1.0
+});
+const floor = new THREE.Mesh(floorGeo, floorMat);
+floor.rotation.x = -Math.PI / 2;
+scene.add(floor);
+
+/* --------------------------------------------------------------------- */
+/*  Camp‑fire: emissive cone + flickering point‑light                    */
+/* --------------------------------------------------------------------- */
+const fireMat  = new THREE.MeshBasicMaterial({ color: 0xff8c42 });
+const fireCone = new THREE.Mesh(new THREE.ConeGeometry(0.15,0.3,16), fireMat);
+fireCone.position.set(0, 0, 0);
+scene.add(fireCone);
+
+const fireLight = new THREE.PointLight(0xffa350, 2.0, 10, 2);
+fireLight.position.set(0, 1, 0);
+scene.add(fireLight);
+
+/* --------------------------------------------------------------------- */
+/*  Ambient fill – very warm, very dim                                   */
+/* --------------------------------------------------------------------- */
+scene.add(new THREE.AmbientLight(0x221a0f, 0.6));
+
+/* --------------------------------------------------------------------- */
+/*  Procedural ferns (≈120 instances)                                    */
+/* --------------------------------------------------------------------- */
+function createFern() {
+  const fern = new THREE.Group();
+
+  const stemMat  = new THREE.MeshStandardMaterial({ color: 0x2e4b22, roughness: 1 });
+  const leafMat  = new THREE.MeshStandardMaterial({ color: 0x405e2e,
+                                                    side: THREE.DoubleSide });
+  const stem     = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.02, 0.02, 0.5, 8), stemMat
+  );
+  stem.position.y = 0.25;
+  fern.add(stem);
+
+  const leafGeo   = new THREE.PlaneGeometry(0.4, 0.1);
+  for (let i = 0; i < 10; i++) {
+    const leaf = new THREE.Mesh(leafGeo, leafMat);
+    leaf.position.y = 0.05 + 0.05 * i;
+    leaf.position.x = (i % 2 ? 1 : -1) * 0.15;
+    leaf.rotation.z = (i % 2 ? 1 : -1) * Math.PI / 3;
+    leaf.rotation.y = (Math.random() * 0.4) - 0.2;
+    fern.add(leaf);
+  }
+  return fern;
+}
+
+for (let i = 0; i < 120; i++) {
+  const fern = createFern();
+  const a    = Math.random() * Math.PI * 2;
+  const r    = 3 + Math.random() * 1.5;
+  fern.position.set(Math.cos(a) * r, 0, Math.sin(a) * r);
+  fern.rotation.y = Math.random() * Math.PI * 2;
+  scene.add(fern);
+}
+
+/* --------------------------------------------------------------------- */
+/*  Audio: brown noise (generated) + looping night‑jungle ambience       */
+/* --------------------------------------------------------------------- */
+const button = document.getElementById('enter-audio');
+button.addEventListener('click', () => {
+  button.remove();                                                // hide UI
+  const listener = new THREE.AudioListener();
+  camera.add(listener);
+
+  /* Brown noise buffer */
+  const sr        = listener.context.sampleRate;
+  const length    = sr * 3;                                       // 3‑second loop
+  const noiseBuf  = listener.context.createBuffer(1, length, sr);
+  const data      = noiseBuf.getChannelData(0);
+  let lastOut     = 0;
+  for (let i = 0; i < length; i++) {
+    const white   = Math.random() * 2 - 1;
+    data[i]       = (lastOut + 0.02 * white) / 1.02;
+    lastOut       = data[i];
+    data[i]      *= 3.5;                                          // gain fit
+  }
+  const brown = new THREE.Audio(listener);
+  brown.setBuffer(noiseBuf);
+  brown.setLoop(true);
+  brown.setVolume(0.12);
+  brown.play();
+
+  /* Night‑jungle ambience (royalty‑free CC‑0 asset)                   */
+  const jungle   = new THREE.Audio(listener);
+  const loader   = new THREE.AudioLoader();
+  loader.load(
+    'https://cdn.jsdelivr.net/gh/robbykraft/ambient-audio/sounds/jungle-night.mp3',
+    buffer => {
+      jungle.setBuffer(buffer);
+      jungle.setLoop(true);
+      jungle.setVolume(0.28);
+      jungle.play();
+    },
+    undefined,
+    e => console.error('Audio load error', e)
+  );
+}, { once: true });
+
+/* --------------------------------------------------------------------- */
+/*  OrbitControls for non‑XR preview                                     */
+/* --------------------------------------------------------------------- */
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1, 0);
+controls.update();
+
+/* --------------------------------------------------------------------- */
+/*  Render/animation loop                                                */
+/* --------------------------------------------------------------------- */
+renderer.setAnimationLoop((t) => {
+  // fire flicker – quasi‑random, feels organic
+  fireLight.intensity = 2.2 + Math.sin(t * 0.02) * 0.5 + (Math.random() * 0.1);
+  fireCone.scale.y    = 1 + Math.sin(t * 0.004) * 0.05;
+
+  renderer.render(scene, camera);
+});
+
+/* --------------------------------------------------------------------- */
+/*  Resize handling                                                      */
+/* --------------------------------------------------------------------- */
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>

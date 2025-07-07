@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Soothing Brown‑&‑Green Forest – WebXR + Three.js</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#1a130e;} /* deep brown */
+  #overlay{position:absolute;top:10px;left:10px;font-family:sans-serif;color:#d0c4ad;}
+</style>
+
+<!-- FIXES THE WEIRD IMPORT BUG -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.178.0/build/three.module.js"
+  }
+}
+</script>
+<script type="module">
+/* ---------- imports ---------- */
+import * as THREE           from 'three';
+import { VRButton }         from 'https://cdn.jsdelivr.net/npm/three@0.178.0/examples/jsm/webxr/VRButton.js';
+import { SimplexNoise }     from 'https://cdn.jsdelivr.net/npm/three@0.178.0/examples/jsm/math/SimplexNoise.js';
+
+/* ---------- CONFIG ---------- */
+const PLANT_COUNT   = 300;   // total instanced ferns/saplings
+const AREA_RADIUS   = 20;    // radius of the circular clearing
+const LEAFS_PER_FERN= 8;     // how many leaves per fern
+const AUDIO_URL     = 'https://cdn.pixabay.com/download/audio/2023/04/25/audio_9432f7d75a.mp3?filename=tropical-forest-ambient-144855.mp3'; // CC0 loop ~30 s
+
+/* ---------- renderer & scene ---------- */
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.xr.enabled = true;
+renderer.setPixelRatio( window.devicePixelRatio );
+renderer.setSize( window.innerWidth, window.innerHeight );
+document.body.appendChild( renderer.domElement );
+document.body.appendChild( VRButton.createButton( renderer ) );
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a130e);                       // very dark brown backdrop
+
+/* ---------- camera ---------- */
+const camera = new THREE.PerspectiveCamera( 75, window.innerWidth/window.innerHeight, 0.1, 200 );
+camera.position.set(0, 1.6, 3);                                     // eye‑height
+
+/* ---------- warm lighting ---------- */
+const hemi = new THREE.HemisphereLight(0xffe5c4, 0x443214, 0.9);     // sky (warm) / ground (brown)
+scene.add(hemi);
+
+const dir = new THREE.DirectionalLight(0xffddbb, 0.4);               // late‑afternoon sun‑ray
+dir.position.set(-5, 10, 2);
+scene.add(dir);
+
+/* ---------- ground (soil) ---------- */
+const groundMat = new THREE.MeshStandardMaterial({ color:0x4b3722 });
+const groundGeo = new THREE.CircleGeometry(AREA_RADIUS, 64);
+groundGeo.rotateX(-Math.PI/2);
+const ground    = new THREE.Mesh(groundGeo, groundMat);
+ground.receiveShadow = true;
+scene.add(ground);
+
+/* ---------- procedural ferns ---------- */
+const leafGeo = new THREE.PlaneGeometry(0.2, 0.8);
+leafGeo.translate(0,0.4,0);                                         // pivot at base
+const leafMat = new THREE.MeshStandardMaterial({
+  color:0x19331a, side:THREE.DoubleSide
+});
+leafMat.transparent = true; leafMat.opacity = 0.95;
+const fern = new THREE.InstancedMesh(leafGeo, leafMat, PLANT_COUNT*LEAFS_PER_FERN);
+fern.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+scene.add(fern);
+
+/* scatter positions with Simplex for natural clumping */
+const simplex = new SimplexNoise();
+const dummy   = new THREE.Object3D();
+let i = 0;
+for (let p=0; p<PLANT_COUNT; ++p){
+  const angle = Math.random()*Math.PI*2;
+  const radius= Math.sqrt(Math.random())*AREA_RADIUS*0.9;           // bias toward center
+  const x = Math.cos(angle)*radius;
+  const z = Math.sin(angle)*radius;
+  const noise = 0.8 + 0.2*simplex.noise(x*0.2, z*0.2);              // subtle height variation
+  const heightScale = THREE.MathUtils.lerp(0.6,1.2,Math.random())*noise;
+
+  for (let l=0; l<LEAFS_PER_FERN; ++l){
+    dummy.position.set(x, 0, z);
+    dummy.rotation.y = (l/LEAFS_PER_FERN)*Math.PI*2;                // radial leaf spread
+    dummy.rotation.z = THREE.MathUtils.degToRad(25+Math.random()*10);
+    dummy.scale.set(1, heightScale, 1);
+    dummy.updateMatrix();
+    fern.setMatrixAt(i++, dummy.matrix);
+  }
+}
+fern.instanceMatrix.needsUpdate = true;
+
+/* ---------- subtle fog for depth ---------- */
+scene.fog = new THREE.FogExp2(0x1a130e, 0.035);
+
+/* ---------- ambiance: forest + brown‑noise ---------- */
+const listener = new THREE.AudioListener();
+camera.add(listener);
+
+const audioLoader = new THREE.AudioLoader();
+const forestSound = new THREE.Audio(listener);
+audioLoader.load(AUDIO_URL, buffer=>{
+  forestSound.setBuffer(buffer);
+  forestSound.setLoop(true);
+  forestSound.setVolume(0.35);
+  forestSound.play();
+});
+
+/* Brown‑noise generator (very low level) */
+const audioCtx = listener.context;
+const brownBuffer = audioCtx.createBuffer(1, audioCtx.sampleRate*2, audioCtx.sampleRate);
+const data = brownBuffer.getChannelData(0);
+let lastOut = 0.0;
+for(let j=0;j<data.length;++j){
+  const white = Math.random()*2-1;
+  data[j] = (lastOut+ (0.02*white)) / 1.02;
+  lastOut = data[j];
+  data[j] *= 0.25; // scaling
+}
+const brownSource = audioCtx.createBufferSource();
+brownSource.buffer = brownBuffer;
+brownSource.loop = true;
+const brownGain = audioCtx.createGain();
+brownGain.gain.value = 0.05;  // whisper‑quiet masker
+brownSource.connect(brownGain).connect(audioCtx.destination);
+brownSource.start();
+
+/* ---------- resize ---------- */
+window.addEventListener('resize', ()=>{
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+/* ---------- animation loop ---------- */
+renderer.setAnimationLoop( ()=> {
+  const t = performance.now()*0.0002;
+  hemi.intensity = 0.8 + 0.1*Math.sin(t);        // tiny light breathing
+  dir.position.x = Math.sin(t*0.3)*5;
+  dir.position.z = Math.cos(t*0.3)*5;
+  renderer.render(scene, camera);
+});
+</script>
+<div id="overlay">Click “Enter VR” → Put headset on → Breathe.</div>
+</body>
+</html>

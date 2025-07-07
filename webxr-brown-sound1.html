@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Soothing Brown‑Centric WebXR Space</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- FIXES THE WEIRD IMPORT BUG -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.178.0/build/three.module.js"
+      }
+    }
+  </script>
+
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #1b140c; }
+    canvas      { display: block; }
+    .vr-button  { transition: opacity 1s ease-in; opacity: 0.9; }
+  </style>
+</head>
+<body>
+  <script type="module">
+    import * as THREE   from 'three';
+    import { VRButton } from 'https://cdn.jsdelivr.net/npm/three@0.178.0/examples/jsm/webxr/VRButton.js';
+
+    // ---------- Renderer ----------
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.xr.enabled = true;
+    renderer.outputEncoding        = THREE.sRGBEncoding;
+    renderer.toneMapping           = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure   = 1.0;
+    document.body.appendChild(renderer.domElement);
+    document.body.appendChild(VRButton.createButton(renderer)).classList.add('vr-button');
+
+    // ---------- Scene ----------
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x3a2d1d);
+    scene.fog        = new THREE.FogExp2(0x1b140c, 0.04);
+
+    // ---------- Camera ----------
+    const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.set(0, 1.6, 3);
+
+    // ---------- Lights ----------
+    const hemiLight = new THREE.HemisphereLight(0xffe8d0, 0x302013, 0.6);
+    scene.add(hemiLight);
+
+    const candleLight = new THREE.PointLight(0xffaa66, 0.5, 10, 2);
+    candleLight.position.set(0, 1.2, 0);
+    scene.add(candleLight);
+
+    // ---------- Ground ----------
+    const groundMat = new THREE.MeshStandardMaterial({ color: 0x4e3b24, roughness: 1.0, metalness: 0.0 });
+    const ground    = new THREE.Mesh(new THREE.CircleGeometry(20, 64), groundMat);
+    ground.rotation.x  = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    // ---------- Low‑poly “rock cushions” ----------
+    const rockMat = new THREE.MeshStandardMaterial({ color: 0x5c452a, roughness: 0.8 });
+    const rockGeo = new THREE.DodecahedronGeometry(0.4, 0);
+    for (let i = 0; i < 10; i++) {
+      const rock = new THREE.Mesh(rockGeo, rockMat);
+      rock.position.set((Math.random() - 0.5) * 8, 0.2, (Math.random() - 0.5) * 8);
+      rock.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
+      scene.add(rock);
+    }
+
+    // ---------- Gentle dust motes ----------
+    const moteGeo = new THREE.SphereGeometry(0.02, 8, 8);
+    const moteMat = new THREE.MeshBasicMaterial({ color: 0xffdba1, transparent: true, opacity: 0.4 });
+    const motes   = new THREE.Group();
+    for (let i = 0; i < 120; i++) {
+      const mote = new THREE.Mesh(moteGeo, moteMat);
+      mote.position.set((Math.random()-0.5)*6, Math.random()*3+0.5, (Math.random()-0.5)*6);
+      motes.add(mote);
+    }
+    scene.add(motes);
+
+    // ---------- Procedural ambient sound ----------
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    let audioStarted = false;
+
+    function createBrownNoiseSource() {
+      const bufferSize = 2 * audioCtx.sampleRate;
+      const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+      const data = noiseBuffer.getChannelData(0);
+      let lastOut = 0.0;
+      for (let i = 0; i < bufferSize; i++) {
+        const white = Math.random() * 2 - 1;
+        lastOut = (lastOut + 0.02 * white) / 1.02;
+        data[i] = lastOut * 3.5; // volume compensation
+      }
+      const noise = audioCtx.createBufferSource();
+      noise.buffer = noiseBuffer;
+      noise.loop = true;
+      return noise;
+    }
+
+    function initAmbientAudio() {
+      if (audioStarted) return;
+      audioStarted = true;
+
+      const brown = createBrownNoiseSource();
+
+      // Low‑pass filter to keep it “roomy” and not hissy
+      const lowPass = audioCtx.createBiquadFilter();
+      lowPass.type = 'lowpass';
+      lowPass.frequency.value = 220;   // Hz
+
+      // Master gain — keep very quiet
+      const gain = audioCtx.createGain();
+      gain.gain.value = 0.15;
+
+      // Slow “breathing” LFO (±5 dB)
+      const lfo = audioCtx.createOscillator();
+      lfo.frequency.value = 0.05; // ~20 second cycle
+      const lfoGain = audioCtx.createGain();
+      lfoGain.gain.value = 0.05;
+      lfo.connect(lfoGain).connect(gain.gain);
+      lfo.start();
+
+      brown.connect(lowPass).connect(gain).connect(audioCtx.destination);
+      brown.start(0);
+    }
+
+    // Resume / start audio after user gesture or XR session start
+    renderer.domElement.addEventListener('pointerdown', () => audioCtx.resume().then(initAmbientAudio));
+    renderer.xr.addEventListener('sessionstart', () => audioCtx.resume().then(initAmbientAudio));
+
+    // ---------- Animation loop ----------
+    const clock = new THREE.Clock();
+    renderer.setAnimationLoop(() => {
+      const t = clock.getElapsedTime();
+
+      // Candle flicker (±10 %)
+      candleLight.intensity = 0.45 + Math.sin(t * 0.5) * 0.05;
+
+      // Dust motes drift upward then reset
+      motes.children.forEach(m => {
+        m.position.y += 0.005;
+        if (m.position.y > 4) m.position.y = 0.5;
+      });
+
+      renderer.render(scene, camera);
+    });
+
+    // ---------- Resize ----------
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>

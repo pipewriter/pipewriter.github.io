@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Calming Brown–Green Forest – WebXR • Three.js r178</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- FIXES THE WEIRD IMPORT BUG -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.178.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.178.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <style>
+    html,body {margin:0;height:100%;background:#2b221b;font-family:sans-serif;overflow:hidden;}
+    #overlay {position:absolute;bottom:1rem;left:50%;transform:translateX(-50%);color:#cdbba7;
+              font-size:.9rem;pointer-events:none;text-shadow:0 0 6px #0008;}
+  </style>
+</head>
+<body>
+  <div id="overlay">Look around — press the goggles icon for VR.</div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { VRButton } from 'three/addons/webxr/VRButton.js';
+
+    /* ---------- renderer & XR ---------- */
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    renderer.setSize( window.innerWidth, window.innerHeight );
+    renderer.setPixelRatio( window.devicePixelRatio );
+    renderer.xr.enabled = true;
+    document.body.appendChild( renderer.domElement );
+    document.body.appendChild( VRButton.createButton( renderer ) );
+
+    /* ---------- scene & camera ---------- */
+    const scene  = new THREE.Scene();
+    scene.fog    = new THREE.FogExp2( 0x2b221b, 0.08 );               // brownish fog envelope
+    const camera = new THREE.PerspectiveCamera( 70, window.innerWidth / window.innerHeight, 0.05, 100 );
+    camera.position.set( 0, 1.6, 3 );                                 // eye‑height start
+
+    /* ---------- warm key light + fill --------- */
+    const sun       = new THREE.DirectionalLight( 0xffe3b5, 2.2 );    // ≈2700 K warm white
+    sun.position.set( 5, 10, 2 );
+    const bounce    = new THREE.HemisphereLight( 0x3a4020, 0x1a120b, 0.3 ); // cool‑green sky, dark‑brown ground
+    scene.add( sun, bounce );
+
+    /* ---------- ground plane ---------- */
+    const groundMat = new THREE.MeshStandardMaterial({
+      color: 0x4b3b2a, roughness: 1, metalness: 0
+    });
+    const ground    = new THREE.Mesh( new THREE.CircleGeometry( 60, 64 ), groundMat );
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add( ground );
+
+    /* ---------- procedural ferns (instanced) ---------- */
+    const FERN_COUNT = 500;
+    const fernGeom   = new THREE.ConeGeometry( 0.06, 0.8, 6, 1 );     // very low‑poly frond
+    fernGeom.translate( 0, 0.4, 0 );
+    const fernMat    = new THREE.MeshStandardMaterial({ color: 0x234e29, roughness: .9 });
+    const ferns      = new THREE.InstancedMesh( fernGeom, fernMat, FERN_COUNT );
+    const dummy      = new THREE.Object3D();
+
+    for ( let i = 0; i < FERN_COUNT; i ++ ) {
+      const r = THREE.MathUtils.randFloat( 4, 55 );                   // donut‑shaped scatter
+      const a = THREE.MathUtils.randFloat( 0, Math.PI * 2 );
+      dummy.position.set( Math.cos(a)*r, 0, Math.sin(a)*r );
+      dummy.rotation.y = THREE.MathUtils.randFloat( 0, Math.PI*2 );
+      const s = THREE.MathUtils.randFloat( .6, 1.8 );
+      dummy.scale.setScalar( s );
+      dummy.updateMatrix();
+      ferns.setMatrixAt( i, dummy.matrix );
+    }
+    scene.add( ferns );
+
+    /* ---------- subtle palette breathing ---------- */
+    const baseHue = 37/360;                                           // ≈brown‑orange
+    const clock   = new THREE.Clock();
+
+    function updatePalette() {
+      const t  = clock.getElapsedTime();
+      const h  = baseHue + Math.sin(t*0.07)*0.01;                     // ±1 % hue wiggle
+      const rgb= new THREE.Color().setHSL( h, 0.5, 0.26 );
+      groundMat.color.set( rgb );
+      sun.color.setHSL( h+0.1, 0.55, 0.8 );
+    }
+
+    /* ---------- ambient forest audio ---------- */
+    const listener  = new THREE.AudioListener();
+    camera.add( listener );
+
+    const ambient = new THREE.Audio( listener );
+    const audioLoader = new THREE.AudioLoader();
+    audioLoader.load( 'https://cdn.jsdelivr.net/gh/matthias730/ambient-audio/forest.ogg', buffer => {
+      ambient.setBuffer( buffer );
+      ambient.setLoop( true );
+      ambient.setVolume( 0.25 );
+      ambient.play();
+    });
+
+    /* ---------- resize ---------- */
+    window.addEventListener( 'resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize( window.innerWidth, window.innerHeight );
+    });
+
+    /* ---------- render loop ---------- */
+    renderer.setAnimationLoop( () => {
+      updatePalette();
+      renderer.render( scene, camera );
+    });
+  </script>
+</body>
+</html>
