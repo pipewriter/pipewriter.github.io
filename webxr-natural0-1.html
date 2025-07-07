@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Brown‑Green Cave Forest – WebXR</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- Import maps keep everything ES‑Module friendly -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three"         : "https://cdn.jsdelivr.net/npm/three@0.178.0/build/three.module.js",
+      "three/addons/" : "https://cdn.jsdelivr.net/npm/three@0.178.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <style>
+    html,body { margin:0; height:100%; overflow:hidden; background:#000;}
+    canvas    { display:block; }
+    .vr-btn   { transition:opacity .8s ease; opacity:.9; }
+  </style>
+</head>
+<body>
+<script type="module">
+/* ──────────────────────────────────────────────────────────────────
+   Imports
+─────────────────────────────────────────────────────────────────── */
+import * as THREE                 from 'three';
+import { VRButton }               from 'three/addons/webxr/VRButton.js';
+import { OrbitControls }          from 'three/addons/controls/OrbitControls.js';
+
+/* ──────────────────────────────────────────────────────────────────
+   Renderer / XR
+─────────────────────────────────────────────────────────────────── */
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(innerWidth, innerHeight);
+renderer.xr.enabled = true;
+renderer.outputEncoding      = THREE.sRGBEncoding;
+renderer.toneMapping         = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+document.body.appendChild(renderer.domElement);
+document.body.appendChild(VRButton.createButton(renderer)).classList.add('vr-btn');
+
+/* ──────────────────────────────────────────────────────────────────
+   Scene, camera, controls
+─────────────────────────────────────────────────────────────────── */
+const scene  = new THREE.Scene();
+scene.fog    = new THREE.FogExp2(0x1e1a14, 0.15);
+
+const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.1, 100);
+camera.position.set(0, 1.6, 2);
+
+const controls = new OrbitControls(camera, renderer.domElement); // nice for desktop preview
+controls.target.set(0, 1, 0);
+controls.update();
+
+/* ──────────────────────────────────────────────────────────────────
+   Lighting
+─────────────────────────────────────────────────────────────────── */
+scene.add(new THREE.AmbientLight(0x221a0f, 0.6));                // very dim warm wash
+
+const fireLight = new THREE.PointLight(0xffa350, 2.0, 12, 2);    // main warm light
+fireLight.position.set(0, 1, 0);
+scene.add(fireLight);
+
+/* ──────────────────────────────────────────────────────────────────
+   Cave walls – inverted sphere with PBR texture
+─────────────────────────────────────────────────────────────────── */
+const texLoader = new THREE.TextureLoader();
+const wallColor    = texLoader.load('https://cdn.jsdelivr.net/gh/emmelleppi/free-pbr-textures@master/rock_cave_04/rock_cave_04_diff_1k.jpg');
+const wallRough    = texLoader.load('https://cdn.jsdelivr.net/gh/emmelleppi/free-pbr-textures@master/rock_cave_04/rock_cave_04_rough_1k.jpg');
+
+[wallColor, wallRough].forEach(t => {
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(4,4);
+});
+
+const cave   = new THREE.Mesh(
+  new THREE.SphereGeometry(15, 64, 64).scale(-1,1,1),            // flip normals
+  new THREE.MeshStandardMaterial({
+    map       : wallColor,
+    roughnessMap: wallRough,
+    roughness : 1,
+    metalness : 0
+  })
+);
+scene.add(cave);
+
+/* ──────────────────────────────────────────────────────────────────
+   Floor disc
+─────────────────────────────────────────────────────────────────── */
+const floor   = new THREE.Mesh(
+  new THREE.CircleGeometry(5, 64),
+  new THREE.MeshStandardMaterial({ color:0x4f3a24, roughness:1 })
+);
+floor.rotation.x = -Math.PI/2;
+floor.receiveShadow = true;
+scene.add(floor);
+
+/* ──────────────────────────────────────────────────────────────────
+   Camp‑fire (cone) – geometry lives at origin
+─────────────────────────────────────────────────────────────────── */
+const fireCone = new THREE.Mesh(
+  new THREE.ConeGeometry(0.15, 0.3, 16),
+  new THREE.MeshBasicMaterial({ color:0xff8c42 })
+);
+scene.add(fireCone);
+
+/* ──────────────────────────────────────────────────────────────────
+   Low‑poly rocks (from example 1)
+─────────────────────────────────────────────────────────────────── */
+const rockMat = new THREE.MeshStandardMaterial({ color:0x5c452a, roughness:0.8 });
+const rockGeo = new THREE.DodecahedronGeometry(0.4, 0);
+for (let i=0; i<10; i++) {
+  const rock = new THREE.Mesh(rockGeo, rockMat);
+  const a = Math.random()*Math.PI*2;
+  const r = 3 + Math.random()*1;                                 // stays inside floor
+  rock.position.set(Math.cos(a)*r, 0.2, Math.sin(a)*r);
+  rock.rotation.set(Math.random()*Math.PI,Math.random()*Math.PI,Math.random()*Math.PI);
+  scene.add(rock);
+}
+
+/* ──────────────────────────────────────────────────────────────────
+   Procedural ferns (from example 2)
+─────────────────────────────────────────────────────────────────── */
+function createFern() {
+  const fern = new THREE.Group();
+  const stemMat = new THREE.MeshStandardMaterial({ color:0x2e4b22, roughness:1 });
+  const leafMat = new THREE.MeshStandardMaterial({ color:0x405e2e, side:THREE.DoubleSide });
+  const stem    = new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.02,0.5,8), stemMat);
+  stem.position.y = 0.25;
+  fern.add(stem);
+
+  const leafGeo = new THREE.PlaneGeometry(0.4,0.1);
+  for (let i=0;i<10;i++){
+    const leaf = new THREE.Mesh(leafGeo, leafMat);
+    leaf.position.y = 0.05 + 0.05*i;
+    leaf.position.x = (i%2?1:-1)*0.15;
+    leaf.rotation.z = (i%2?1:-1)*Math.PI/3;
+    leaf.rotation.y = (Math.random()*0.4)-0.2;
+    fern.add(leaf);
+  }
+  return fern;
+}
+
+for (let i=0;i<120;i++){
+  const fern = createFern();
+  const a = Math.random()*Math.PI*2;
+  const r = 3 + Math.random()*1.5;
+  fern.position.set(Math.cos(a)*r,0,Math.sin(a)*r);
+  fern.rotation.y = Math.random()*Math.PI*2;
+  scene.add(fern);
+}
+
+/* ──────────────────────────────────────────────────────────────────
+   Procedural brown‑noise ambience (example 1 style)
+─────────────────────────────────────────────────────────────────── */
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+let audioStarted = false;
+
+function createBrownNoise() {
+  const bufSize = 2*audioCtx.sampleRate;
+  const buffer  = audioCtx.createBuffer(1, bufSize, audioCtx.sampleRate);
+  const data    = buffer.getChannelData(0);
+  let lastOut   = 0;
+  for (let i=0;i<bufSize;i++){
+    const white = Math.random()*2 - 1;
+    lastOut     = (lastOut + 0.02*white)/1.02;
+    data[i]     = lastOut * 3.5;
+  }
+  const src = audioCtx.createBufferSource();
+  src.buffer = buffer;
+  src.loop   = true;
+  return src;
+}
+
+function initAmbientAudio(){
+  if (audioStarted) return;
+  audioStarted = true;
+
+  const brown  = createBrownNoise();
+  const lpf    = audioCtx.createBiquadFilter();
+  lpf.type = 'lowpass'; lpf.frequency.value = 220;
+
+  const gain = audioCtx.createGain();
+  gain.gain.value = 0.15;
+
+  const lfo  = audioCtx.createOscillator();
+  const lfoG = audioCtx.createGain();
+  lfo.frequency.value = 0.05;      // ~20 s period
+  lfoG.gain.value     = 0.05;
+  lfo.connect(lfoG).connect(gain.gain);
+  lfo.start();
+
+  brown.connect(lpf).connect(gain).connect(audioCtx.destination);
+  brown.start(0);
+}
+
+// start / resume on first interaction or XR session start
+renderer.domElement.addEventListener('pointerdown', () => {
+  audioCtx.resume().then(initAmbientAudio);
+},{ once:true });
+renderer.xr.addEventListener('sessionstart', () => {
+  audioCtx.resume().then(initAmbientAudio);
+});
+
+/* ──────────────────────────────────────────────────────────────────
+   Animation loop
+─────────────────────────────────────────────────────────────────── */
+const clock = new THREE.Clock();
+renderer.setAnimationLoop(() => {
+  const t = clock.getElapsedTime();
+
+  // fire flicker (cone height + light intensity)
+  fireLight.intensity = 2.2 + Math.sin(t*0.02)*0.5 + Math.random()*0.1;
+  fireCone.scale.y    = 1 + Math.sin(t*0.004)*0.05;
+
+  renderer.render(scene, camera);
+});
+
+/* ──────────────────────────────────────────────────────────────────
+   Resize
+─────────────────────────────────────────────────────────────────── */
+addEventListener('resize', () => {
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>

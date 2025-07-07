@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Ambient Cave Forest – WebXR</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    html,body{margin:0;height:100%;overflow:hidden;background:#000}
+    canvas{display:block}
+    .vr-button{transition:opacity 1s ease-in;opacity:.9}
+    #tap-audio{
+      position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+      padding:1em 2em;font:700 1rem/1 sans-serif;
+      color:#fff;background:#3d2b1f;border:2px solid #fff;
+      border-radius:4px;cursor:pointer
+    }
+  </style>
+
+  <!-- Fixes the ES‑Module import quirk on some browsers -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three":              "https://cdn.jsdelivr.net/npm/three@0.178.0/build/three.module.js",
+      "three/addons/":      "https://cdn.jsdelivr.net/npm/three@0.178.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+<button id="tap-audio">Click once to start sound</button>
+
+<script type="module">
+import * as THREE                from 'three';
+import { VRButton }               from 'three/addons/webxr/VRButton.js';
+import { OrbitControls }          from 'three/addons/controls/OrbitControls.js';
+
+/* ------------------------------------------------------------------ */
+/*  Renderer / XR setup                                               */
+/* ------------------------------------------------------------------ */
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setPixelRatio(devicePixelRatio);
+renderer.setSize(innerWidth, innerHeight);
+renderer.xr.enabled = true;
+renderer.outputEncoding      = THREE.sRGBEncoding;
+renderer.toneMapping         = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+document.body.appendChild(renderer.domElement);
+document.body.appendChild(VRButton.createButton(renderer)).classList.add('vr-button');
+
+/* ------------------------------------------------------------------ */
+/*  Scene & camera                                                    */
+/* ------------------------------------------------------------------ */
+const scene  = new THREE.Scene();
+scene.fog    = new THREE.FogExp2(0x1e1a14, 0.15);
+
+const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.1, 100);
+camera.position.set(0, 1.6, 2);
+
+/* Non‑XR preview controls */
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0,1,0);
+controls.update();
+
+/* ------------------------------------------------------------------ */
+/*  Textured cave walls (inverted sphere)                             */
+/* ------------------------------------------------------------------ */
+const caveGeo = new THREE.SphereGeometry(15, 64, 64);
+caveGeo.scale(-1,1,1);                     // flip normals
+
+const caveMat = new THREE.MeshStandardMaterial({
+  color:0x5a4735, roughness:0.9, metalness:0
+});
+const cave = new THREE.Mesh(caveGeo, caveMat);
+scene.add(cave);
+
+/* Load rock texture and apply to cave walls */
+new THREE.TextureLoader().load(
+  'https://threejs.org/examples/textures/stone.jpg',
+  tex => {
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(4,2);
+    caveMat.map = tex;
+    caveMat.needsUpdate = true;
+  },
+  undefined,
+  err => console.warn('Cave texture failed to load', err)
+);
+
+/* ------------------------------------------------------------------ */
+/*  Ground disc                                                       */
+/* ------------------------------------------------------------------ */
+const floor = new THREE.Mesh(
+  new THREE.CircleGeometry(5, 64),
+  new THREE.MeshStandardMaterial({ color:0x4f3a24, roughness:1 })
+);
+floor.rotation.x = -Math.PI/2;
+scene.add(floor);
+
+/* ------------------------------------------------------------------ */
+/*  Camp‑fire (emissive cone) + flickering light                      */
+/* ------------------------------------------------------------------ */
+const fireCone = new THREE.Mesh(
+  new THREE.ConeGeometry(0.15, 0.3, 16),
+  new THREE.MeshBasicMaterial({ color:0xff8c42 })
+);
+fireCone.position.set(0,0,0);
+scene.add(fireCone);
+
+const fireLight = new THREE.PointLight(0xffa350, 2, 10, 2);
+fireLight.position.set(0,1,0);
+scene.add(fireLight);
+
+/* ------------------------------------------------------------------ */
+/*  Low‑poly rock “cushions”                                           */
+/* ------------------------------------------------------------------ */
+const rockMat = new THREE.MeshStandardMaterial({ color:0x5c452a, roughness:0.8 });
+const rockGeo = new THREE.DodecahedronGeometry(0.4,0);
+for(let i=0;i<10;i++){
+  const rock = new THREE.Mesh(rockGeo, rockMat);
+  rock.position.set( (Math.random()-0.5)*8 , 0.2 , (Math.random()-0.5)*8 );
+  rock.rotation.set(Math.random()*Math.PI,Math.random()*Math.PI,Math.random()*Math.PI);
+  scene.add(rock);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Procedural ferns                                                  */
+/* ------------------------------------------------------------------ */
+function createFern(){
+  const fern = new THREE.Group();
+  const stemMat = new THREE.MeshStandardMaterial({ color:0x2e4b22, roughness:1 });
+  const leafMat = new THREE.MeshStandardMaterial({
+    color:0x405e2e, roughness:1, side:THREE.DoubleSide
+  });
+
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.02,0.5,8), stemMat);
+  stem.position.y = 0.25;
+  fern.add(stem);
+
+  const leafGeo = new THREE.PlaneGeometry(0.4,0.1);
+  for(let i=0;i<10;i++){
+    const leaf = new THREE.Mesh(leafGeo, leafMat);
+    leaf.position.y = 0.05 + 0.05*i;
+    leaf.position.x = (i%2 ? 1 : -1)*0.15;
+    leaf.rotation.z = (i%2 ? 1 : -1)*Math.PI/3;
+    leaf.rotation.y = (Math.random()*0.4) - 0.2;
+    fern.add(leaf);
+  }
+  return fern;
+}
+
+for(let i=0;i<120;i++){
+  const fern = createFern();
+  const a = Math.random()*Math.PI*2;
+  const r = 3 + Math.random()*1.5;
+  fern.position.set(Math.cos(a)*r,0,Math.sin(a)*r);
+  fern.rotation.y = Math.random()*Math.PI*2;
+  scene.add(fern);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Lighting                                                          */
+/* ------------------------------------------------------------------ */
+scene.add(new THREE.HemisphereLight(0xffe8d0, 0x302013, 0.4)); // soft fill
+
+/* ------------------------------------------------------------------ */
+/*  Brown‑noise ambience                                              */
+/* ------------------------------------------------------------------ */
+const audioBtn   = document.getElementById('tap-audio');
+const audioCtx   = new (window.AudioContext || window.webkitAudioContext)();
+let   audioReady = false;
+
+function createBrownNoiseBuffer(){
+  const bufferSize = 2*audioCtx.sampleRate;          // ≈2 s
+  const buf        = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+  const data       = buf.getChannelData(0);
+  let lastOut = 0;
+  for(let i=0;i<bufferSize;i++){
+    const white  = Math.random()*2-1;
+    lastOut      = (lastOut + 0.02*white)/1.02;
+    data[i]      = lastOut*3.5;                      // gain fit
+  }
+  return buf;
+}
+
+function initBrownNoise(){
+  if(audioReady) return;
+  audioReady = true;
+
+  const noise = audioCtx.createBufferSource();
+  noise.buffer = createBrownNoiseBuffer();
+  noise.loop   = true;
+
+  const lowpass = audioCtx.createBiquadFilter();
+  lowpass.type = 'lowpass';
+  lowpass.frequency.value = 220;
+
+  const gain = audioCtx.createGain();
+  gain.gain.value = 0.15;
+
+  /* Slow amplitude LFO (±5 dB) */
+  const lfo     = audioCtx.createOscillator();
+  const lfoGain = audioCtx.createGain();
+  lfo.frequency.value = 0.05;        // ~20 s
+  lfoGain.gain.value  = 0.05;
+  lfo.connect(lfoGain).connect(gain.gain);
+  lfo.start();
+
+  noise.connect(lowpass).connect(gain).connect(audioCtx.destination);
+  noise.start(0);
+}
+
+/*  Gesture to enable audio (desktop & XR) */
+audioBtn.addEventListener('click', () => {
+  audioBtn.remove();
+  audioCtx.resume().then(initBrownNoise);
+}, { once:true });
+renderer.xr.addEventListener('sessionstart', () => {
+  audioBtn.remove();
+  audioCtx.resume().then(initBrownNoise);
+}, { once:true });
+
+/* ------------------------------------------------------------------ */
+/*  Render / animation loop                                           */
+/* ------------------------------------------------------------------ */
+renderer.setAnimationLoop((t)=>{
+
+  /* Camp‑fire flicker */
+  fireLight.intensity = 2.2 + Math.sin(t*0.02)*0.5 + (Math.random()*0.1);
+  fireCone.scale.y    = 1 + Math.sin(t*0.004)*0.05;
+
+  renderer.render(scene, camera);
+});
+
+/* ------------------------------------------------------------------ */
+/*  Resize                                                             */
+/* ------------------------------------------------------------------ */
+addEventListener('resize', ()=>{
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+});
+</script>
+</body>
+</html>
