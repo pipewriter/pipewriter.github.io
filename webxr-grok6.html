@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Simple Noda Recreation in Three.js WebXR</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <style>
+        body { margin: 0; }
+    </style>
+</head>
+<body>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@latest/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@latest/examples/jsm/"
+            }
+        }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+        import { VRButton } from 'three/addons/webxr/VRButton.js';
+        import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
+
+        let container, scene, camera, renderer;
+        let controller1, controller2;
+        let controllerGrip1, controllerGrip2;
+        let selectedNode = null;
+        let nodes = [];
+        let connections = []; // {from: node, to: node, line: THREE.Line}
+        let grabbedObject = null;
+
+        const raycaster = new THREE.Raycaster();
+        const tempMatrix = new THREE.Matrix4();
+
+        init();
+        animate();
+
+        function init() {
+            container = document.createElement('div');
+            document.body.appendChild(container);
+
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x505050);
+
+            camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
+            camera.position.set(0, 1.6, 3);
+
+            // Floor for reference
+            const floor = new THREE.Mesh(
+                new THREE.PlaneGeometry(10, 10),
+                new THREE.MeshStandardMaterial({ color: 0x222222 })
+            );
+            floor.rotation.x = -Math.PI / 2;
+            floor.position.y = 0;
+            scene.add(floor);
+
+            scene.add(new THREE.HemisphereLight(0x606060, 0x404040));
+            const light = new THREE.DirectionalLight(0xffffff);
+            light.position.set(1, 1, 1).normalize();
+            scene.add(light);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.xr.enabled = true;
+            container.appendChild(renderer.domElement);
+
+            document.body.appendChild(VRButton.createButton(renderer));
+
+            // Controllers
+            controller1 = renderer.xr.getController(0);
+            scene.add(controller1);
+            controller2 = renderer.xr.getController(1);
+            scene.add(controller2);
+
+            const controllerModelFactory = new XRControllerModelFactory();
+
+            controllerGrip1 = renderer.xr.getControllerGrip(0);
+            controllerGrip1.add(controllerModelFactory.createControllerModel(controllerGrip1));
+            scene.add(controllerGrip1);
+
+            controllerGrip2 = renderer.xr.getControllerGrip(1);
+            controllerGrip2.add(controllerModelFactory.createControllerModel(controllerGrip2));
+            scene.add(controllerGrip2);
+
+            // Laser pointers
+            const lineGeometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1)]);
+            const lineMaterial = new THREE.LineBasicMaterial({ color: 0xff0000 });
+            const laser1 = new THREE.Line(lineGeometry, lineMaterial);
+            laser1.name = 'laser';
+            laser1.scale.z = 5;
+            controller1.add(laser1);
+
+            const laser2 = new THREE.Line(lineGeometry, lineMaterial);
+            laser2.name = 'laser';
+            laser2.scale.z = 5;
+            controller2.add(laser2);
+
+            // Event listeners
+            controller1.addEventListener('selectstart', onSelectStart);
+            controller1.addEventListener('selectend', onSelectEnd);
+            controller2.addEventListener('selectstart', onSelectStart);
+            controller2.addEventListener('selectend', onSelectEnd);
+
+            controller1.addEventListener('squeezestart', onSqueezeStart);
+            controller1.addEventListener('squeezeend', onSqueezeEnd);
+            controller2.addEventListener('squeezestart', onSqueezeStart);
+            controller2.addEventListener('squeezeend', onSqueezeEnd);
+
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function getIntersections(controller) {
+            tempMatrix.identity().extractRotation(controller.matrixWorld);
+            raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+            raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+            return raycaster.intersectObjects(nodes, false);
+        }
+
+        function onSqueezeStart(event) {
+            const controller = event.target;
+            const intersections = getIntersections(controller);
+            if (intersections.length > 0) {
+                grabbedObject = intersections[0].object;
+                controller.attach(grabbedObject);
+            }
+        }
+
+        function onSqueezeEnd(event) {
+            if (grabbedObject) {
+                scene.attach(grabbedObject);
+                grabbedObject = null;
+            }
+        }
+
+        function onSelectStart(event) {
+            const controller = event.target;
+            const intersections = getIntersections(controller);
+            if (intersections.length > 0) {
+                const intersection = intersections[0];
+                const node = intersection.object;
+                if (selectedNode) {
+                    createConnection(selectedNode, node);
+                    selectedNode.material.emissive.setHex(0x000000);
+                    selectedNode = null;
+                } else {
+                    selectedNode = node;
+                    selectedNode.material.emissive.setHex(0xff0000); // Highlight
+                }
+            } else {
+                // Create new node at end of laser
+                tempMatrix.identity().extractRotation(controller.matrixWorld);
+                const position = new THREE.Vector3().setFromMatrixPosition(controller.matrixWorld);
+                const direction = new THREE.Vector3(0, 0, -1).applyMatrix4(tempMatrix);
+                const distance = 2;
+                const newPosition = position.clone().add(direction.multiplyScalar(distance));
+                const newNode = createNode(newPosition);
+                if (selectedNode) {
+                    createConnection(selectedNode, newNode);
+                    selectedNode.material.emissive.setHex(0x000000);
+                    selectedNode = null;
+                }
+            }
+        }
+
+        function onSelectEnd(event) {
+            // Optional: Could add logic here if needed
+        }
+
+        function createNode(position) {
+            const geometry = new THREE.SphereGeometry(0.1, 32, 16);
+            const material = new THREE.MeshStandardMaterial({ color: Math.random() * 0xffffff });
+            const sphere = new THREE.Mesh(geometry, material);
+            sphere.position.copy(position);
+            scene.add(sphere);
+            nodes.push(sphere);
+            return sphere;
+        }
+
+        function createConnection(from, to) {
+            const points = [from.position.clone(), to.position.clone()];
+            const geometry = new THREE.BufferGeometry().setFromPoints(points);
+            const material = new THREE.LineBasicMaterial({ color: 0xffffff });
+            const line = new THREE.Line(geometry, material);
+            scene.add(line);
+            connections.push({ from, to, line });
+        }
+
+        function animate() {
+            renderer.setAnimationLoop(render);
+        }
+
+        function render() {
+            // Update connection lines
+            for (let conn of connections) {
+                const points = [conn.from.position.clone(), conn.to.position.clone()];
+                conn.line.geometry.setFromPoints(points);
+                conn.line.geometry.attributes.position.needsUpdate = true;
+            }
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,130 @@
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Calming Brown and Deep Green Forest VR Experience</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <!-- Import map for Three.js -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.178.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.178.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { VRButton } from 'three/addons/webxr/VRButton.js';
+
+        // Scene setup
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setClearColor(0x2f4f4f); // Deep green background
+        document.body.appendChild(renderer.domElement);
+
+        // Enable WebXR
+        renderer.xr.enabled = true;
+        document.body.appendChild(VRButton.createButton(renderer));
+
+        // Warm lighting for calming effect (around 2700K, warm white with orange tint)
+        const ambientLight = new THREE.AmbientLight(0xffd0a0, 0.5); // Warm ambient
+        scene.add(ambientLight);
+        const directionalLight = new THREE.DirectionalLight(0xffd0a0, 0.8);
+        directionalLight.position.set(5, 10, 5);
+        scene.add(directionalLight);
+
+        // Fog for forest atmosphere (deep green tint)
+        scene.fog = new THREE.FogExp2(0x228b22, 0.02); // Deep green fog
+
+        // Ground (brown earth)
+        const groundGeometry = new THREE.PlaneGeometry(100, 100);
+        const groundMaterial = new THREE.MeshBasicMaterial({ color: 0x8b4513 }); // Saddle brown
+        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+        ground.rotation.x = -Math.PI / 2;
+        ground.position.y = -1;
+        scene.add(ground);
+
+        // Generate trees (brown trunks, deep green canopies)
+        for (let i = 0; i < 50; i++) {
+            const trunkGeometry = new THREE.CylinderGeometry(0.2, 0.3, 2, 8);
+            const trunkMaterial = new THREE.MeshBasicMaterial({ color: 0x8b4513 }); // Brown
+            const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
+            trunk.position.set(Math.random() * 50 - 25, 0, Math.random() * 50 - 25);
+            scene.add(trunk);
+
+            const canopyGeometry = new THREE.SphereGeometry(1, 8, 8);
+            const canopyMaterial = new THREE.MeshBasicMaterial({ color: 0x006400 }); // Deep green
+            const canopy = new THREE.Mesh(canopyGeometry, canopyMaterial);
+            canopy.position.set(trunk.position.x, 2.5, trunk.position.z);
+            scene.add(canopy);
+        }
+
+        // Generate ferns (procedural, deep green leaves on brown stems)
+        const fernGroup = new THREE.Group();
+        for (let i = 0; i < 100; i++) {
+            const stemGeometry = new THREE.CylinderGeometry(0.05, 0.05, 1, 4);
+            const stemMaterial = new THREE.MeshBasicMaterial({ color: 0x8b4513 }); // Brown stem
+            const stem = new THREE.Mesh(stemGeometry, stemMaterial);
+            stem.position.set(Math.random() * 50 - 25, 0, Math.random() * 50 - 25);
+            scene.add(stem);
+
+            // Fern leaves
+            for (let j = 0; j < 5; j++) {
+                const leafGeometry = new THREE.PlaneGeometry(0.5, 0.1);
+                const leafMaterial = new THREE.MeshBasicMaterial({ color: 0x006400, side: THREE.DoubleSide }); // Deep green
+                const leaf = new THREE.Mesh(leafGeometry, leafMaterial);
+                leaf.position.set(stem.position.x, 0.5 + j * 0.1, stem.position.z);
+                leaf.rotation.y = Math.random() * Math.PI;
+                leaf.rotation.z = Math.random() * 0.5 - 0.25;
+                scene.add(leaf);
+            }
+        }
+
+        // Camera position
+        camera.position.set(0, 1.6, 0); // Eye level
+
+        // Audio for light forest noise (calming stream and birds)
+        const listener = new THREE.AudioListener();
+        camera.add(listener);
+        const sound = new THREE.Audio(listener);
+        const audioLoader = new THREE.AudioLoader();
+        audioLoader.load('https://www.free-stock-music.com/music/sound-effects-library/mp3/sound-effects-library-forest-stream.mp3', function(buffer) {
+            sound.setBuffer(buffer);
+            sound.setLoop(true);
+            sound.setVolume(0.5);
+            sound.play();
+        });
+
+        // Animation loop
+        function animate() {
+            renderer.setAnimationLoop(animate);
+            // Gentle swaying animation for calming effect
+            scene.children.forEach(child => {
+                if (child instanceof THREE.Mesh && child.geometry.type === 'PlaneGeometry') {
+                    child.rotation.z = Math.sin(Date.now() * 0.001) * 0.1;
+                }
+            });
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // Handle resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
+```

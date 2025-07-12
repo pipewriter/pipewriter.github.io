@@ -74,8 +74,10 @@ const WS_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') +
 const ws = new WebSocket(WS_URL);
 
 // last values we sent – stops us flooding the wire with identical frames
+// (add “room” so peers can stay in sync)
 let lastSent   = { orbitRadius: null, orbitang: null,
-                   viewingangle: null, hideToggled: null, focusIndex: null };
+                   viewingangle: null, hideToggled: null,
+                   focusIndex: null, room: null };
 
 let focusIndex = null;                       // NEW: which slot stays visible
 
@@ -112,6 +114,10 @@ ws.addEventListener('message', ({data}) => {
     focusIndex = s.focusIndex;
   }
 
+  // NEW: follow a remote room change
+  if (s.room && rooms.length && s.room !== rooms[currentIndex]) {
+    loadRoom(s.room);                    // accepts name or index
+  }
   // Always (re)apply after state changes arrived
   applyFocusVisibility();
 });
@@ -396,6 +402,9 @@ async function loadRoom(indexOrName) {
   // update URL so it’s shareable
   params.set('room', roomName);
   window.history.replaceState(null,'', '?' + params.toString());
+
+  /* broadcast the room change immediately */
+  sendState();
 
   // clear out old orbit items
   orbitItems.forEach(m=>scene.remove(m));
@@ -714,7 +723,11 @@ function sendState(){
   const now = performance.now();
   // 20 Hz throttle without setInterval
   if (!sendState.next || now >= sendState.next) {
-    const payload = { orbitRadius, orbitang, viewingangle, hideToggled, focusIndex };
+    // const payload = { orbitRadius, orbitang, viewingangle, hideToggled, focusIndex };
+    // const payload = { orbitRadius, orbitang, viewingangle, hideToggled, focusIndex };
+    /* include current room so others can follow */
+    const payload = { orbitRadius, orbitang, viewingangle,
+                      hideToggled, focusIndex, room: rooms[currentIndex] };
     // Skip if nothing changed since last push
     const unchanged = Object.keys(payload).every(
         k => payload[k] === lastSent[k]);

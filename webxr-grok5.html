@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Brown-Centric Calming Cave WebXR Three.js Example</title>
+    <style>
+        body { margin: 0; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <!-- FIXES THE WEIRD IMPORT BUG -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.178.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.178.0/examples/jsm/"
+            }
+        }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+        import { VRButton } from 'three/addons/webxr/VRButton.js';
+
+        // Setup scene, camera, renderer
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.xr.enabled = true;
+        document.body.appendChild(renderer.domElement);
+
+        // Add VR button
+        document.body.appendChild(VRButton.createButton(renderer));
+
+        // Warm calming lighting based on brown ambient theories (warm ~2700K tint)
+        const ambientLight = new THREE.AmbientLight(0xFFDAB9, 0.6); // Peachpuff warm ambient
+        scene.add(ambientLight);
+        const hemiLight = new THREE.HemisphereLight(0xFFE4B5, 0x8B4513, 0.4); // Warm sky, brown ground
+        scene.add(hemiLight);
+
+        // Brownish fog for calming atmosphere
+        scene.fog = new THREE.FogExp2(0xA0522D, 0.05); // Sienna fog
+
+        // Define brown colors for calming earth tones
+        const brownFloor = new THREE.MeshStandardMaterial({ color: 0x8B4513, roughness: 0.9, metalness: 0 }); // Saddlebrown
+        const brownWall = new THREE.MeshStandardMaterial({ color: 0xA0522D, roughness: 0.8, metalness: 0 }); // Sienna
+        const brownCeiling = new THREE.MeshStandardMaterial({ color: 0xD2691E, roughness: 0.7, metalness: 0 }); // Chocolate
+        const brownTunnel = new THREE.MeshStandardMaterial({ color: 0xA0522D, roughness: 0.8, metalness: 0 }); // Sienna
+
+        // Chamber parameters
+        const chamberRadius = 10;
+        const chamberHeight = 5;
+        const tunnelRadius = 1.5;
+        const tunnelLength = 15;
+        const gapAngle = 0.6; // ~34 deg in radians for gaps
+
+        // Floor: Bumpy circle
+        let floorGeo = new THREE.CircleGeometry(chamberRadius, 64);
+        const floorPositions = floorGeo.attributes.position;
+        for (let i = 0; i < floorPositions.count; i++) {
+            const x = floorPositions.getX(i);
+            const y = floorPositions.getY(i);
+            const dist = Math.sqrt(x * x + y * y) / chamberRadius;
+            const noise = (Math.sin(x * 2) + Math.cos(y * 2)) * 0.2 * (1 - dist); // Simple bumpy
+            floorPositions.setZ(i, noise);
+        }
+        floorGeo.computeVertexNormals();
+        const floor = new THREE.Mesh(floorGeo, brownFloor);
+        floor.rotation.x = -Math.PI / 2;
+        floor.position.y = 0;
+        scene.add(floor);
+
+        // Ceiling: Similar bumpy
+        let ceilingGeo = new THREE.CircleGeometry(chamberRadius, 64);
+        const ceilingPositions = ceilingGeo.attributes.position;
+        for (let i = 0; i < ceilingPositions.count; i++) {
+            const x = ceilingPositions.getX(i);
+            const y = ceilingPositions.getY(i);
+            const dist = Math.sqrt(x * x + y * y) / chamberRadius;
+            const noise = (Math.sin(x * 1.5) + Math.cos(y * 1.5)) * -0.3 * (1 - dist); // Downward bumps
+            ceilingPositions.setZ(i, noise);
+        }
+        ceilingGeo.computeVertexNormals();
+        const ceiling = new THREE.Mesh(ceilingGeo, brownCeiling);
+        ceiling.rotation.x = Math.PI / 2;
+        ceiling.position.y = chamberHeight;
+        scene.add(ceiling);
+
+        // Wall segments: Two arcs with gaps for tunnels
+        const wallThetaLength = Math.PI - gapAngle;
+        // Wall 1: Around positive Z
+        let wall1Geo = new THREE.CylinderGeometry(chamberRadius, chamberRadius, chamberHeight, 32, 5, true, gapAngle / 2, wallThetaLength);
+        addNoiseToGeometry(wall1Geo, 0.3);
+        const wall1 = new THREE.Mesh(wall1Geo, brownWall);
+        wall1.position.set(0, chamberHeight / 2, 0);
+        scene.add(wall1);
+
+        // Wall 2: Around negative Z, rotated
+        let wall2Geo = new THREE.CylinderGeometry(chamberRadius, chamberRadius, chamberHeight, 32, 5, true, gapAngle / 2, wallThetaLength);
+        addNoiseToGeometry(wall2Geo, 0.3);
+        const wall2 = new THREE.Mesh(wall2Geo, brownWall);
+        wall2.position.set(0, chamberHeight / 2, 0);
+        wall2.rotation.y = Math.PI;
+        scene.add(wall2);
+
+        // Tunnels: Two horizontal cylinders shooting off
+        // Tunnel 1: Positive X, at floor level
+        let tunnel1Geo = new THREE.CylinderGeometry(tunnelRadius, tunnelRadius, tunnelLength, 16, 3, true);
+        addNoiseToGeometry(tunnel1Geo, 0.2);
+        const tunnel1 = new THREE.Mesh(tunnel1Geo, brownTunnel);
+        tunnel1.rotation.z = Math.PI / 2;
+        tunnel1.position.set(chamberRadius + tunnelLength / 2, tunnelRadius, 0);
+        scene.add(tunnel1);
+
+        // Tunnel 2: Negative X
+        let tunnel2Geo = new THREE.CylinderGeometry(tunnelRadius, tunnelRadius, tunnelLength, 16, 3, true);
+        addNoiseToGeometry(tunnel2Geo, 0.2);
+        const tunnel2 = new THREE.Mesh(tunnel2Geo, brownTunnel);
+        tunnel2.rotation.z = Math.PI / 2;
+        tunnel2.position.set( -(chamberRadius + tunnelLength / 2), tunnelRadius, 0);
+        scene.add(tunnel2);
+
+        // Helper function to add noise to geometry for cave-like irregularity
+        function addNoiseToGeometry(geo, amplitude) {
+            const positions = geo.attributes.position;
+            for (let i = 0; i < positions.count; i++) {
+                const v = new THREE.Vector3(positions.getX(i), positions.getY(i), positions.getZ(i));
+                const dir = v.clone().normalize();
+                const noise = (Math.random() - 0.5) * amplitude * 2;
+                v.add(dir.multiplyScalar(noise));
+                positions.setXYZ(i, v.x, v.y, v.z);
+            }
+            geo.computeVertexNormals();
+        }
+
+        // Add some simple rock formations for added brown calming elements
+        for (let i = 0; i < 5; i++) {
+            const rockGeo = new THREE.DodecahedronGeometry(0.5 + Math.random() * 0.5, 0);
+            const rock = new THREE.Mesh(rockGeo, brownFloor);
+            rock.position.set(
+                (Math.random() - 0.5) * chamberRadius * 1.5,
+                0.5 + Math.random(),
+                (Math.random() - 0.5) * chamberRadius * 1.5
+            );
+            rock.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+            scene.add(rock);
+        }
+
+        // Animation loop
+        renderer.setAnimationLoop(function () {
+            renderer.render(scene, camera);
+        });
+
+        // Handle resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>

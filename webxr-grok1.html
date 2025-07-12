@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calming Forest VR Experience</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+    </style>
+    <!-- FIXES THE WEIRD IMPORT BUG -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.178.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.178.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+    <audio id="ambientSound" autoplay loop>
+        <source src="https://www.free-stock-music.com/music/sound-effects-library/mp3/sound-effects-library-forest-stream.mp3" type="audio/mpeg">
+        Your browser does not support the audio element.
+    </audio>
+    <script type="module">
+        import * as THREE from 'three';
+        import { VRButton } from 'three/addons/webxr/VRButton.js';
+
+        // Scene setup
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // Enable WebXR
+        renderer.xr.enabled = true;
+        document.body.appendChild(VRButton.createButton(renderer));
+
+        // Warm lighting for calming effect (inspired by ~2700K warm light, brownish tint)
+        const ambientLight = new THREE.AmbientLight(0xffd700, 0.6); // Golden warm light
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.4);
+        directionalLight.position.set(5, 10, 5);
+        scene.add(directionalLight);
+
+        // Fog for forest atmosphere (deep green tint)
+        scene.fog = new THREE.Fog(0x556B2F, 5, 50); // Dark olive green fog
+
+        // Ground (brown earth)
+        const groundGeometry = new THREE.PlaneGeometry(100, 100);
+        const groundMaterial = new THREE.MeshLambertMaterial({ color: 0x8B4513 }); // Saddle brown
+        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+        ground.rotation.x = -Math.PI / 2;
+        scene.add(ground);
+
+        // Function to create a simple tree
+        function createTree(position) {
+            const group = new THREE.Group();
+
+            // Trunk (brown)
+            const trunkGeometry = new THREE.CylinderGeometry(0.5, 0.5, 5, 8);
+            const trunkMaterial = new THREE.MeshLambertMaterial({ color: 0x8B4513 }); // Brown
+            const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
+            trunk.position.y = 2.5;
+            group.add(trunk);
+
+            // Canopy (deep green)
+            for (let i = 0; i < 3; i++) {
+                const canopyGeometry = new THREE.SphereGeometry(2 - i * 0.5, 16, 16);
+                const canopyMaterial = new THREE.MeshLambertMaterial({ color: 0x006400 }); // Dark green
+                const canopy = new THREE.Mesh(canopyGeometry, canopyMaterial);
+                canopy.position.y = 5 + i * 1.5;
+                group.add(canopy);
+            }
+
+            group.position.copy(position);
+            return group;
+        }
+
+        // Function to create a fern
+        function createFern(position) {
+            const group = new THREE.Group();
+
+            // Stem (green)
+            const stemGeometry = new THREE.CylinderGeometry(0.05, 0.05, 1, 8);
+            const stemMaterial = new THREE.MeshLambertMaterial({ color: 0x228B22 }); // Forest green
+            const stem = new THREE.Mesh(stemGeometry, stemMaterial);
+            stem.position.y = 0.5;
+            group.add(stem);
+
+            // Leaves (deep green)
+            for (let i = 0; i < 20; i++) {
+                const leafGeometry = new THREE.PlaneGeometry(0.2, 0.5);
+                const leafMaterial = new THREE.MeshLambertMaterial({ color: 0x006400, side: THREE.DoubleSide }); // Dark green, double-sided
+                const leaf = new THREE.Mesh(leafGeometry, leafMaterial);
+                leaf.position.set(Math.random() * 0.2 - 0.1, 0.2 + Math.random() * 0.8, Math.random() * 0.2 - 0.1);
+                leaf.rotation.x = Math.random() * Math.PI;
+                leaf.rotation.y = Math.random() * Math.PI;
+                leaf.rotation.z = Math.random() * Math.PI;
+                group.add(leaf);
+            }
+
+            group.position.copy(position);
+            return group;
+        }
+
+        // Generate trees and ferns randomly
+        for (let i = 0; i < 20; i++) { // 20 trees
+            const x = Math.random() * 80 - 30;
+            const z = Math.random() * 80 - 30;
+            scene.add(createTree(new THREE.Vector3(x, 0, z)));
+        }
+
+        for (let i = 0; i < 100; i++) { // 100 ferns
+            const x = Math.random() * 80 - 30;
+            const z = Math.random() * 80 - 30;
+            scene.add(createFern(new THREE.Vector3(x, 0, z)));
+        }
+
+        // Position camera at eye level
+        camera.position.y = 1.5;
+
+        // Animation loop
+        renderer.setAnimationLoop(() => {
+            renderer.render(scene, camera);
+        });
+
+        // Handle resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Play ambient sound (forest stream for swampy/jungle/forest vibe)
+        const audio = document.getElementById('ambientSound');
+        audio.volume = 0.5; // Adjust as needed
+        audio.play().catch(error => console.log('Audio playback failed:', error));
+
+    </script>
+</body>
+</html>

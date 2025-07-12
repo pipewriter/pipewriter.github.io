@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Calming Forest WebXR Experience</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <!-- FIXES THE WEIRD IMPORT BUG -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.178.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.178.0/examples/jsm/"
+            }
+        }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+        import { VRButton } from 'three/addons/webxr/VRButton.js';
+
+        // Create scene
+        const scene = new THREE.Scene();
+
+        // Create camera (user's viewpoint, eye height for immersion)
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 1.6, 0);
+
+        // Create renderer with antialias for smoother visuals
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.xr.enabled = true; // Enable WebXR for VR immersion
+        document.body.appendChild(renderer.domElement);
+
+        // Add VR button to enter immersive mode
+        document.body.appendChild(VRButton.createButton(renderer));
+
+        // Warm ambient lighting for soothing brown-tinged atmosphere (inspired by 2700K warm light)
+        const ambientLight = new THREE.AmbientLight(0xffd700, 0.6); // Warm yellow-orange tint
+        scene.add(ambientLight);
+
+        // Directional light to simulate soft sunlight filtering through trees
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.4);
+        directionalLight.position.set(10, 20, 10);
+        scene.add(directionalLight);
+
+        // Fog for deep forest atmosphere, using deep green to enhance calming greens
+        scene.fog = new THREE.Fog(0x228B22, 5, 50); // Forest green fog
+
+        // Ground: Brownish-green forest floor
+        const groundGeometry = new THREE.PlaneGeometry(100, 100);
+        const groundMaterial = new THREE.MeshLambertMaterial({ color: 0x4B3621 }); // Earthy brown
+        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+        ground.rotation.x = -Math.PI / 2;
+        scene.add(ground);
+
+        // Function to create a simple tree (brown trunk, deep green canopy)
+        function createTree(x, z) {
+            // Trunk (brown)
+            const trunkGeometry = new THREE.CylinderGeometry(0.3, 0.5, 3, 8);
+            const trunkMaterial = new THREE.MeshLambertMaterial({ color: 0x5C3317 }); // Soothing brown
+            const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
+            trunk.position.set(x, 1.5, z);
+            scene.add(trunk);
+
+            // Canopy (deep green spheres for foliage)
+            for (let i = 0; i < 3; i++) {
+                const canopyGeometry = new THREE.SphereGeometry(1 + i * 0.5, 8, 8);
+                const canopyMaterial = new THREE.MeshLambertMaterial({ color: 0x228B22 }); // Deep forest green
+                const canopy = new THREE.Mesh(canopyGeometry, canopyMaterial);
+                canopy.position.set(x, 3 + i * 0.8, z);
+                scene.add(canopy);
+            }
+        }
+
+        // Function to create a fern (generated plant with deep green fronds)
+        function createFern(x, z) {
+            // Stem (dark green)
+            const stemGeometry = new THREE.CylinderGeometry(0.05, 0.05, 0.8, 4);
+            const stemMaterial = new THREE.MeshLambertMaterial({ color: 0x556B2F }); // Dark olive green
+            const stem = new THREE.Mesh(stemGeometry, stemMaterial);
+            stem.position.set(x, 0.4, z);
+            scene.add(stem);
+
+            // Fronds (plane geometries for leaves, rotated for natural look)
+            for (let i = 0; i < 6; i++) {
+                const frondGeometry = new THREE.PlaneGeometry(0.3, 0.7);
+                const frondMaterial = new THREE.MeshLambertMaterial({ color: 0x228B22, side: THREE.DoubleSide }); // Deep green
+                const frond = new THREE.Mesh(frondGeometry, frondMaterial);
+                frond.position.set(x, 0.4 + i * 0.1, z);
+                frond.rotation.y = Math.random() * Math.PI * 2;
+                frond.rotation.x = Math.PI / 4 + Math.random() * Math.PI / 6;
+                scene.add(frond);
+            }
+        }
+
+        // Generate random trees and ferns for forest density
+        for (let i = 0; i < 30; i++) {
+            const x = (Math.random() - 0.5) * 80;
+            const z = (Math.random() - 0.5) * 80;
+            createTree(x, z);
+        }
+        for (let i = 0; i < 100; i++) {
+            const x = (Math.random() - 0.5) * 50;
+            const z = (Math.random() - 0.5) * 50;
+            createFern(x, z);
+        }
+
+        // Add ambient forest sound for light noise (swampy/forest vibe)
+        const listener = new THREE.AudioListener();
+        camera.add(listener);
+        const sound = new THREE.Audio(listener);
+        const audioLoader = new THREE.AudioLoader();
+        audioLoader.load('https://www.free-stock-music.com/music/sound-effects-library/mp3/sound-effects-library-forest-stream.mp3', (buffer) => {
+            sound.setBuffer(buffer);
+            sound.setLoop(true);
+            sound.setVolume(0.5);
+            sound.play();
+        });
+
+        // Animation loop
+        function animate() {
+            renderer.setAnimationLoop(animate);
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>

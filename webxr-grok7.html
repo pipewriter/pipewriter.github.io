@@ -1,0 +1,287 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<title>Spelunker</title>
+<meta charset="utf-8">
+
+  <!-- FIXES THE WEIRD IMPORT BUG -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.178.0/build/three.module.js"
+      }
+    }
+  </script>
+<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+<style>
+body { margin: 0; }
+</style>
+</head>
+<body>
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.166.1/build/three.module.js';
+import { VRButton } from 'https://cdn.jsdelivr.net/npm/three@0.166.1/examples/jsm/webxr/VRButton.js';
+import * as BufferGeometryUtils from 'https://cdn.jsdelivr.net/npm/three@0.166.1/examples/jsm/utils/BufferGeometryUtils.js';
+
+// Perlin noise implementation
+class Perlin {
+  constructor() {
+    this.p = new Array(512);
+    this.permutation = [151,160,137,91,90,15,131,13,201,95,96,53,194,233,7,225,140,36,103,30,69,142,8,99,37,240,21,10,23,190,6,148,247,120,234,75,0,26,197,62,94,252,219,203,117,35,11,32,57,177,33,88,237,149,56,87,174,20,125,136,171,168,68,175,74,165,71,134,139,48,27,166,77,146,158,231,83,111,229,122,60,211,133,230,220,105,92,41,55,46,245,40,244,102,143,54,65,25,63,161,1,216,80,73,209,76,132,187,208,89,18,169,200,196,135,130,116,188,159,86,164,100,109,198,173,186,3,64,52,217,226,250,124,123,5,202,38,147,118,126,255,82,85,212,207,206,59,227,47,16,58,17,182,189,28,42,223,183,170,213,119,248,152,2,44,154,163,70,221,153,101,155,167,43,172,9,129,22,39,253,19,98,108,110,79,113,224,232,178,185,112,104,218,246,97,228,251,34,242,193,238,210,144,12,191,179,162,241,81,51,145,235,249,14,239,107,49,192,214,31,181,199,106,157,184,84,204,176,115,121,50,45,127,4,150,254,138,236,205,93,222,114,67,29,24,72,243,141,128,195,78,66,215,61,156,180];
+    for (let i = 0; i < 256; i++) this.p[256 + i] = this.p[i] = this.permutation[i];
+  }
+  noise(x, y, z) {
+    const X = Math.floor(x) & 255, Y = Math.floor(y) & 255, Z = Math.floor(z) & 255;
+    x -= Math.floor(x); y -= Math.floor(y); z -= Math.floor(z);
+    const u = this.fade(x), v = this.fade(y), w = this.fade(z);
+    const p = this.p;
+    const A = p[X] + Y, AA = p[A] + Z, AB = p[A + 1] + Z, B = p[X + 1] + Y, BA = p[B] + Z, BB = p[B + 1] + Z;
+    return this.lerp(w, this.lerp(v, this.lerp(u, this.grad(p[AA], x, y, z), this.grad(p[BA], x - 1, y, z)), this.lerp(u, this.grad(p[AB], x, y - 1, z), this.grad(p[BB], x - 1, y - 1, z))), this.lerp(v, this.lerp(u, this.grad(p[AA + 1], x, y, z - 1), this.grad(p[BA + 1], x - 1, y, z - 1)), this.lerp(u, this.grad(p[AB + 1], x, y - 1, z - 1), this.grad(p[BB + 1], x - 1, y - 1, z - 1)))) + 0.5;
+  }
+  fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+  lerp(t, a, b) { return a + t * (b - a); }
+  grad(hash, x, y, z) {
+    const h = hash & 15;
+    const u = h < 8 ? x : y, v = h < 4 ? y : h == 12 || h == 14 ? x : z;
+    return ((h & 1) == 0 ? u : -u) + ((h & 2) == 0 ? v : -v);
+  }
+}
+const perlin = new Perlin();
+const noise = (x, y, z) => perlin.noise(x * 0.1, y * 0.1, z * 0.1);
+
+// Setup
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
+camera.position.set(0, 1.6, 0);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.xr.enabled = true;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.autoUpdate = true;
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.setClearColor(0x222222);
+document.body.appendChild(renderer.domElement);
+document.body.appendChild(VRButton.createButton(renderer));
+const dolly = new THREE.Group();
+scene.add(dolly);
+
+// Lighting
+const ambient = new THREE.AmbientLight(0xffffff, 0.25);
+scene.add(ambient);
+const headLamp = new THREE.SpotLight(0xffffff, 1, 20, Math.PI / 4, 0.5, 2);
+headLamp.castShadow = true;
+headLamp.shadow.mapSize.width = 1024;
+headLamp.shadow.mapSize.height = 1024;
+headLamp.shadow.camera.near = 0.1;
+headLamp.shadow.camera.far = 20;
+camera.add(headLamp);
+const headLampTarget = new THREE.Object3D();
+headLampTarget.position.set(0, 0, -1);
+camera.add(headLampTarget);
+headLamp.target = headLampTarget;
+
+// Texture and material
+const texture = new THREE.TextureLoader().load('https://threejsfundamentals.org/threejs/resources/images/wall.jpg');
+texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+texture.repeat.set(4, 4);
+const material = new THREE.MeshStandardMaterial({ map: texture, side: THREE.DoubleSide, roughness: 1, metalness: 0 });
+
+// World generation
+function createChamber(center, radius, segments = 32) {
+  const geom = new THREE.SphereGeometry(radius, segments, segments / 2);
+  const pos = geom.attributes.position;
+  const nor = geom.attributes.normal;
+  for (let i = 0; i < pos.count; i++) {
+    const v = new THREE.Vector3().fromBufferAttribute(pos, i);
+    const n = new THREE.Vector3().fromBufferAttribute(nor, i);
+    v.add(n.multiplyScalar(noise(v.x, v.y, v.z) * 0.5));
+    pos.setXYZ(i, v.x, v.y, v.z);
+  }
+  geom.computeVertexNormals();
+  geom.translate(center.x, center.y, center.z);
+  return geom;
+}
+const centralCenter = new THREE.Vector3(0, 8, 0);
+const centralGeom = createChamber(centralCenter, 8);
+const directions = [0, Math.PI / 2, Math.PI, 3 * Math.PI / 2];
+const tunnelGeoms = [];
+const endGeoms = [];
+const endCenters = [];
+for (let d = 0; d < 4; d++) {
+  const angle = directions[d];
+  const dir = new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle));
+  const start = centralCenter.clone().add(dir.clone().multiplyScalar(8));
+  const points = [];
+  const numPoints = 10;
+  for (let i = 0; i <= numPoints; i++) {
+    let t = i / numPoints;
+    let pos = start.clone().add(dir.clone().multiplyScalar(t * 25));
+    pos.y += noise(pos.x * 0.1, 0, pos.z * 0.1) * 1;
+    points.push(pos);
+  }
+  const path = new THREE.CatmullRomCurve3(points);
+  let geom = new THREE.TubeGeometry(path, 64, 2, 16, false);
+  const pos = geom.attributes.position;
+  const nor = geom.attributes.normal;
+  for (let i = 0; i < pos.count; i++) {
+    const v = new THREE.Vector3().fromBufferAttribute(pos, i);
+    const n = new THREE.Vector3().fromBufferAttribute(nor, i);
+    v.add(n.multiplyScalar(noise(v.x, v.y, v.z) * 0.5));
+    pos.setXYZ(i, v.x, v.y, v.z);
+  }
+  geom.computeVertexNormals();
+  tunnelGeoms.push(geom);
+  const endCenter = points[points.length - 1];
+  endCenters.push(endCenter);
+  endGeoms.push(createChamber(endCenter, 5, 24));
+}
+const stalGeoms = [];
+function addStals(chamberCenter, radius, num) {
+  for (let type = 0; type < 2; type++) {
+    for (let i = 0; i < num; i++) {
+      const phi = Math.random() * Math.PI / 2 + (type ? Math.PI / 2 : 0);
+      const theta = Math.random() * 2 * Math.PI;
+      const rho = radius * (0.8 + Math.random() * 0.2);
+      const pos = new THREE.Vector3(rho * Math.sin(phi) * Math.cos(theta), rho * Math.cos(phi), rho * Math.sin(phi) * Math.sin(theta)).add(chamberCenter);
+      const dir = pos.clone().sub(chamberCenter).normalize();
+      const coneAxis = dir.negate();
+      const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), coneAxis);
+      const height = 1 + Math.random() * 2;
+      const baseR = 0.2 + Math.random() * 0.3;
+      let coneGeom = new THREE.ConeGeometry(baseR, height, 8);
+      const matrix = new THREE.Matrix4().compose(pos, quat, new THREE.Vector3(1,1,1));
+      coneGeom.applyMatrix4(matrix);
+      stalGeoms.push(coneGeom);
+    }
+  }
+}
+addStals(centralCenter, 8, 3);
+for (let i = 0; i < 4; i++) addStals(endCenters[i], 5, 2);
+const caveGeoms = [centralGeom, ...tunnelGeoms, ...endGeoms, ...stalGeoms];
+const merged = BufferGeometryUtils.mergeGeometries(caveGeoms);
+const caveMesh = new THREE.Mesh(merged, material);
+caveMesh.castShadow = true;
+caveMesh.receiveShadow = true;
+dolly.add(caveMesh);
+// Glowing crystals
+for (let i = 0; i < 4; i++) {
+  const center = endCenters[i];
+  for (let j = 0; j < 2; j++) {
+    const pos = center.clone().add(new THREE.Vector3((Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4));
+    const color = new THREE.Color().setHSL(Math.random(), 1, 0.5);
+    const light = new THREE.PointLight(color, 0.5, 10);
+    light.position.copy(pos);
+    dolly.add(light);
+    const sphere = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 8), new THREE.MeshStandardMaterial({ emissive: color, emissiveIntensity: 1, color: 0x000000 }));
+    sphere.position.copy(pos);
+    dolly.add(sphere);
+  }
+}
+
+// HUD
+function createTextTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.fillRect(0, 0, 512, 128);
+  ctx.font = '24px Arial';
+  ctx.fillStyle = 'black';
+  ctx.fillText('Left/Right stick to move, trigger to recenter', 10, 70);
+  return new THREE.CanvasTexture(canvas);
+}
+const hudMaterial = new THREE.MeshBasicMaterial({ map: createTextTexture(), transparent: true, depthTest: false });
+const hudPlane = new THREE.Mesh(new THREE.PlaneGeometry(1, 0.25), hudMaterial);
+hudPlane.position.set(0, 0, -0.5);
+hudPlane.rotation.y = Math.PI;
+camera.add(hudPlane);
+
+// Controllers
+const controller1 = renderer.xr.getController(0);
+const controller2 = renderer.xr.getController(1);
+controller1.addEventListener('connected', (e) => { controller1.gamepad = e.data.gamepad; });
+controller2.addEventListener('connected', (e) => { controller2.gamepad = e.data.gamepad; });
+scene.add(controller1);
+scene.add(controller2);
+
+// Desktop fallback
+const keys = {};
+document.addEventListener('keydown', (e) => keys[e.key.toLowerCase()] = true);
+document.addEventListener('keyup', (e) => keys[e.key.toLowerCase()] = false);
+document.addEventListener('pointerdown', () => renderer.domElement.requestPointerLock());
+document.addEventListener('mousemove', (e) => {
+  if (document.pointerLockElement === renderer.domElement) {
+    camera.rotation.y -= e.movementX * 0.002;
+    camera.rotation.x -= e.movementY * 0.002;
+    camera.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, camera.rotation.x));
+  }
+});
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// Animation loop
+let prevTime = performance.now();
+let previousTrigger = false;
+const raycaster = new THREE.Raycaster();
+const tempPos = new THREE.Vector3();
+function getHeadPosition() {
+  return tempPos.setFromMatrixPosition(camera.matrixWorld);
+}
+renderer.setAnimationLoop((time) => {
+  const dt = (time - prevTime) / 1000;
+  prevTime = time;
+  let desiredDelta = new THREE.Vector3();
+  if (renderer.xr.isPresenting) {
+    let axes = [0, 0, 0, 0];
+    if (controller2.gamepad && controller2.gamepad.axes.length >= 4) axes = controller2.gamepad.axes;
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+    forward.y = 0; forward.normalize();
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+    right.y = 0; right.normalize();
+    desiredDelta.add(forward.multiplyScalar(-axes[3] * 2 * dt));
+    desiredDelta.add(right.multiplyScalar(axes[2] * 2 * dt));
+    let triggerPressed = false;
+    if (controller2.gamepad && controller2.gamepad.buttons[0]) triggerPressed = controller2.gamepad.buttons[0].pressed;
+    if (triggerPressed && !previousTrigger) {
+      const spawnPos = new THREE.Vector3(0, 1.6, 0);
+      const headPos = getHeadPosition();
+      dolly.position.copy(headPos.sub(spawnPos));
+    }
+    previousTrigger = triggerPressed;
+  } else {
+    const moveSpeed = 2 * dt;
+    if (keys['w']) desiredDelta.z -= moveSpeed;
+    if (keys['s']) desiredDelta.z += moveSpeed;
+    if (keys['a']) desiredDelta.x -= moveSpeed;
+    if (keys['d']) desiredDelta.x += moveSpeed;
+    desiredDelta.applyQuaternion(camera.quaternion);
+  }
+  let actualDelta = desiredDelta.clone();
+  if (desiredDelta.length() > 0) {
+    const headPos = getHeadPosition();
+    const direction = desiredDelta.clone().normalize();
+    const distance = desiredDelta.length();
+    raycaster.set(headPos, direction);
+    raycaster.far = distance;
+    const hits = raycaster.intersectObjects([caveMesh], true);
+    if (hits.length > 0 && hits[0].distance < distance) {
+      actualDelta = direction.multiplyScalar(hits[0].distance - 0.1);
+      const remaining = desiredDelta.clone().sub(actualDelta);
+      const normal = hits[0].normal;
+      const slide = remaining.clone().sub(normal.multiplyScalar(remaining.dot(normal)));
+      actualDelta.add(slide);
+    }
+  }
+  dolly.position.add(actualDelta.negate());
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>
