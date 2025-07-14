@@ -1,0 +1,394 @@
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Desktop Orbiting Lava & UI Demo (JSON-driven)</title>
+  <style>
+    body { margin: 0; overflow: hidden; }
+    canvas { display: block; }
+    #nextRoomBtn {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      padding: 10px 15px;
+      font-size: 14px;
+      z-index: 10;
+    }
+    #prevRoomBtn {
+      position: absolute;
+      top: 20px;
+      left: 120px;
+      padding: 10px 15px;
+      font-size: 14px;
+      z-index: 10;
+    }
+    #roomSelect {
+      position: absolute;
+      top: 20px;
+      left: 250px;
+      padding: 10px;
+      font-size: 14px;
+      z-index: 10;
+    }
+  </style>
+</head>
+<body>
+<button id="nextRoomBtn">Next Room</button>
+<button id="prevRoomBtn">Previous Room</button>
+<select id="roomSelect"></select>
+<script type="module">
+import * as THREE from 'https://unpkg.com/three@0.153.0/build/three.module.js';
+
+let scene, camera, renderer;
+const clock = new THREE.Clock();
+let sound, listener;
+let sphereUniforms;
+const orbitItems = [];
+let orbitRadius = 2.0;
+let orbitang = 0;
+let viewingangle = 0;
+let rooms = [], currentIndex = 0;
+const params = new URLSearchParams(window.location.search);
+const center = new THREE.Vector3(0, 1, 0);
+let orbitGroup, tiltGroup;
+
+await init();
+animate();
+
+async function init() {
+  // 1) fetch the rooms list
+  const roomsParam = params.get('rooms');
+  if (!roomsParam) {
+    console.error('No ?rooms=… provided');
+    return;
+  }
+  const listUrl = `https://attentionfocus.s3.us-east-1.amazonaws.com/${roomsParam}`;
+  const listResp = await fetch(listUrl);
+  const listJson = await listResp.json();
+  rooms = listJson.rooms;
+  if (!Array.isArray(rooms) || rooms.length === 0) {
+    console.error('rooms.json has no rooms array');
+    return;
+  }
+
+  // Populate directory select
+  const select = document.getElementById('roomSelect');
+  rooms.forEach(room => {
+    const opt = document.createElement('option');
+    opt.value = room;
+    opt.text = room;
+    select.add(opt);
+  });
+  select.addEventListener('change', () => loadRoom(select.value));
+
+  // 2) figure out which one we start on
+  const initialRoom = params.get('room');
+  currentIndex = rooms.indexOf(initialRoom);
+  if (currentIndex === -1) currentIndex = 0;
+  select.value = rooms[currentIndex];
+
+  // 3) do the usual scene/camera/renderer/audio/sphere setup
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.1, 100);
+  camera.position.copy(center);
+  scene.add(camera);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(devicePixelRatio);
+  renderer.setSize(innerWidth, innerHeight);
+  document.body.append(renderer.domElement);
+
+  listener = new THREE.AudioListener();
+  camera.add(listener);
+  sound = new THREE.Audio(listener);
+
+  // sphere (lava lamp background)
+  sphereUniforms = {
+    time: { value: 0.0 },
+    seed: { value: 0.5 }
+  };
+  const sphereGeo = new THREE.SphereGeometry(5, 64, 64);
+  const sphereMat = new THREE.ShaderMaterial({
+    uniforms: sphereUniforms,
+    side: THREE.BackSide,
+    vertexShader: `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);
+      }
+    `,
+    fragmentShader: `
+      // ---- Simplex noise (Ashima) ----
+      vec3 mod289(vec3 x){return x - floor(x*(1.0/289.0))*289.0;}
+      vec2 mod289(vec2 x){return x - floor(x*(1.0/289.0))*289.0;}
+      vec3 permute(vec3 x){return mod289(((x*34.0)+1.0)*x);}
+      float snoise(vec2 v) {
+        const vec4 C = vec4(0.2113248654,0.3660254038,-0.5773502692,0.0243902439);
+        vec2 i = floor(v + dot(v, C.yy));
+        vec2 x0 = v - i + dot(i, C.xx);
+        vec2 i1 = (x0.x > x0.y) ? vec2(1.0,0.0) : vec2(0.0,1.0);
+        vec4 x12 = x0.xyxy + C.xxzz;
+        x12.xy -= i1;
+        i = mod289(i);
+        vec3 p = permute(permute(i.y + vec3(0.0, i1.y, 1.0))
+                      + i.x + vec3(0.0, i1.x, 1.0));
+        vec3 m = max(0.5 - vec3(dot(x0,x0), dot(x12.xy,x12.xy), dot(x12.zw,x12.zw)), 0.0);
+        m = m*m*m*m;
+        vec3 x = 2.0 * fract(p * C.www) - 1.0;
+        vec3 h = abs(x) - 0.5;
+        vec3 ox = floor(x + 0.5);
+        vec3 a0 = x - ox;
+        m *= 1.79284291400159 - 0.85373472095314 * (a0*a0 + h*h);
+        vec3 g;
+        g.x  = a0.x * x0.x + h.x  * x0.y;
+        g.yz = a0.yz * x12.xz + h.yz * x12.yw;
+        return 130.0 * dot(m, g);
+      }
+
+      // ---- HSV → RGB helper ----
+      vec3 hsv2rgb(vec3 c){
+        vec3 p = abs(mod(c.x*6.0 + vec3(0.0,4.0,2.0), 6.0) - 3.0) - 1.0;
+        p = clamp(p, 0.0, 1.0);
+        return c.z * mix(vec3(1.0), p, c.y);
+      }
+
+      varying vec2 vUv;
+      uniform float time;
+      uniform float seed;
+
+      void main(){
+        float vtime = 0.0;
+        // map uv to -1..1
+        vec2 uv = vUv * 2.0 - 1.0;
+
+        // pulsate factor, 0..1
+        float pulse = sin(vtime * 2.5 + seed * 6.28) * 0.5 + 0.5;
+
+        // two lava hues from seed
+        vec3 color1 = hsv2rgb(vec3(seed,      1.0, 0.5 + 0.4 * pulse));
+        vec3 color2 = hsv2rgb(vec3(fract(seed + 0.3), 1.0, 0.7 + 0.3 * pulse));
+
+        // swirling motion
+        float angle = vtime * (0.1 + seed*0.3);
+        mat2 rot = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
+        vec2 p = rot * uv;
+        p.y += vtime * (0.6 + seed*0.6);
+
+        // add seed offset into noise coords
+        p += seed * 10.0;
+
+        // two noise octaves
+        float n1 = snoise(p * (1.5 + seed*1.0));
+        float n2 = snoise((p + vec2(6.0, -4.0)) * (2.0 + seed*1.0));
+
+        // threshold shifts with pulse
+        float low  = mix(0.2, 0.4, pulse);
+        float high = mix(0.6, 0.8, pulse);
+
+        float blob = smoothstep(low, high, n1 + 0.6*n2);
+
+        // final color
+        vec3 col = mix(color1, color2, blob);
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `
+  });
+  const sphereMesh = new THREE.Mesh(sphereGeo, sphereMat);
+  sphereMesh.position.copy(center);
+  scene.add(sphereMesh);
+
+  // Groups for orbit and tilt
+  orbitGroup = new THREE.Group();
+  orbitGroup.position.copy(center);
+  scene.add(orbitGroup);
+  tiltGroup = new THREE.Group();
+  orbitGroup.add(tiltGroup);
+
+  window.addEventListener('resize', onWindowResize);
+
+  // Mouse controls for desktop
+  let isDragging = false;
+  let prevMouseX = 0, prevMouseY = 0;
+  document.addEventListener('mousedown', e => {
+    isDragging = true;
+    prevMouseX = e.clientX;
+    prevMouseY = e.clientY;
+  });
+  document.addEventListener('mouseup', () => isDragging = false);
+  document.addEventListener('mouseleave', () => isDragging = false);
+  document.addEventListener('mousemove', e => {
+    if (!isDragging) return;
+    const dx = e.clientX - prevMouseX;
+    const dy = e.clientY - prevMouseY;
+    if (e.buttons & 1) { // left drag for orbitang
+      orbitang -= dx * 0.01;
+    }
+    if (e.buttons & 2) { // right drag for viewingangle
+      viewingangle += dy * 0.01;
+    }
+    prevMouseX = e.clientX;
+    prevMouseY = e.clientY;
+  });
+  document.addEventListener('wheel', e => {
+    orbitRadius += e.deltaY * 0.005;
+    orbitRadius = Math.max(0.5, Math.min(4, orbitRadius)); // clamp to stay inside sphere
+  });
+
+  // 4) hook up the Next/Prev Room buttons
+  document.getElementById('nextRoomBtn')
+    .addEventListener('click', () => loadRoom((currentIndex + 1) % rooms.length));
+  document.getElementById('prevRoomBtn')
+    .addEventListener('click', () => loadRoom((currentIndex - 1 + rooms.length) % rooms.length));
+
+  // 5) finally load the very first room
+  await loadRoom(currentIndex);
+}
+
+async function loadRoom(indexOrName) {
+  // allow calling by name or index
+  if (typeof indexOrName === 'number') {
+    currentIndex = indexOrName;
+  } else {
+    currentIndex = rooms.indexOf(indexOrName);
+    if (currentIndex === -1) currentIndex = 0;
+  }
+  const roomName = rooms[currentIndex];
+  document.getElementById('roomSelect').value = roomName;
+
+  // update URL so it’s shareable
+  params.set('room', roomName);
+  window.history.replaceState(null, '', '?' + params.toString());
+
+  // clear out old orbit items
+  tiltGroup.clear();
+  orbitItems.length = 0;
+
+  // fetch this room’s JSON
+  const url = `https://attentionfocus.s3.us-east-1.amazonaws.com/${roomName}.json`;
+  const resp = await fetch(url);
+  const { seed, song, objects } = await resp.json();
+
+  // update the lava seed
+  sphereUniforms.seed.value = seed;
+
+  // reload audio
+  if (sound.isPlaying) sound.stop();
+  new THREE.AudioLoader().load(song, buf => {
+    sound.setBuffer(buf);
+    sound.setLoop(true);
+    sound.setVolume(0.5);
+    // Play on first user interaction (e.g., click)
+    const playAudio = () => {
+      sound.context.resume().then(() => {
+        if (!sound.isPlaying) sound.play();
+      }).catch(console.error);
+      window.removeEventListener('click', playAudio);
+    };
+    window.addEventListener('click', playAudio);
+  });
+
+  // load images & videos into orbitItems
+  function makePlaceholderMesh(isVideo) {
+    const geom = isVideo
+        ? new THREE.PlaneGeometry(1.6, 0.9)   // default 16:9 for videos
+        : new THREE.PlaneGeometry(1, 1);      // square for images
+    const mat = new THREE.MeshBasicMaterial({ color: 0x222222, opacity: 0.25, transparent: true });
+    return new THREE.Mesh(geom, mat);
+  }
+
+  objects.forEach((url, i) => {
+    const isImg = /\.(jpe?g|png)$/i.test(url);
+    const isVid = /\.(mp4|webm)$/i.test(url);
+    if (!isImg && !isVid) return;
+
+    // create the slot
+    const mesh = makePlaceholderMesh(isVid);
+    const ang = i * (2 * Math.PI / objects.length);
+    mesh.position.set(
+      orbitRadius * Math.cos(ang),
+      0,
+      orbitRadius * Math.sin(ang)
+    );
+    mesh.lookAt(center);
+    tiltGroup.add(mesh);
+    orbitItems.push(mesh);
+
+    // load the real asset
+    if (isImg) {
+      new THREE.TextureLoader().load(
+        url,
+        tex => {
+          const ar = tex.image.width / tex.image.height;
+          mesh.geometry.dispose();
+          mesh.geometry = new THREE.PlaneGeometry(ar, 1);
+          mesh.material.map = tex;
+          mesh.material.opacity = 1;
+          mesh.material.color.set(0xffffff);
+          mesh.material.needsUpdate = true;
+        },
+        undefined,
+        err => {
+          console.error('Image failed:', url, err);
+          mesh.material.color.set(0xff0000);
+        }
+      );
+    } else if (isVid) {
+      const vid = document.createElement('video');
+      vid.src = url;
+      vid.loop = true;
+      vid.muted = true;
+      vid.playsInline = true;
+      vid.crossOrigin = 'anonymous';
+      vid.style.display = 'none';
+      document.body.appendChild(vid);
+
+      const onReady = () => {
+        const tex = new THREE.VideoTexture(vid);
+        const ar = vid.videoWidth / vid.videoHeight || 16/9;
+        mesh.geometry.dispose();
+        mesh.geometry = new THREE.PlaneGeometry(ar, 1);
+        mesh.material.map = tex;
+        mesh.material.opacity = 1;
+        mesh.material.color.set(0xffffff);
+        mesh.material.needsUpdate = true;
+      };
+
+      vid.addEventListener('loadeddata', onReady);
+      vid.addEventListener('error', e => {
+        console.error('Video failed:', url, e);
+        mesh.material.color.set(0xff0000);
+      });
+
+      vid.play().catch(() =>
+        window.addEventListener('click', () => vid.play(), { once: true })
+      );
+    }
+  });
+}
+
+function onWindowResize() {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+}
+
+function animate() {
+  renderer.setAnimationLoop(render);
+}
+
+function render() {
+  sphereUniforms.time.value = clock.getElapsedTime();
+
+  // Apply rotations to groups
+  orbitGroup.rotation.x = viewingangle;
+  tiltGroup.rotation.y = orbitang;
+
+  renderer.render(scene, camera);
+}
+
+</script>
+</body>
+</html>
+```
