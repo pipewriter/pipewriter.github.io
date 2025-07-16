@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Engine from Scratch | Graphics Engineer Magnum Opus</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+/* ---------- Base ---------- */
+*{margin:0;padding:0;box-sizing:border-box;font-family:Arial,Helvetica,sans-serif}
+html,body{height:100%;scroll-behavior:smooth;background:#111;color:#f8f8f8;overflow-x:hidden}
+section{width:100%;min-height:100vh;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:5vh 6vw;position:relative}
+/* ---------- Hero ---------- */
+#hero{padding:0}
+#glCanvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+#hero h1{position:relative;font-size:clamp(2.5rem,6vw,7rem);letter-spacing:.04em;text-align:center;
+  color:transparent;background:linear-gradient(90deg,#00c6ff,#0072ff,#ff0066);
+  -webkit-background-clip:text;background-clip:text;opacity:0;transform:translateY(60px);
+  transition:opacity .9s ease-out,transform .9s cubic-bezier(.19,1,.22,1)}
+/* ---------- Parallax spark particles ---------- */
+.spark{position:absolute;width:3px;height:3px;background:#fff;border-radius:50%;
+  animation:fall 8s linear infinite;opacity:.8}
+@keyframes fall{0%{transform:translateY(-10vh) scale(.6)}100%{transform:translateY(110vh) scale(.2);opacity:0}}
+/* ---------- Sections ---------- */
+h2.section-title{font-size:clamp(1.8rem,4vw,3.5rem);margin-bottom:1rem;text-transform:uppercase;letter-spacing:.06em}
+p.lead{max-width:45rem;line-height:1.6;font-size:1.1rem;opacity:.9}
+/* ---------- Cards ---------- */
+.card-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:2rem;margin-top:3rem;width:100%;max-width:1200px}
+.card{background:#181818;padding:1.8rem;border:1px solid #333;border-radius:10px;transform:translateY(40px);opacity:0;
+  transition:transform .8s cubic-bezier(.19,1,.22,1),opacity .8s}
+.card h3{margin-bottom:.5rem;font-size:1.4rem;color:#00c6ff}
+.card p{font-size:.95rem;line-height:1.45}
+/* ---------- Screenshot gallery ---------- */
+.gallery{display:flex;flex-wrap:wrap;gap:1rem;justify-content:center;margin-top:2.5rem}
+.gallery canvas{width:220px;height:140px;border-radius:6px;border:1px solid #303030}
+/* ---------- Call‑to‑Action ---------- */
+.cta-btn{margin-top:3rem;padding:1rem 2.5rem;font-size:1.1rem;border:none;border-radius:50px;background:#ff0066;
+  color:#fff;cursor:pointer;box-shadow:0 0 15px #ff006655;transition:transform .35s,box-shadow .35s}
+.cta-btn:hover{transform:translateY(-4px) scale(1.03);box-shadow:0 0 25px #ff0066aa}
+/* ---------- Reveal helpers ---------- */
+.reveal-active{opacity:1!important;transform:translateY(0)!important}
+</style>
+</head>
+<body>
+
+<!-- ====================== HERO ====================== -->
+<section id="hero">
+  <canvas id="glCanvas" aria-hidden="true"></canvas>
+  <h1>ENGINE&nbsp;FROM&nbsp;SCRATCH</h1>
+</section>
+
+<!-- ====================== ENGINE CORE ====================== -->
+<section id="core">
+  <h2 class="section-title">Architecture Highlights</h2>
+  <p class="lead">A custom C++17/WASM renderer with forward+ pipeline, clustered lights, bindless textures, and a bespoke asset‑hot‑reloader—compiled straight to the browser. Below, three pillars keep everything running at ⩾ 240 FPS.</p>
+  <div class="card-grid">
+    <div class="card"><h3>GPU‑Driven</h3><p>Draw‑indirect &amp; compute culling push nearly all scene traversal fully on‑GPU; CPU time per frame &lt; 0.2 ms.</p></div>
+    <div class="card"><h3>Data‑Oriented</h3><p>SoA materials + Arche‑Chunk ECS layout cache‑align transform/HDR exposure passes for SIMD‑wide updates.</p></div>
+    <div class="card"><h3>Hot‑Reload</h3><p>Shader invalidation graph tracks dependencies; edits in VS Code rebuilding glslang → SPIR‑V in&nbsp;&lt;120 ms.</p></div>
+  </div>
+  <button class="cta-btn" onclick="alert('Thanks for checking out the deep‑dive!')">Read the 50‑page tech write‑up →</button>
+</section>
+
+<!-- ====================== SCREENSHOTS ====================== -->
+<section id="shots">
+  <h2 class="section-title">Real‑Time Previews</h2>
+  <p class="lead">Screens below are generated live with pure Canvas 2‑D as stand‑ins for actual in‑engine captures; they keep this page 100 % offline‑friendly.</p>
+  <div class="gallery" id="gallery"></div>
+</section>
+
+<!-- ====================== FOOTER ====================== -->
+<section style="min-height:40vh">
+  <p class="lead">Built with love in vanilla HTML, CSS, and JS.<br>© 2025 Your Name&nbsp;—&nbsp;Graphics Engineer</p>
+</section>
+
+<!-- ====================== SCRIPT ====================== -->
+<script>
+/* ==== Spark generator ==== */
+const hero = document.getElementById('hero');
+for(let i=0;i<60;i++){
+  const s=document.createElement('div'); s.className='spark';
+  s.style.left=Math.random()*100+'vw';
+  s.style.animationDelay=-(Math.random()*8)+'s';
+  hero.appendChild(s);
+}
+
+/* ==== IntersectionObserver for reveals ==== */
+const io=new IntersectionObserver((entries)=>entries.forEach(e=>{
+  if(e.isIntersecting){e.target.classList.add('reveal-active');io.unobserve(e.target);}
+}),{threshold:.15});
+document.querySelectorAll('.card,h1').forEach(el=>io.observe(el));
+
+/* ==== Canvas screenshot placeholders ==== */
+const g=document.getElementById('gallery');
+for(let i=0;i<6;i++){
+  const c=document.createElement('canvas');c.width=220;c.height=140;
+  const ctx=c.getContext('2d');
+  const grd=ctx.createLinearGradient(0,0,220,140);
+  grd.addColorStop(0,'#00c6ff'); grd.addColorStop(1,'#ff0066');
+  ctx.fillStyle=grd; ctx.fillRect(0,0,220,140);
+  ctx.fillStyle='rgba(255,255,255,.9)'; ctx.font='bold 42px sans-serif';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText('RT',110,70);
+  ctx.font='16px monospace'; ctx.fillText('Frame '+(i+1),110,110);
+  g.appendChild(c);
+}
+
+/* ==== WebGL icosahedron ==== */
+const canvas=document.getElementById('glCanvas'),gl=canvas.getContext('webgl');
+function resize(){canvas.width=innerWidth;canvas.height=innerHeight;gl.viewport(0,0,gl.canvas.width,gl.canvas.height);}
+addEventListener('resize',resize);resize();
+
+/* Shader sources */
+const vs=`attribute vec3 p;uniform mat4 mvp;void main(){gl_Position=mvp*vec4(p,1.0);} `,
+      fs=`precision mediump float;uniform float t;void main(){gl_FragColor=vec4(0.5+0.5*cos(t+vec3(0,2,4)),1);} `;
+function compile(src, type){const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw gl.getShaderInfoLog(s);return s;}
+const prog=gl.createProgram();gl.attachShader(prog,compile(vs,gl.VERTEX_SHADER));gl.attachShader(prog,compile(fs,gl.FRAGMENT_SHADER));
+gl.linkProgram(prog);if(!gl.getProgramParameter(prog,gl.LINK_STATUS))throw gl.getProgramInfoLog(prog);
+gl.useProgram(prog);
+
+/* Icosahedron data */
+const t=(1+Math.sqrt(5))/2;const v=[
+ -1, t, 0,  1, t, 0, -1,-t, 0,  1,-t, 0,
+ 0,-1, t,  0, 1, t,  0,-1,-t, 0, 1,-t,
+  t,0,-1,  t,0, 1, -t,0,-1, -t,0, 1];
+const f=[
+ 0,11,5, 0,5,1, 0,1,7, 0,7,10, 0,10,11,
+ 1,5,9, 5,11,4,11,10,2,10,7,6,7,1,8,
+ 3,9,4,3,4,2,3,2,6,3,6,8,3,8,9,
+ 4,9,5,2,4,11,6,2,10,8,6,7,9,8,1];
+/* Buffer setup */
+const pb=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,pb);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(v),gl.STATIC_DRAW);
+const ib=gl.createBuffer();gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ib);gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new Uint16Array(f),gl.STATIC_DRAW);
+const locPos=gl.getAttribLocation(prog,'p');gl.enableVertexAttribArray(locPos);gl.vertexAttribPointer(locPos,3,gl.FLOAT,false,0,0);
+const locMvp=gl.getUniformLocation(prog,'mvp'),locT=gl.getUniformLocation(prog,'t');
+/* Matrices */
+function mat4(){return new Float32Array(16);}
+function perspective(out,fovy,aspect,near,far){const f=1.0/Math.tan(fovy/2),nf=1/(near-far);
+out[0]=f/aspect;out[1]=0;out[2]=0;out[3]=0;
+out[4]=0;out[5]=f;out[6]=0;out[7]=0;
+out[8]=0;out[9]=0;out[10]=(far+near)*nf;out[11]=-1;
+out[12]=0;out[13]=0;out[14]=2*far*near*nf;out[15]=0;return out;}
+function identity(out){out.fill(0);out[0]=out[5]=out[10]=out[15]=1;return out;}
+function rotateY(out,a){identity(out);const c=Math.cos(a),s=Math.sin(a);out[0]=c;out[2]=s;out[8]=-s;out[10]=c;return out;}
+function mul(out,a,b){
+  const ax=a[0],ay=a[1],az=a[2],aw=a[3],bx=b[0],by=b[1],bz=b[2],bw=b[3];
+}
+const proj=mat4(),model=mat4(),mvp=mat4();
+function draw(time){
+  gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.enable(gl.DEPTH_TEST);
+  perspective(proj,Math.PI/3,canvas.width/canvas.height,0.1,100);
+  rotateY(model,time*0.0006);
+  /* model → view (translate z‑4) */
+  model[14]=-4;
+  /* MVP = proj * model (no separate view for brevity) */
+  for(let i=0;i<16;i+=4){for(let j=0;j<4;j++){mvp[i+j]=proj[i]*model[j]+proj[i+1]*model[j+4]+proj[i+2]*model[j+8]+proj[i+3]*model[j+12];}}
+  gl.uniformMatrix4fv(locMvp,false,mvp);
+  gl.uniform1f(locT,time*0.001);
+  gl.drawElements(gl.TRIANGLES,f.length,gl.UNSIGNED_SHORT,0);
+  requestAnimationFrame(draw);
+}
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>

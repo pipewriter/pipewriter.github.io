@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Engine from Scratch – Graphics Engineer Deep‑Dive</title>
+
+<!-- ───  GLOBAL STYLES  ──────────────────────────────────────────────────── -->
+<style>
+:root{
+  --fg:#ececec;
+  --bg:#0f0f15;
+  --accent:#ff437c;
+  --mono:'SFMono-Regular',Consolas,'Roboto Mono',Menlo,monospace;
+  --ease:cubic-bezier(.25,.1,.25,1);
+  scroll-behavior:smooth;
+}
+
+*{box-sizing:border-box;margin:0}
+body{
+  font:16px/1.6 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto;
+  color:var(--fg);
+  background:var(--bg);
+  overflow-x:hidden;
+}
+h1,h2,h3{font-weight:700;letter-spacing:.03em;margin-bottom:.2em}
+section{padding:12vh 8vw;position:relative}
+canvas{max-width:100%;height:auto;border-radius:8px;box-shadow:0 4px 18px rgba(0,0,0,.4)}
+pre{
+  background:#1a1a22;
+  padding:1em 1.25em;
+  border-radius:6px;
+  overflow:auto;
+  font-family:var(--mono); font-size:.88rem;
+  color:#d6d6d6;
+}
+
+/* ─── HERO ───────────────────────────── */
+.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;text-align:center;overflow:hidden}
+.hero h1{font-size:clamp(2.5rem,6vw,6rem);text-transform:uppercase;animation:titleGlitch 3.5s infinite steps(2,end)}
+.hero h2{font-size:clamp(1.1rem,3vw,2rem);font-weight:400;opacity:.8;margin-bottom:3rem}
+.hero button{
+  background:var(--accent);border:0;color:#fff;padding:.9rem 2.4rem;
+  font-size:1rem;letter-spacing:.05em;border-radius:50px;cursor:pointer;
+  transition:transform .3s var(--ease);backdrop-filter:blur(2px);
+}
+.hero button:hover{transform:scale(1.07)}
+@keyframes titleGlitch{
+  0%,3%,5%,42%,44%,100%{text-shadow:0 0 transparent}
+  4%,43%{text-shadow:-4px 0 var(--accent), 4px 0 #3cf}
+}
+
+/* ─── FLOATING NAV ───────────────────── */
+#nav{
+  position:fixed;top:0;left:0;width:100%;padding:1rem 8vw;display:flex;
+  justify-content:space-between;align-items:center;transform:translateY(-120%);
+  transition:transform .5s var(--ease);backdrop-filter:blur(8px);
+  background:rgba(15,15,21,.75);z-index:100;
+  border-bottom:1px solid rgba(255,255,255,.07)
+}
+#nav.visible{transform:translateY(0)}
+#nav a{color:#fff;text-decoration:none;font-weight:600;margin-left:2rem;font-size:.9rem}
+#nav a:hover{color:var(--accent)}
+
+/* ─── REVEAL ON SCROLL ───────────────── */
+.reveal{opacity:0;transform:translateY(40px);transition:opacity .8s var(--ease), transform .8s var(--ease)}
+.reveal.visible{opacity:1;transform:none}
+
+/* ─── GALLERY GRID ───────────────────── */
+.gallery{display:grid;gap:2.2rem;margin-top:2rem}
+@media(min-width:700px){.gallery{grid-template-columns:repeat(2,1fr)}}
+
+/* ─── FANCY DETAILS  ─────────────────── */
+.highlight{color:var(--accent)}
+.parallax{position:absolute;top:0;left:0;width:100%;height:120%;pointer-events:none;transform:translateZ(0)}
+</style>
+</head>
+
+<body>
+
+<!-- ─── FLOATING NAV ─────────────────────────────────────────────────────── -->
+<nav id="nav">
+  <div><strong>Engine&nbsp;⚡</strong></div>
+  <div>
+    <a href="#overview">Overview</a>
+    <a href="#architecture">Architecture</a>
+    <a href="#gallery">Gallery</a>
+    <a href="#perf">Performance</a>
+  </div>
+</nav>
+
+<!-- ─── HERO SECTION ─────────────────────────────────────────────────────── -->
+<section class="hero">
+  <canvas id="heroCanvas" aria-hidden="true"></canvas>
+  <div class="parallax" id="parallaxBg"></div>
+  <h1>Engine&nbsp;from&nbsp;Scratch</h1>
+  <h2>Real‑time rendering, zero frameworks, pure GPU sorcery</h2>
+  <button onclick="document.querySelector('#overview').scrollIntoView({behavior:'smooth'})">
+    Explore the Deep‑Dive ↓
+  </button>
+</section>
+
+<!-- ─── OVERVIEW ─────────────────────────────────────────────────────────── -->
+<section id="overview" class="reveal">
+  <h2>Project&nbsp;Overview</h2>
+  <p>
+    Four years, <span class="highlight">120 k</span> lines of C++ &amp; GLSL, and countless shader recompiles resulted in an engine that 
+    boots to pixels in <span class="highlight">✱ 3 ms ✱</span>.  
+    The goal? <em>Learn absolutely everything</em>: threading, memory arenas, GPU pipelines, data‑oriented design—and ship
+    a playground capable of<b> path‑traced global illumination in under 30 ms</b> on mid‑tier hardware.
+  </p>
+</section>
+
+<!-- ─── ARCHITECTURE ─────────────────────────────────────────────────────── -->
+<section id="architecture" class="reveal">
+  <h2>Under‑the‑Hood Architecture</h2>
+  <pre>
+┌─ Frame Graph ─┐           ┌─ Job System ─┐
+│  Render Pass  │           │  Fibers      │
+│  Resources    │  ← sync → │  MPMC queue  │
+└───────────────┘           └──────────────┘
+         ↑
+  Vulkan backend
+         ↓
+ GPU Device Abstraction → bindless, meshlets, RTX
+  </pre>
+  <p>Everything funnels through a stateless <code>FrameGraph</code>; each render pass declares its inputs/outputs, 
+  letting the scheduler alias memory and collapse dependencies automatically.</p>
+</section>
+
+<!-- ─── GALLERY ──────────────────────────────────────────────────────────── -->
+<section id="gallery" class="reveal">
+  <h2>Live‑Generated Gallery</h2>
+  <p>All images below are rendered <em>right now</em> in your browser by tiny GLSL kernels extracted from the engine’s test‑suite.</p>
+
+  <div class="gallery">
+    <canvas id="canvasMandel"></canvas>
+    <canvas id="canvasTerrain"></canvas>
+    <canvas id="canvasParticles"></canvas>
+    <canvas id="canvasSDF"></canvas>
+  </div>
+</section>
+
+<!-- ─── PERFORMANCE ──────────────────────────────────────────────────────── -->
+<section id="perf" class="reveal">
+  <h2>Performance Highlights</h2>
+  <p><strong>3.2 ×</strong> faster than stock OpenGL path&nbsp;renderers, <strong>1.8 ×</strong> quicker ray queries than Frostbite’s sandbox,
+  and an <span class="highlight">8 KiB hot‑path</span> instruction cache footprint.  
+  Peak throughput: <span class="highlight" id="fpsCounter">0</span> FPS on this very page, measured live against the SDF demo.</p>
+</section>
+
+<!-- ─── FOOTER ───────────────────────────────────────────────────────────── -->
+<section style="text-align:center;padding:6vh 4vw 12vh">
+  <h3>Thanks for scrolling 👋</h3>
+  <p>Full source, white‑papers, and a playable build live here → <a href="https://github.com/your‑handle/engine" target="_blank">GitHub</a></p>
+</section>
+
+<!-- ───  JAVASCRIPT MAGIC  ───────────────────────────────────────────────── -->
+<script>
+/* ==========================================================================
+   1. NAV + REVEAL ON SCROLL
+   ======================================================================= */
+const nav=document.getElementById('nav');
+const io=new IntersectionObserver((entries)=>{
+  entries.forEach(e=>{
+    if(e.target.classList.contains('hero')){
+      nav.classList.toggle('visible',!e.isIntersecting);
+    }else{
+      e.target.classList.toggle('visible',e.isIntersecting);
+    }
+  });
+},{threshold:.3});
+
+document.querySelectorAll('section').forEach(s=>io.observe(s));
+
+/* ==========================================================================
+   2. HERO – SHADER BACKGROUND
+   ======================================================================= */
+(function(){
+  const canvas=document.getElementById('heroCanvas');
+  const gl=canvas.getContext('webgl');
+  if(!gl) return;
+  const vSrc=`attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}`;
+  const fSrc=`precision highp float;
+  uniform vec2 r;uniform float t;
+  void main(){
+    vec2 uv=(gl_FragCoord.xy-.5*r)/r.y;
+    float d=length(uv);
+    float a=atan(uv.y,uv.x);
+    float glow=sin(a*6.0+t*2.0)*.5+.5;
+    float rings=sin(d*24.0-t*3.0)*.5+.5;
+    vec3 col=mix(vec3(.05,.08,.1),vec3(.8,.26,.55),glow*rings);
+    gl_FragColor=vec4(col,1);
+  }`;
+  const quad=new Float32Array([-1,-1,1,-1,-1,1,1,1]);
+  const buf=gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER,buf);gl.bufferData(gl.ARRAY_BUFFER,quad,gl.STATIC_DRAW);
+  const compile=(type,src)=>{let s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);return s};
+  const prog=gl.createProgram();
+  gl.attachShader(prog,compile(gl.VERTEX_SHADER,vSrc));
+  gl.attachShader(prog,compile(gl.FRAGMENT_SHADER,fSrc));
+  gl.linkProgram(prog);gl.useProgram(prog);
+  const locPos=gl.getAttribLocation(prog,'p');
+  gl.enableVertexAttribArray(locPos);
+  gl.vertexAttribPointer(locPos,2,gl.FLOAT,false,0,0);
+  const locRes=gl.getUniformLocation(prog,'r');
+  const locTime=gl.getUniformLocation(prog,'t');
+  function resize(){
+    canvas.width=window.innerWidth;
+    canvas.height=window.innerHeight;
+    gl.viewport(0,0,gl.drawingBufferWidth,gl.drawingBufferHeight);
+  } window.addEventListener('resize',resize);resize();
+  let start=performance.now();
+  function frame(){
+    let t=(performance.now()-start)/1000;
+    gl.uniform2f(locRes,gl.drawingBufferWidth,gl.drawingBufferHeight);
+    gl.uniform1f(locTime,t);
+    gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+    requestAnimationFrame(frame);
+  } frame();
+})();
+
+/* ==========================================================================
+   3. PARALLAX FLOATING ORBS (CSS variables update)
+   ======================================================================= */
+(function(){
+  const bg=document.getElementById('parallaxBg');
+  let orbs=[];
+  for(let i=0;i<60;i++){
+    const o=document.createElement('div');
+    o.style.cssText=\`
+      position:absolute;width:140px;height:140px;border-radius:50%;
+      background:radial-gradient(circle at 30% 30%,rgba(255,67,124,.6),transparent 70%);
+      mix-blend-mode:screen;pointer-events:none;
+      opacity:.08;\`;
+    orbs.push({el:o,z:Math.random()*4});
+    bg.appendChild(o);
+  }
+  function onScroll(){
+    const y=window.scrollY;
+    orbs.forEach(o=>{
+      const speed=.1/o.z;
+      o.el.style.transform=\`translate3d(\${(y*speed)%window.innerWidth}px,\${-y*speed}px,0)\`;
+    });
+  }window.addEventListener('scroll',onScroll,{passive:true});onScroll();
+})();
+
+/* ==========================================================================
+   4. MINI‑DEMO GALLERY CANVASES
+   ======================================================================= */
+function initGallery(){
+  /* ---- Mandelbrot ------------------------------------------- */
+  const c1=document.getElementById('canvasMandel');
+  c1.width=c1.height=400;
+  const g1=c1.getContext('2d');
+  const img1=g1.createImageData(c1.width,c1.height);
+  for(let y=0;y<c1.height;y++){
+    for(let x=0;x<c1.width;x++){
+      let zx=0,zy=0;
+      const cx=(x-200)/200*1.5-0.5, cy=(y-200)/200;
+      let i=0;
+      while(zx*zx+zy*zy<4&&i<64){let tmp=zx*zx-zy*zy+cx;zy=2*zx*zy+cy;zx=tmp;i++;}
+      const idx=(y*c1.width+x)*4;
+      const v=i==64?0:255-i*4;
+      img1.data[idx]=v;img1.data[idx+1]=v*.3;img1.data[idx+2]=255-v;img1.data[idx+3]=255;
+    }
+  }
+  g1.putImageData(img1,0,0);
+
+  /* ---- Procedural Terrain ----------------------------------- */
+  const c2=document.getElementById('canvasTerrain');c2.width=c2.height=400;
+  const g2=c2.getContext('2d');
+  for(let y=0;y<400;y++){
+    for(let x=0;x<400;x++){
+      const h=Math.floor(128+120*Math.sin(x*.04)+80*Math.sin(y*.06));
+      g2.fillStyle=\`rgb(\${h*.4},\${h*.6},\${h}\)`;g2.fillRect(x,y,1,1);
+    }
+  }
+
+  /* ---- Swirling Particles ----------------------------------- */
+  const c3=document.getElementById('canvasParticles');c3.width=c3.height=400;
+  const ctx3=c3.getContext('2d');
+  let particles=[...Array(450)].map(()=>({
+    x:200,y:200,a:Math.random()*Math.PI*2,r:Math.random()*200,v:.15+Math.random()*.6
+  }));
+  function loop3(){
+    ctx3.fillStyle='rgba(15,15,21,.16)';ctx3.fillRect(0,0,400,400);
+    particles.forEach(p=>{
+      p.a+=p.v*.005;p.r+=Math.sin(p.a*.3)*.2;
+      p.x=200+Math.cos(p.a)*p.r; p.y=200+Math.sin(p.a)*p.r;
+      ctx3.fillStyle='rgba(255,67,124,.8)';
+      ctx3.fillRect(p.x,p.y,1.6,1.6);
+    });
+    requestAnimationFrame(loop3);
+  } loop3();
+
+  /* ---- Animated SDF Raymarch -------------------------------- */
+  const c4=document.getElementById('canvasSDF');
+  const gl4=c4.getContext('webgl');if(!gl4)return;
+  const vs=`attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}`;
+  const fs=`precision mediump float;uniform vec2 r;uniform float t;
+  float sdSphere(vec3 p,float s){return length(p)-s;}
+  float map(vec3 p){
+    p.xz*=mat2(cos(t*.4),sin(t*.4),-sin(t*.4),cos(t*.4));
+    return sdSphere(p,1.); }
+  void main(){
+    vec2 uv=(gl_FragCoord.xy-.5*r)/r.y; vec3 ro=vec3(0.,0.,4.);
+    vec3 rd=normalize(vec3(uv,-1.));
+    float d=0.; int i; for(i=0;i<64;i++){vec3 p=ro+rd*d; float m=map(p); if(m<.001)break; d+=m;}
+    float shade=exp(-.2*d*d); vec3 col=mix(vec3(.1,.2,.25),vec3(.6,.2,.8),shade);
+    gl_FragColor=vec4(col,1);
+  }`;
+  const prog4=gl4.createProgram();
+  const sh=(t,s)=>{let sh=gl4.createShader(t);gl4.shaderSource(sh,s);gl4.compileShader(sh);return sh};
+  gl4.attachShader(prog4,sh(gl4.VERTEX_SHADER,vs));
+  gl4.attachShader(prog4,sh(gl4.FRAGMENT_SHADER,fs));gl4.linkProgram(prog4);gl4.useProgram(prog4);
+  const buf4=gl4.createBuffer();gl4.bindBuffer(gl4.ARRAY_BUFFER,buf4);
+  gl4.bufferData(gl4.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl4.STATIC_DRAW);
+  const locP4=gl4.getAttribLocation(prog4,'p');
+  gl4.enableVertexAttribArray(locP4);gl4.vertexAttribPointer(locP4,2,gl4.FLOAT,false,0,0);
+  const locR4=gl4.getUniformLocation(prog4,'r');
+  const locT4=gl4.getUniformLocation(prog4,'t');
+  function resize4(){c4.width=c4.height=400;gl4.viewport(0,0,400,400);}resize4();
+  let start4=performance.now();
+  function frame4(){
+    gl4.uniform2f(locR4,400,400);
+    gl4.uniform1f(locT4,(performance.now()-start4)/1000);
+    gl4.drawArrays(gl4.TRIANGLE_STRIP,0,4);
+    requestAnimationFrame(frame4);
+  } frame4();
+
+  /* ---- FPS Counter (perf section) --------------------------- */
+  let last=performance.now(),frames=0,fps=0;
+  function fpsLoop(){
+    frames++; let now=performance.now();
+    if(now-last>=1000){fps=frames;frames=0;last=now;document.getElementById('fpsCounter').textContent=fps;}
+    requestAnimationFrame(fpsLoop);
+  } fpsLoop();
+}
+window.addEventListener('load',initGallery);
+</script>
+</body>
+</html>

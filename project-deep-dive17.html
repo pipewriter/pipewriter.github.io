@@ -1,0 +1,263 @@
+<!-- ENGINE‑FROM‑SCRATCH – deep‑dive project page -----------------------------
+     Drop this file into any static host or open it locally – no extra assets. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>ENGINE&nbsp;FROM&nbsp;SCRATCH · graphics engineer deep‑dive</title>
+<style>
+/* ---------- Root & theme -------------------------------------------------- */
+:root{
+  --bg:#05070d;
+  --fg:#e8ecf2;
+  --accent:#47b6ff;
+  --accent2:#ff3264;
+  --font-stack:system-ui,Segoe UI,Roboto,sans-serif;
+  --ease:cubic-bezier(.25,.1,.25,1);
+  --section-gap:6rem;
+}
+@media (prefers-color-scheme:light){
+  :root{--bg:#fafafa;--fg:#111;--accent:#0068ff;--accent2:#ff004c;}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;}
+}
+/* ---------- Global styling ------------------------------------------------- */
+*{box-sizing:border-box;margin:0}
+body{
+  font-family:var(--font-stack);
+  background:var(--bg);
+  color:var(--fg);
+  line-height:1.6;
+  overflow-x:hidden;
+}
+h1,h2{font-weight:700;letter-spacing:.02em}
+section{padding:var(--section-gap) min(8vw,4rem)}
+.hidden{opacity:0;transform:translateY(40px);transition:all .8s var(--ease)}
+.visible{opacity:1;transform:none}
+/* ---------- Hero ----------------------------------------------------------- */
+.hero{
+  position:relative;
+  height:100vh;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  text-align:center;
+  overflow:hidden;
+}
+#starfield{
+  position:absolute;inset:0;
+  z-index:-2;
+}
+.glitch{
+  font-size:min(11vw,8rem);
+  line-height:1.1;
+  position:relative;
+  color:var(--accent);
+  mix-blend-mode:screen;
+  text-shadow:
+    -.03em 0 var(--accent2),
+    .03em 0 var(--accent);
+  animation:glitch-pulse 3s infinite;
+}
+.glitch::before,.glitch::after{
+  content:attr(data-text);
+  position:absolute;
+  left:0;top:0;
+  width:100%;height:100%;
+  overflow:hidden;
+}
+.glitch::before{
+  left:2px;text-shadow:-2px 0 var(--accent2);clip-path:inset(0 0 50% 0);
+  animation:glitch-anim 2s infinite linear reverse;
+}
+.glitch::after{
+  left:-2px;text-shadow:2px 0 var(--accent);clip-path:inset(50% 0 0 0);
+  animation:glitch-anim 2s infinite linear;
+}
+@keyframes glitch-anim{
+  0%{clip-path:inset(10% 0 90% 0)}
+  20%{clip-path:inset(80% 0 10% 0)}
+  40%{clip-path:inset(50% 0 50% 0)}
+  60%{clip-path:inset(30% 0 70% 0)}
+  80%,100%{clip-path:inset(20% 0 80% 0)}
+}
+@keyframes glitch-pulse{
+  0%,100%{filter:hue-rotate(0deg) brightness(1)}
+  50%{filter:hue-rotate(20deg) brightness(1.4)}
+}
+/* ---------- Content sections ---------------------------------------------- */
+section:nth-of-type(even){background:rgba(255,255,255,.02)}
+.highlight{color:var(--accent2);font-weight:600}
+/* ---------- Cube demo ----------------------------------------------------- */
+.cube-wrap{
+  perspective:1200px;display:flex;justify-content:center;align-items:center;height:300px
+}
+.cube{
+  position:relative;width:160px;height:160px;
+  transform-style:preserve-3d;
+  animation:rotate 10s infinite linear;
+}
+.cube:hover{animation-play-state:paused}
+.cube div{
+  position:absolute;width:100%;height:100%;
+  background:linear-gradient(135deg,var(--accent),var(--accent2));
+  opacity:.8;border:2px solid rgba(0,0,0,.2);
+}
+.cube .front {transform:translateZ(80px)}
+.cube .back  {transform:rotateY(180deg) translateZ(80px)}
+.cube .right {transform:rotateY(90deg)  translateZ(80px)}
+.cube .left  {transform:rotateY(-90deg) translateZ(80px)}
+.cube .top   {transform:rotateX(90deg)  translateZ(80px)}
+.cube .bottom{transform:rotateX(-90deg) translateZ(80px)}
+@keyframes rotate{
+  from{transform:rotateX(-30deg) rotateY(0deg)}
+  to  {transform:rotateX(-30deg) rotateY(-360deg)}
+}
+/* ---------- Gallery ------------------------------------------------------- */
+.gallery{display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+.gallery img{width:100%;border-radius:.5rem;box-shadow:0 4px 12px rgba(0,0,0,.4)}
+/* ---------- FPS meter (tiny overlay) -------------------------------------- */
+#fps{
+  position:fixed;bottom:1rem;right:1rem;padding:.3rem .6rem;
+  background:rgba(0,0,0,.5);color:#0f0;font:12px/1 monospace;border-radius:4px;
+  user-select:none;z-index:10
+}
+</style>
+</head>
+<body>
+<canvas id="starfield" aria-hidden="true"></canvas>
+
+<header class="hero">
+  <h1 class="glitch" data-text="ENGINE&nbsp;FROM&nbsp;SCRATCH">ENGINE&nbsp;FROM&nbsp;SCRATCH</h1>
+</header>
+
+<section class="hidden">
+  <h2>What&nbsp;I&nbsp;Built</h2>
+  <p>
+    A <span class="highlight">bespoke rendering engine</span> written in C++17 with a Metal‑style GPU abstraction layer, 
+    tailored asset pipeline, and a job‑stealing task system that keeps 16 threads saturated.
+    This page walks through the architectural pillars and shows off realtime captures from the dev build.
+  </p>
+</section>
+
+<section class="hidden">
+  <h2>Core&nbsp;Renderer Demo</h2>
+  <div class="cube-wrap">
+    <div class="cube" aria-label="rotating cube demo">
+      <div class="front"></div><div class="back"></div>
+      <div class="right"></div><div class="left"></div>
+      <div class="top"></div><div class="bottom"></div>
+    </div>
+  </div>
+  <p style="text-align:center;margin-top:1rem">
+    ➜&nbsp;<em>Hover to pause&nbsp;– the cube material uses the same gradient math node that powers scene fog & volumetrics.</em>
+  </p>
+</section>
+
+<section class="hidden">
+  <h2>Procedural&nbsp;Textures&nbsp;&#x26;&nbsp;Tools</h2>
+  <div class="gallery" id="gallery">
+    <!-- JS will inject <img> elements here after generating textures -->
+  </div>
+</section>
+
+<section class="hidden">
+  <h2>Performance&nbsp;Breakdown</h2>
+  <p>
+    D3D12 / Vulkan backend hits <span class="highlight">>240 FPS @ 1440p</span> on a single RTX 4070 in the test scene below.
+    The mini FPS meter (bottom‑right) updates live; most of this page’s overhead is from the star‑field canvas and CSS transforms.
+  </p>
+</section>
+
+<footer style="text-align:center;padding:4rem 1rem;font-size:.9rem;opacity:.7">
+  © 2025 Your&nbsp;Name&nbsp;· All code on this page is public‑domain CC0
+</footer>
+
+<div id="fps">000 FPS</div>
+
+<script>
+/* ======================== STARFIELD ====================================== */
+(function starfield(){
+  const c=document.getElementById('starfield'),ctx=c.getContext('2d');
+  let w,h,stars=[];
+  const STAR_COUNT=250,STAR_SPEED=.04,TAIL=2;
+
+  function resize(){w=c.width=innerWidth;h=c.height=innerHeight}
+  addEventListener('resize',resize);resize();
+
+  function resetStar(s){
+    s.x=Math.random()*w;s.y=Math.random()*h;
+    s.z=Math.random()*w;s.px=s.x;s.py=s.y;
+  }
+  for(let i=0;i<STAR_COUNT;i++)stars.push({}),resetStar(stars[i]);
+
+  let last=performance.now(),fpsSamples=[],fpsBox=document.getElementById('fps');
+  function frame(now){
+    const dt=now-last;last=now;
+    ctx.fillStyle='rgba(0,0,0,.4)';ctx.fillRect(0,0,w,h);
+
+    ctx.fillStyle='white';ctx.strokeStyle='white';
+    stars.forEach(s=>{
+      s.px=s.x;s.py=s.y;
+      s.z-=STAR_SPEED*dt*60;
+      if(s.z<=0)resetStar(s);
+      const k=128/s.z;
+      s.x=(s.x-w/2)*k+w/2;
+      s.y=(s.y-h/2)*k+h/2;
+      if(!isFinite(s.x)||!isFinite(s.y))resetStar(s);
+      ctx.beginPath();
+      ctx.lineWidth=TAIL;
+      ctx.moveTo(s.px,s.py);ctx.lineTo(s.x,s.y);
+      ctx.stroke();
+    });
+
+    // crude FPS calc
+    fpsSamples.push(1000/dt);if(fpsSamples.length>20)fpsSamples.shift();
+    const fps=Math.round(fpsSamples.reduce((a,b)=>a+b,0)/fpsSamples.length);
+    fpsBox.textContent=fps.toString().padStart(3,'0')+' FPS';
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+
+/* ======================== OBSERVER for fades ============================ */
+const io=new IntersectionObserver(entries=>{
+  entries.forEach(e=>{
+    if(e.isIntersecting){e.target.classList.add('visible');io.unobserve(e.target);}
+  });
+},{threshold:.3});
+document.querySelectorAll('.hidden').forEach(el=>io.observe(el));
+
+/* ======================== PROCEDURAL IMAGE GENERATOR ===================== */
+(function generateGallery(){
+  const gallery=document.getElementById('gallery');
+  const IMG_COUNT=6,SIZE=300;
+  for(let i=0;i<IMG_COUNT;i++){
+    const canvas=document.createElement('canvas');
+    canvas.width=canvas.height=SIZE;
+    const ctx=canvas.getContext('2d');
+    // Simple plasma-ish gradient
+    const imgData=ctx.createImageData(SIZE,SIZE);
+    for(let y=0;y<SIZE;y++){
+      for(let x=0;x<SIZE;x++){
+        const i4=(y*SIZE+x)*4;
+        const v=(Math.sin(x/15)+Math.sin(y/17)+Math.sin((x+y)/35))*0.5+0.5;
+        imgData.data[i4  ]=v*255;             // R
+        imgData.data[i4+1]=Math.pow(v,1.5)*255; // G
+        imgData.data[i4+2]=(1-v)*255;         // B
+        imgData.data[i4+3]=255;               // A
+      }
+    }
+    ctx.putImageData(imgData,0,0);
+
+    const img=document.createElement('img');
+    img.alt='Procedural texture '+(i+1);
+    img.src=canvas.toDataURL('image/png');
+    gallery.appendChild(img);
+  }
+})();
+</script>
+</body>
+</html>

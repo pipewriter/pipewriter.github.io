@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Engine From Scratch – Deep Dive</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<style>
+/* ---------- Global Reset & Variables ---------- */
+*,*:before,*:after{box-sizing:border-box;margin:0;padding:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#ddd}
+:root{
+  --accent:#ff4d79;
+  --bg1:#0f0c29;
+  --bg2:#302b63;
+  --bg3:#24243e;
+  --shadow:0 20px 40px rgba(0,0,0,.35);
+  --persp:800px;
+}
+body{
+  background:#000;overflow-x:hidden;
+  line-height:1.6;font-size:17px;
+}
+/* ---------- Animated Gradient Hero ---------- */
+header{
+  position:relative;min-height:100vh;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;
+  background:linear-gradient(-45deg,var(--bg1),var(--bg2),var(--bg3));
+  background-size:400% 400%;animation:gradMove 20s ease-in-out infinite;
+}
+@keyframes gradMove{0%{background-position:0 50%}50%{background-position:100% 50%}100%{background-position:0 50%}}
+header h1{font-size:clamp(2.5rem,5vw,6rem);letter-spacing:.05em;margin-bottom:.3em}
+header p{max-width:700px;font-size:1.15rem;opacity:.8}
+header .scrollCue{position:absolute;bottom:30px;font-size:12px;text-transform:uppercase;letter-spacing:.3em;opacity:.7;animation:upDown 2s ease-in-out infinite}
+@keyframes upDown{0%,100%{transform:translateY(0)}50%{transform:translateY(10px)}}
+/* Starfield canvas covers hero */
+#stars{position:absolute;top:0;left:0;width:100%;height:100%;z-index:-1}
+
+/* ---------- Section Basics ---------- */
+section{padding:80px 9vw}
+section:nth-of-type(even){background:#111}
+
+/* ---------- Milestones Timeline ---------- */
+.timeline{position:relative;padding-left:40px}
+.timeline:before{content:"";position:absolute;top:0;left:20px;width:2px;height:100%;background:var(--accent)}
+.milestone{opacity:0;transform:translateX(-40px);transition:all .6s ease-out;margin-bottom:50px;position:relative}
+.milestone.show{opacity:1;transform:none}
+.milestone:before{content:"";width:12px;height:12px;background:var(--accent);border-radius:50%;position:absolute;left:-32px;top:6px}
+.milestone h3{font-size:1.3rem;margin-bottom:.3em;color:var(--accent)}
+/* ---------- Flip‑card Architecture ---------- */
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:30px;perspective:var(--persp)}
+.card{position:relative;height:200px;transform-style:preserve-3d;transition:transform .8s}
+.card:hover{transform:rotateY(180deg)}
+.card-face{position:absolute;inset:0;padding:25px;border-radius:12px;background:#1c1c1c;box-shadow:var(--shadow);backface-visibility:hidden}
+.card-back{transform:rotateY(180deg)}
+.card-face h4{margin-bottom:.5em;color:var(--accent)}
+/* ---------- Gallery ---------- */
+.gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px;margin-top:30px}
+.gallery img{width:100%;border-radius:10px;box-shadow:var(--shadow);opacity:0;transform:scale(.8);transition:all .6s ease-out}
+.gallery img.ready{opacity:1;transform:none}
+
+/* ---------- Live Cube Demo ---------- */
+#cubeDemo{width:100%;height:350px;background:#000;border-radius:12px;margin-top:40px;box-shadow:var(--shadow)}
+
+/* ---------- Code Block Styling ---------- */
+pre{background:#0e0e0e;padding:25px;border-radius:12px;overflow:auto;box-shadow:var(--shadow);margin-top:30px}
+code{font-family:Consolas,monospace;font-size:.9rem}
+.token-comment{color:#6d8a88}
+.token-keyword{color:#c792ea}
+.token-number{color:#f78c6c}
+.token-string{color:#ecc48d}
+
+/* ---------- Small Screen Tweaks ---------- */
+@media(max-width:600px){header h1{line-height:1.1}}
+
+/* ---------- Utility ---------- */
+.fade-in{opacity:0;transform:translateY(40px);transition:all .7s ease-out}
+.fade-in.show{opacity:1;transform:none}
+</style>
+</head>
+<body>
+
+<header>
+  <canvas id="stars"></canvas>
+  <h1>Engine From Scratch</h1>
+  <p>A multi‑year journey crafting a fully custom real‑time 3D renderer, asset pipeline, and tool‑chain with zero external engines. Every photon, pixel and shader is home‑grown.</p>
+  <span class="scrollCue">SCROLL ➜</span>
+</header>
+
+<!-- Milestones -->
+<section>
+  <h2 class="fade-in">Key Milestones</h2>
+  <div class="timeline">
+    <div class="milestone"><h3>2019 – Bootstrapping</h3><p>Hand‑rolled linear‑algebra &amp; file I/O layer; built first wireframe renderer in C++17.</p></div>
+    <div class="milestone"><h3>2020 – Lighting Core</h3><p>Implemented clustered forward+ renderer with PBR GGX and image‑based lighting.</p></div>
+    <div class="milestone"><h3>2021 – GPU Driven</h3><p>Moved culling &amp; skinning to compute shaders; hit 10× scene complexity with same frame budget.</p></div>
+    <div class="milestone"><h3>2022 – Toolchain</h3><p>Authored node‑based material editor and hot‑reload asset pipeline in Rust.</p></div>
+    <div class="milestone"><h3>2023‑24 – Path Tracing</h3><p>Added Vulkan RT extensions for unbiased GI preview; denoised with custom temporal A‑trous filter.</p></div>
+  </div>
+</section>
+
+<!-- Architecture Flip Cards -->
+<section>
+  <h2 class="fade-in">Engine Architecture</h2>
+  <div class="cards">
+    <div class="card">
+      <div class="card-face"><h4>Render Graph</h4><p>Declarative pass system that resolves barriers &amp; life‑times automatically.</p></div>
+      <div class="card-face card-back"><p>Authored as an immutable DAG; supports async compute and SFR multi‑GPU dispatch.</p></div>
+    </div>
+    <div class="card">
+      <div class="card-face"><h4>Scene DB</h4><p>Hybrid ECS + loose octree providing O(1) archetype lookups and hierarchical culling.</p></div>
+      <div class="card-face card-back"><p>Sparse‑set memory pools ensure minimal cache misses under stress tests.</p></div>
+    </div>
+    <div class="card">
+      <div class="card-face"><h4>Asset Pipeline</h4><p>Zero‑loss meshes via custom Draco‑inspired codec; texture transcoders to ASTC/BC.</p></div>
+      <div class="card-face card-back"><p>Build‑farm friendly CLI; observes files via fs‑events for hot‑swap iteration.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- Procedural Gallery -->
+<section>
+  <h2 class="fade-in">Procedural Gallery</h2>
+  <p class="fade-in">Every image below was generated on load using the same math stack that powers the engine shaders.</p>
+  <div class="gallery" id="gallery"></div>
+  <canvas id="cubeDemo"></canvas>
+</section>
+
+<!-- Code Sample -->
+<section>
+  <h2 class="fade-in">Snippet: CPU‑side Matrix Mult</h2>
+<pre><code><span class="token-comment">// 4×4 matrix × vector (SIMD hot‑path)</span>
+<span class="token-keyword">inline</span> Vec4 multiply(<span class="token-keyword">const</span> Mat4&amp; m, <span class="token-keyword">const</span> Vec4&amp; v){
+    <span class="token-keyword">return</span> Vec4(
+        dot(m.row0, v),
+        dot(m.row1, v),
+        dot(m.row2, v),
+        dot(m.row3, v)
+    ); <span class="token-comment">// SSE2 intrinsic path in release build</span>
+}
+</code></pre>
+</section>
+
+<!-- Footer -->
+<section style="background:#000;text-align:center;padding:50px 9vw;font-size:.85rem;opacity:.7">
+  © 2019‑2025 Your Name — Engine From Scratch
+</section>
+
+<script>
+/* ---------- Starfield ---------- */
+(()=>{
+  const c=document.getElementById('stars'),ctx=c.getContext('2d'),num=200;
+  let w,h,stars=[];
+  const resize=()=>{w=c.width=window.innerWidth;h=c.height=window.innerHeight};
+  const rand=()=>Math.random()*1;
+  const init=()=>{
+    stars=[...Array(num)].map(()=>({x:rand()*w,y:rand()*h,z:rand()*w}));
+  };
+  const draw=()=>{
+    ctx.fillStyle='#000';ctx.fillRect(0,0,w,h);
+    ctx.fillStyle='#fff';
+    stars.forEach(s=>{
+      s.z-=2;if(s.z<1){s.z=w}
+      const k=128/s.z,x=s.x*k+w/2,y=s.y*k+h/2;
+      if(x<0||x>=w||y<0||y>=h)return;
+      const size=(1-s.z/w)*1.5;
+      ctx.fillRect(x,y,size,size);
+    });
+    requestAnimationFrame(draw);
+  };
+  window.addEventListener('resize',()=>{resize();init();});
+  resize();init();draw();
+})();
+
+/* ---------- IntersectionObserver Animations ---------- */
+(()=>{
+  const appear=(el,cls)=>{new IntersectionObserver((e,o)=>{e.forEach(i=>i.isIntersecting&&(i.target.classList.add(cls),o.unobserve(i.target)));},{threshold:.3}).observe(el)};
+  document.querySelectorAll('.fade-in').forEach(el=>appear(el,'show'));
+  document.querySelectorAll('.milestone').forEach(el=>appear(el,'show'));
+})();
+
+/* ---------- Procedural Gallery ---------- */
+(()=>{
+  const n=8,gal=document.getElementById('gallery');
+  const makeCanvas=(w,h,f)=>{
+    const c=document.createElement('canvas');
+    c.width=w;c.height=h;const ctx=c.getContext('2d');f(ctx,w,h);return c;
+  };
+  const noise=(x,y)=>Math.sin(x*.15)+Math.cos(y*.2);
+  for(let i=0;i<n;i++){
+    const c=makeCanvas(400,250,(ctx,w,h)=>{
+      for(let y=0;y<h;y++){
+        for(let x=0;x<w;x++){
+          const v= Math.abs(noise(x+i*10,y+i*7)); // vary seed
+          ctx.fillStyle=`hsl(${200+v*120},100%,${35+v*30}%)`;
+          ctx.fillRect(x,y,1,1);
+        }
+      }
+      ctx.globalCompositeOperation='lighter';
+      ctx.beginPath();
+      ctx.arc(w/2,h/2,80,0,Math.PI*2);
+      ctx.strokeStyle='rgba(255,255,255,.25)';
+      ctx.lineWidth=4;ctx.stroke();
+    });
+    const img=new Image();img.src=c.toDataURL();img.onload=()=>img.classList.add('ready');
+    gal.appendChild(img);
+  }
+})();
+
+/* ---------- Wireframe Cube Demo ---------- */
+(()=>{
+  const canvas=document.getElementById('cubeDemo'),ctx=canvas.getContext('2d');
+  const resize=()=>{canvas.width=canvas.clientWidth;canvas.height=canvas.clientHeight};
+  resize();window.addEventListener('resize',resize);
+  const pts=[[-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]];
+  const edges=[[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
+  let t=0;
+  const draw=()=>{
+    const {width:w,height:h}=canvas;
+    ctx.fillStyle='#000';ctx.fillRect(0,0,w,h);
+    ctx.strokeStyle= getComputedStyle(document.documentElement).getPropertyValue('--accent');
+    ctx.lineWidth=2;
+    const rotY=theta=>[[Math.cos(theta),0,Math.sin(theta)],[0,1,0],[-Math.sin(theta),0,Math.cos(theta)]];
+    const rotX=theta=>[[1,0,0],[0,Math.cos(theta),-Math.sin(theta)],[0,Math.sin(theta),Math.cos(theta)]];
+    const mul=(m,v)=>[m[0][0]*v[0]+m[0][1]*v[1]+m[0][2]*v[2],m[1][0]*v[0]+m[1][1]*v[1]+m[1][2]*v[2],m[2][0]*v[0]+m[2][1]*v[1]+m[2][2]*v[2]];
+    const proj=v=>{const d=3,z=d+v[2];return[(v[0]*d)/z,(v[1]*d)/z]};
+    const rxy=rotX(t*.7),ry=rotY(t*.4);
+    const p2d=pts.map(p=>proj(mul(ry,mul(rxy,p))));
+    ctx.beginPath();
+    edges.forEach(([a,b])=>{
+      ctx.moveTo(p2d[a][0]*200+w/2,p2d[a][1]*200+h/2);
+      ctx.lineTo(p2d[b][0]*200+w/2,p2d[b][1]*200+h/2);
+    });
+    ctx.stroke();
+    t+=.015;requestAnimationFrame(draw);
+  };
+  draw();
+})();
+
+/* ---------- Poor‑Man’s Syntax Highlight ---------- */
+(()=>{
+  const replacements=[
+    [/\/\/.*/g,'<span class="token-comment">$&</span>'],
+    [/\b(const|inline|return)\b/g,'<span class="token-keyword">$&</span>'],
+    [/\b[0-9]+\b/g,'<span class="token-number">$&</span>'],
+    [/"[^"]*"/g,"<span class='token-string'>$&</span>"]
+  ];
+  document.querySelectorAll('pre code').forEach(code=>{
+    let html=code.innerHTML.replace(/&amp;/g,'&');
+    replacements.forEach(([r,rep])=>html=html.replace(r,rep));
+    code.innerHTML=html;
+  });
+})();
+</script>
+</body>
+</html>

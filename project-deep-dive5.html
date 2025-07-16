@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Engine&nbsp;From&nbsp;Scratch | Graphics Magnum Opus</title>
+
+<!-- ─────────── STYLES ─────────── -->
+<style>
+    /* — BASIC RESET — */
+    *{margin:0;padding:0;box-sizing:border-box;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#eee}
+
+    html,body{height:100%;scroll-behavior:smooth;background:#111;overflow-x:hidden}
+
+    section{padding:6rem 8vw;position:relative;isolation:isolate}
+    h1,h2{font-weight:800;letter-spacing:-.02em;text-shadow:0 0 .5rem #0008}
+    h1{font-size:clamp(2.5rem,8vw,6rem)}
+    h2{font-size:clamp(1.5rem,4vw,3rem);margin-bottom:2rem}
+
+    /* — HERO — */
+    #hero{display:flex;align-items:center;justify-content:center;height:100vh;padding:0}
+    #hero-canvas{position:absolute;inset:0;z-index:-1}
+    .glow-text::after{
+        content:attr(data-text);
+        position:absolute;left:0;top:0;
+        color:transparent;
+        text-shadow:0 0 1.5rem #fff;
+        mix-blend-mode:overlay;
+        animation:pulse 4s infinite alternate ease-in-out
+    }
+    @keyframes pulse{from{text-shadow:0 0 .5rem #fff}to{text-shadow:0 0 3rem #0ff}}
+
+    /* animated gradient backdrop */
+    body::before{
+        content:"";position:fixed;inset:-50vmax;background:
+        radial-gradient(circle at 50% 50%,#0ff2 0%,#00f3 40%,#f0f0 70%,#000 80%);
+        animation:spin 30s linear infinite;background-size:200% 200%;
+        z-index:-2;filter:saturate(150%) blur(50px);mix-blend-mode:screen
+    }
+    @keyframes spin{to{transform:rotate(360deg)}}
+
+    /* — REVEAL ANIMATIONS — */
+    .reveal{opacity:0;transform:translateY(3rem);transition:.8s cubic-bezier(.25,.8,.25,1)}
+    .reveal.visible{opacity:1;transform:none}
+
+    /* — FEATURE CARDS — */
+    .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:2rem}
+    .card{background:#1a1a1a;padding:2rem;border-radius:1rem;perspective:1500px;cursor:pointer}
+    .inner{
+        position:relative;width:100%;height:100%;transition:transform 1s;
+        transform-style:preserve-3d
+    }
+    .card:hover .inner{transform:rotateY(180deg)}
+    .face{
+        position:absolute;inset:0;padding:2rem;display:flex;flex-direction:column;justify-content:center;align-items:center;border-radius:inherit
+    }
+    .front{background:#262626}
+    .back{background:#0b3d40;transform:rotateY(180deg)}
+    .face p{font-size:.9rem;line-height:1.4}
+
+    /* — GALLERY — */
+    .gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1.5rem}
+    .thumb{aspect-ratio:1/1;border-radius:.75rem;overflow:hidden;position:relative}
+    canvas.thumb-canvas{width:100%;height:100%;display:block}
+
+    /* — STATS — */
+    .stats{display:flex;flex-wrap:wrap;gap:3rem;justify-content:center;margin-top:3rem}
+    .stat{font-size:clamp(2rem,5vw,4rem);font-weight:700;text-align:center}
+    .stat span{display:block;font-size:.4em;color:#0ff;margin-top:.3em}
+
+    /* — SECTION DIVIDERS — */
+    .divider{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none}
+    .divider svg{width:100%;height:100%}
+    .invert svg path{fill:#111}
+
+    /* links and misc */
+    a{color:#0ff;text-decoration:none;border-bottom:1px solid #0ff66;transition:.3s}
+    a:hover{letter-spacing:.5px;border-color:transparent}
+</style>
+</head>
+
+<!-- ─────────── BODY ─────────── -->
+<body>
+
+<!-- ╭───────────────────────────╮
+     │   HERO + WEBGL DEMO       │
+     ╰───────────────────────────╯-->
+<section id="hero">
+    <canvas id="hero-canvas"></canvas>
+    <h1 class="glow-text" data-text="Engine From Scratch">Engine From Scratch</h1>
+</section>
+
+<!-- Wavy SVG divider -->
+<div class="divider invert"><svg viewBox="0 0 1920 100" preserveAspectRatio="none"><path d="M0 50 C 473 150 1447 -50 1920 50 L1920 100 L0 100 Z"/></svg></div>
+
+<!-- ╭───────────────────────────╮
+     │   OVERVIEW               │
+     ╰───────────────────────────╯-->
+<section id="overview">
+    <h2>Project Overview</h2>
+    <p class="reveal">
+        Over twelve months of pixel‑pushing, byte‑twiddling obsession distilled into a real‑time 3D engine.
+        Every line—from the math library to the physically‑based renderer—was forged from scratch.<br><br>
+        Key pillars:
+    </p>
+    <ul class="reveal">
+        <li>⚡ C++20 core &nbsp;•&nbsp; hot‑reload scripting&nbsp;•&nbsp; custom ECS</li>
+        <li>🎨 Physically‑Based&nbsp;Deferred Renderer with clustered lighting</li>
+        <li>🧮 SIMD‑accelerated math & bespoke memory arenas</li>
+        <li>🔧 In‑engine live inspector, GPU debugger overlays & framegraph</li>
+    </ul>
+</section>
+
+<!-- ╭───────────────────────────╮
+     │   ARCHITECTURE CARDS     │
+     ╰───────────────────────────╯-->
+<section>
+    <h2>Under the Hood</h2>
+    <div class="cards">
+        <div class="card reveal"><div class="inner">
+            <div class="face front"><h3>Render&nbsp;Graph</h3></div>
+            <div class="face back"><p>Declarative DAG that tracks resource hazards and auto‑batches passes, squeezing every millisecond.</p></div>
+        </div></div>
+
+        <div class="card reveal"><div class="inner">
+            <div class="face front"><h3>Clustered&nbsp;Lighting</h3></div>
+            <div class="face back"><p>Lights   binned in 3D frusta for O(lights+pixels), supporting hundreds of dynamic area lights at 144 fps.</p></div>
+        </div></div>
+
+        <div class="card reveal"><div class="inner">
+            <div class="face front"><h3>ECS + Job System</h3></div>
+            <div class="face back"><p>Lock‑free chunks + work‑stealing jobs deliver predictable cache‑friendly parallelism.</p></div>
+        </div></div>
+
+        <div class="card reveal"><div class="inner">
+            <div class="face front"><h3>Tooling</h3></div>
+            <div class="face back"><p>Hot‑reload shaders, live GPU metrics, and an ImGui‑style UI authoring DSL.</p></div>
+        </div></div>
+    </div>
+</section>
+
+<!-- ╭───────────────────────────╮
+     │   PROCEDURAL GALLERY     │
+     ╰───────────────────────────╯-->
+<section>
+    <h2>Sample Generated Imagery</h2>
+    <p class="reveal">All thumbnails below are created in‑browser using the same math powering the engine’s test‑suite.</p>
+    <div class="gallery">
+        <div class="thumb"><canvas class="thumb-canvas" data-mode="mandelbrot"></canvas></div>
+        <div class="thumb"><canvas class="thumb-canvas" data-mode="plasma"></canvas></div>
+        <div class="thumb"><canvas class="thumb-canvas" data-mode="noise"></canvas></div>
+        <div class="thumb"><canvas class="thumb-canvas" data-mode="gears"></canvas></div>
+    </div>
+</section>
+
+<!-- ╭───────────────────────────╮
+     │   STATS                  │
+     ╰───────────────────────────╯-->
+<section>
+    <h2>Performance Numbers</h2>
+    <div class="stats">
+        <div class="stat reveal" data-count="4.2"><span>ms per frame</span></div>
+        <div class="stat reveal" data-count="1.8"><span>M triangles ps</span></div>
+        <div class="stat reveal" data-count="512"><span>lights @144fps</span></div>
+        <div class="stat reveal" data-count="29"><span>kloc C++20</span></div>
+    </div>
+</section>
+
+<!-- ╭───────────────────────────╮
+     │   CHALLENGES & LEARNINGS │
+     ╰───────────────────────────╯-->
+<section>
+    <h2>Challenges & Key Learnings</h2>
+    <p class="reveal">
+        <strong>GPU/CPU harmony.</strong> Balancing work across two wildly different processors taught me to embrace async compute and micro‑profiling.<br><br>
+        <strong>Fail fast.</strong> A red‑green‑refactor loop, backed by 600+ unit tests, kept architectural debt in check.<br><br>
+        <strong>Community feedback.</strong> Open demos on HackerNews unearthed edge‑cases no single test‑rig could hit.<br><br>
+        <em>Result: a rendering playground capable of prototyping new algorithms in hours, not days.</em>
+    </p>
+</section>
+
+<!-- ╭───────────────────────────╮
+     │   FOOTER / CTA           │
+     ╰───────────────────────────╯-->
+<section>
+    <h2>Let’s Build Worlds Together</h2>
+    <p class="reveal">Looking for a graphics engineer who can turn silicon into spectacle?  
+       <a href="mailto:you@example.com">Drop me a line</a> and let’s craft the impossible.</p>
+</section>
+
+<!-- ─────────── JAVASCRIPT ─────────── -->
+<script>
+/* — REVEAL ON SCROLL — */
+const observer=new IntersectionObserver(entries=>{
+    entries.forEach(e=>e.isIntersecting&&e.target.classList.add('visible'))
+},{threshold:.1});
+document.querySelectorAll('.reveal').forEach(el=>observer.observe(el));
+
+/* — COUNT‑UP NUMBERS — */
+function animateCount(el){
+    const goal=parseFloat(el.dataset.count),isInt=Number.isInteger(goal);
+    let start=0,lastTime=null;
+    function step(t){
+        if(!lastTime)lastTime=t;
+        const dt=(t-lastTime)/1000;
+        start+=goal*dt/1.6; // 1.6s duration
+        el.textContent=(start>=goal?goal:start).toFixed(isInt?0:1);
+        if(start<goal)requestAnimationFrame(step)
+    }
+    requestAnimationFrame(step)
+}
+document.querySelectorAll('.stat').forEach(animateCount);
+
+/* — HERO WEBGL ROTATING CUBE — */
+(()=>{ // minimal ES module‑ish isolation
+    const canvas=document.getElementById('hero-canvas');
+    const gl=canvas.getContext('webgl',{antialias:true});
+    if(!gl)return;
+    // resize
+    function fit(){canvas.width=innerWidth;canvas.height=innerHeight;gl.viewport(0,0,gl.drawingBufferWidth,gl.drawingBufferHeight)}
+    addEventListener('resize',fit);fit();
+
+    // shader helpers
+    const vs=`attribute vec3 p;uniform mat4 mvp;void main(){gl_Position=mvp*vec4(p,1.0);}`;
+    const fs=`precision mediump float;void main(){gl_FragColor=vec4(abs(gl_FragCoord.xyz*.002+vec3(.2,.4,.6)),1);} `;
+    function compile(type,src){const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);return s;}
+    const prog=gl.createProgram();
+    gl.attachShader(prog,compile(gl.VERTEX_SHADER,vs));
+    gl.attachShader(prog,compile(gl.FRAGMENT_SHADER,fs));
+    gl.linkProgram(prog);gl.useProgram(prog);
+
+    // cube geometry
+    const verts=new Float32Array([ // 24 distinct verts for flat shading
+        -1,-1,-1,  1,-1,-1,  1,1,-1, -1,1,-1,
+        -1,-1, 1,  1,-1, 1,  1,1, 1, -1,1, 1]);
+    const idx=new Uint16Array([
+        0,1,2, 2,3,0, 1,5,6, 6,2,1,
+        5,4,7, 7,6,5, 4,0,3, 3,7,4,
+        3,2,6, 6,7,3, 4,5,1, 1,0,4]);
+    const vbo=gl.createBuffer(),ibo=gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER,vbo);gl.bufferData(gl.ARRAY_BUFFER,verts,gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ibo);gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,idx,gl.STATIC_DRAW);
+    const loc=gl.getAttribLocation(prog,'p');gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,3,gl.FLOAT,false,0,0);
+    const mvpLoc=gl.getUniformLocation(prog,'mvp');
+
+    // mat4 utilities (tiny)
+    const m4=()=>new Float32Array(16);
+    function identity(o){for(let i=0;i<16;i++)o[i]=i%5==0?1:0}
+    function perspective(out,fovy,aspect,n,f){
+        const t=Math.tan(fovy/2);out[0]=1/(aspect*t);out[5]=1/t;out[10]=(f+n)/(n-f);
+        out[11]=-1;out[14]=2*f*n/(n-f);out[1]=out[2]=out[3]=out[4]=out[6]=out[7]=out[8]=out[9]=out[12]=out[13]=out[15]=0
+    }
+    function rotateY(out,a){identity(out);out[0]= Math.cos(a);out[2]=Math.sin(a);out[8]=-Math.sin(a);out[10]=Math.cos(a)}
+    const proj=m4();const model=m4();const mvp=m4();
+
+    function loop(t){
+        perspective(proj,Math.PI/3,canvas.width/canvas.height,.1,100);
+        rotateY(model,t*.001);
+        // mvp = proj * model (view is implicit at z=-4)
+        for(let i=0;i<16;i++)mvp[i]=
+            proj[i%4]*model[Math.floor(i/4)*4]   +
+            proj[(i%4)+4]*model[Math.floor(i/4)*4+1]+
+            proj[(i%4)+8]*model[Math.floor(i/4)*4+2]+
+            proj[(i%4)+12]*model[Math.floor(i/4)*4+3];
+        mvp[14]-=4; // translate z
+        gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.enable(gl.DEPTH_TEST);
+        gl.uniformMatrix4fv(mvpLoc,false,mvp);
+        gl.drawElements(gl.TRIANGLES,idx.length,gl.UNSIGNED_SHORT,0);
+        requestAnimationFrame(loop)
+    }
+    requestAnimationFrame(loop);
+})();
+
+/* — PROCEDURAL THUMBNAILS — */
+document.querySelectorAll('.thumb-canvas').forEach(c=>{
+    const ctx=c.getContext('2d'),w=256,h=256;c.width=w;c.height=h;
+    const d=ctx.getImageData(0,0,w,h);const data=d.data;
+    const mode=c.dataset.mode;
+    for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+        let r,g,b;
+        if(mode==='mandelbrot'){
+            let zx=0,zy=0,cx=(x-w/2)/(w/3),cy=(y-h/2)/(h/3),i=0;
+            while(zx*zx+zy*zy<4 && i<64){const tmp=zx*zx-zy*zy+cx;zy=2*zx*zy+cy;zx=tmp;i++}
+            const v=i/64;r=g=b=v*255
+        }else if(mode==='plasma'){
+            const v=(Math.sin(x*.05)+Math.sin(y*.05)+Math.sin((x+y)*.03))*0.33+0.5;
+            r=v*255;g=128+v*127;b=255-v*255
+        }else if(mode==='noise'){
+            const v=Math.random()*255;r=g=b=v
+        }else{ // gears (simple radial gradient)
+            const dx=x-w/2,dy=y-h/2,dst=Math.sqrt(dx*dx+dy*dy),v=(Math.sin(dst*.2)+1)*.5;
+            r=255*v;g=200*v;b=120*v
+        }
+        const idx=(y*w+x)*4;data[idx]=r;data[idx+1]=g;data[idx+2]=b;data[idx+3]=255
+    }
+    ctx.putImageData(d,0,0)
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Engine from Scratch · Deep Dive</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+/* ----------  RESET & THEME  ---------- */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --c1:#111;
+  --c2:#222;
+  --c3:#07c7f7;
+  --c4:#ff4b91;
+  --txt:#fafafa;
+  --mono:ui-monospace,"SF Mono","JetBrains Mono",Consolas,monospace;
+  --ease:cubic-bezier(.4,0,.2,1);
+}
+body{font:400 17px/1.6 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--c1);color:var(--txt);overflow-x:hidden;}
+section{padding:8rem 7vw;position:relative}
+h1,h2{font-weight:700;line-height:1.1}
+h1{font-size:clamp(2.8rem,8vw,5.2rem);margin-bottom:.4em;text-transform:uppercase;letter-spacing:.03em}
+h2{font-size:2rem;margin-bottom:.5em}
+/* ----------  HERO  ---------- */
+#hero{display:flex;flex-direction:column;justify-content:center;align-items:center;height:100dvh;text-align:center;position:relative;overflow:hidden}
+#hero::before{/* animated gradient backdrop */
+  content:"";position:absolute;inset:-50vh;z-index:-2;
+  background:conic-gradient(from 180deg at 50% 50%,var(--c3),var(--c4),var(--c3));
+  animation:spin 18s linear infinite;
+  filter:blur(120px) brightness(.75);
+}
+#hero::after{/* subtle spotlight vignette */
+  content:"";position:absolute;inset:0;background:radial-gradient(circle at 50% 40%,transparent 0 55%,rgba(0,0,0,.7) 80%);
+  z-index:-1;mix-blend-mode:overlay;
+}
+@keyframes spin{to{transform:rotate(1turn)}}
+#hero p{max-width:38ch;font-size:1.25rem;opacity:.9}
+#cta{margin-top:2.2rem;padding:1rem 2.8rem;font:600 1rem var(--mono);letter-spacing:.08em;
+  color:var(--c1);background:var(--txt);border:none;border-radius:4px;cursor:pointer;transition:.3s var(--ease)}
+#cta:hover{transform:translateY(-2px) scale(1.04)}
+/* ----------  CANVAS DEMO  ---------- */
+#demo{background:var(--c2);display:flex;flex-direction:column;align-items:center;gap:2rem}
+#demo-canvas{width:100%;max-width:640px;height:400px;border-radius:12px;background:#000;box-shadow:0 0 24px rgba(0,0,0,.6)}
+/* ----------  FEATURE LIST  ---------- */
+.features{display:grid;gap:3rem 2rem;grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+.feature{opacity:0;transform:translateY(40px);transition:.7s var(--ease)}
+.feature.show{opacity:1;transform:none}
+.feature h3{font-size:1.35rem;margin-bottom:.4em;color:var(--c3)}
+/* ----------  GALLERY  ---------- */
+#gallery{background:var(--c1)}
+.gallery-grid{display:grid;gap:1.5rem;grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
+.gen-img{aspect-ratio:16/9;border-radius:10px;overflow:hidden;position:relative;box-shadow:0 4px 18px rgba(0,0,0,.5)}
+.gen-img img{width:100%;height:100%;object-fit:cover;display:block}
+/* ----------  FOOTER  ---------- */
+footer{padding:4rem 7vw;text-align:center;font-size:.875rem;background:#000;color:#777}
+a:any-link{color:var(--c3);text-decoration:none}
+</style>
+</head>
+<body>
+<header id="hero">
+  <h1 data-sparkle>ENGINE&nbsp;FROM&nbsp;SCRATCH</h1>
+  <p>A decade‑long love affair with pixels, matrices & math—distilled into one obsessive codebase.</p>
+  <button id="cta">SEE THE CORE LOOPS ↓</button>
+  <canvas id="stars"></canvas>
+</header>
+
+<section id="demo">
+  <h2>Realtime Core ‑ Rotating Cube Demo</h2>
+  <canvas id="demo-canvas"></canvas>
+  <p style="max-width:45ch;text-align:center;opacity:.8">
+    This bare‑metal demo runs a <code style="font-family:var(--mono)">~180&nbsp;loc</code> CPU 3‑D pipeline:
+    model ↦ world ↦ view ↦ clip‑space transform, back‑face cull, perspective divide, then a minimalist scan‑line raster.
+  </p>
+</section>
+
+<section id="features">
+  <h2>What Makes It Tick</h2>
+  <div class="features">
+    <div class="feature"><h3>🌀 Data‑Oriented Core</h3><p>Tight SoA arrays, cache‑friendly iteration, SIMD path where the pay‑off is real.</p></div>
+    <div class="feature"><h3>⚡ Zero‑Allocation Frame</h3><p><span style="white-space:nowrap">Arena‑based</span> alloc keeps the hot paths GC‑free—even in JS prototypes.</p></div>
+    <div class="feature"><h3>⏱ Deterministic Update</h3><p>Fixed‑tick simulation queue decoupled from render; jitterless physics.</p></div>
+    <div class="feature"><h3>🎨 Custom Shaders‑in‑JS</h3><p>A thin DSL transpiles to GLSL/WebGPU, but stays debuggable in dev‑tools.</p></div>
+    <div class="feature"><h3>🌌 Infinite World LOD</h3><p>Cascaded clip‑maps + procedural content streaming keep memory steady.</p></div>
+    <div class="feature"><h3>🔧 Tooling Layer</h3><p>In‑engine profiler, hot‑reload scene graph, save‑state time machine.</p></div>
+  </div>
+</section>
+
+<section id="gallery">
+  <h2 style="margin-bottom:2.5rem;text-align:center">Generated Snapshots</h2>
+  <div class="gallery-grid">
+    <div class="gen-img"><img alt="Procedural art 1"></div>
+    <div class="gen-img"><img alt="Procedural art 2"></div>
+    <div class="gen-img"><img alt="Procedural art 3"></div>
+    <div class="gen-img"><img alt="Procedural art 4"></div>
+  </div>
+</section>
+
+<footer>
+  Hand‑crafted with caffeine & bit‑twiddling.  © 2025 Your Name · 
+  <a href="mailto:you@example.com">email</a> · 
+  <a href="https://github.com/yourprofile">github</a>
+</footer>
+
+<script>
+/* ===========================================================
+   1)  HERO SPARKLES & STARFIELD
+   =========================================================== */
+const sparkTarget=document.querySelector('[data-sparkle]');
+let t0=performance.now();
+function sparkle(time){
+  const t=time-t0;
+  const hue=(t/30)%360;
+  sparkTarget.style.textShadow=`0 0 10px hsl(${hue},100%,60%),0 0 20px hsl(${(hue+180)%360},100%,70%)`;
+  requestAnimationFrame(sparkle);
+}
+sparkle(t0);
+
+const starCanvas=document.getElementById('stars');
+const ctxS=starCanvas.getContext('2d');
+let stars=[];
+function resizeStars(){
+  starCanvas.width=innerWidth;
+  starCanvas.height=innerHeight;
+  stars=[...Array(Math.min(300,innerWidth/4))].map(()=>({
+    x:Math.random()*innerWidth,
+    y:Math.random()*innerHeight,
+    z:Math.random()*innerWidth,
+  }));
+}
+addEventListener('resize',resizeStars);resizeStars();
+function drawStars(){
+  ctxS.clearRect(0,0,starCanvas.width,starCanvas.height);
+  ctxS.fillStyle='#fff';
+  stars.forEach(s=>{
+    s.z-=2;if(s.z<1)s.z=innerWidth;
+    const k=128/s.z;
+    const x= (s.x - innerWidth/2)*k + innerWidth/2;
+    const y= (s.y - innerHeight/2)*k + innerHeight/2;
+    const size=(1-k*0.5)*1.8;
+    ctxS.globalAlpha=(1-k)*.8;
+    ctxS.fillRect(x,y,size,size);
+  });
+  requestAnimationFrame(drawStars);
+}
+drawStars();
+
+/* ===========================================================
+   2)  3‑D CUBE DEMO (soft‑rasterised)
+   =========================================================== */
+const dCanvas=document.getElementById('demo-canvas');
+const dCtx=dCanvas.getContext('2d');
+function resizeDemo(){
+  dCanvas.width=dCanvas.clientWidth;
+  dCanvas.height=dCanvas.clientHeight;
+}
+addEventListener('resize',resizeDemo);resizeDemo();
+
+const cubeVerts=[[-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]];
+const edges=[[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
+let ang=0;
+function renderCube(){
+  ang+=.015;
+  const sin=Math.sin,cos=Math.cos;
+  const w=dCanvas.width,h=dCanvas.height,scale=w*0.25;
+  dCtx.clearRect(0,0,w,h);
+  edges.forEach(([i,j])=>{
+    const [x1,y1,z1]=cubeVerts[i];
+    const [x2,y2,z2]=cubeVerts[j];
+    const rx1= x1*cos(ang)-z1*sin(ang), rz1= x1*sin(ang)+z1*cos(ang);
+    const ry1= y1*cos(ang*0.7)-rz1*sin(ang*0.7), rz1b= y1*sin(ang*0.7)+rz1*cos(ang*0.7);
+    const rx2= x2*cos(ang)-z2*sin(ang), rz2= x2*sin(ang)+z2*cos(ang);
+    const ry2= y2*cos(ang*0.7)-rz2*sin(ang*0.7), rz2b= y2*sin(ang*0.7)+rz2*cos(ang*0.7);
+    const p1=scale*(rx1/(rz1b+3)), q1=scale*(ry1/(rz1b+3));
+    const p2=scale*(rx2/(rz2b+3)), q2=scale*(ry2/(rz2b+3));
+    dCtx.strokeStyle=`hsl(${(ang*180/Math.PI+120)%360},100%,50%)`;
+    dCtx.lineWidth=2;
+    dCtx.beginPath();
+    dCtx.moveTo(w/2+p1,h/2+q1);
+    dCtx.lineTo(w/2+p2,h/2+q2);
+    dCtx.stroke();
+  });
+  requestAnimationFrame(renderCube);
+}
+renderCube();
+
+/* ===========================================================
+   3)  SCROLL‑REVEAL FEATURES
+   =========================================================== */
+const observer=new IntersectionObserver((entries)=>entries.forEach(e=>{
+  if(e.isIntersecting)e.target.classList.add('show');
+}),{threshold:.15});
+document.querySelectorAll('.feature').forEach(f=>observer.observe(f));
+
+/* ===========================================================
+   4)  PROCEDURAL IMAGE GALLERY
+   =========================================================== */
+function genArt(id,w=640,h=360){
+  const c=document.createElement('canvas');
+  c.width=w;c.height=h;const g=c.getContext('2d');
+  for(let y=0;y<h;y++){
+    for(let x=0;x<w;x++){
+      const r=(x^y)&255;
+      const gcol=(x*id*7+y*3)&255;
+      const b=((x*3)^(y*7))&255;
+      g.fillStyle=`rgb(${r},${gcol},${b})`;
+      g.fillRect(x,y,1,1);
+    }
+  }
+  return c.toDataURL();
+}
+document.querySelectorAll('.gen-img').forEach((div,i)=>{
+  const url=genArt(i+1);
+  div.querySelector('img').src=url;
+});
+
+/* ===========================================================
+   5)  CTA SCROLL
+   =========================================================== */
+document.getElementById('cta').onclick=()=>document.getElementById('demo').scrollIntoView({behavior:'smooth'});
+</script>
+</body>
+</html>

@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Engine From Scratch · Graphics Engineer Magnum Opus</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+/* ---------- RESET & ROOT ---------- */
+*{box-sizing:border-box;margin:0;outline:0;padding:0}
+:root{
+  --accent:#ff6b00;
+  --dark:#0b0c10;
+  --light:#f4f4f4;
+  --bg-grad:linear-gradient(135deg,#111 0%,#1e1f28 50%,#111 100%);
+  --fz-base:clamp(16px,2vw,20px);
+  --scroll-duration:0.9s;
+  scroll-behavior:smooth;
+  color-scheme:dark;
+  font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+  font-size:var(--fz-base);
+}
+/* ---------- LAYOUT ---------- */
+body{background:var(--bg-grad);color:var(--light);overflow-x:hidden}
+section{padding:8rem 5vw;max-width:1200px;margin:auto;position:relative}
+h1,h2,h3{font-weight:700;letter-spacing:.02em;line-height:1.2}
+h1{font-size:clamp(2.8rem,6vw,4rem);color:var(--accent);text-shadow:0 2px 20px #000}
+h2{font-size:clamp(1.6rem,4vw,2.4rem);margin-bottom:1.5rem}
+p{margin:.7rem 0;max-width:65ch;opacity:.9}
+a{text-decoration:none;color:var(--accent)}
+/* ---------- HERO ---------- */
+.hero{height:100vh;padding-top:35vh;text-align:center;position:relative;overflow:hidden}
+#hero-canvas{position:absolute;top:0;left:0;width:100%;height:100%;z-index:-1}
+.scroll-cue{position:absolute;bottom:3vh;left:50%;transform:translateX(-50%);font-size:1.1rem;animation:bounce 2s infinite}
+@keyframes bounce{0%,100%{transform:translate(-50%,0)}50%{transform:translate(-50%,-8px)}}
+/* ---------- NAV ---------- */
+nav{position:fixed;top:0;left:0;width:100%;display:flex;justify-content:center;backdrop-filter:blur(6px);background:rgba(0,0,0,.4);padding:.6rem 0;z-index:50;transition:all .3s}
+nav.scrolled{background:rgba(0,0,0,.75);padding:.2rem 0}
+nav a{margin:0 1.2rem;font-weight:500;transition:color .25s}
+nav a:hover{color:#fff}
+/* ---------- GALLERY ---------- */
+.gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1.2rem}
+.gallery img{width:100%;border-radius:8px;cursor:pointer;transition:transform .5s,filter .5s}
+.gallery img:hover{transform:scale(1.07) rotate(.5deg);filter:brightness(1.2)}
+/* ---------- ANIM TRIGGERS ---------- */
+.reveal{opacity:0;transform:translateY(40px);transition:opacity .6s ease-out,transform .6s ease-out}
+.reveal.visible{opacity:1;transform:none}
+/* ---------- METRIC COUNTERS ---------- */
+.metrics{display:flex;flex-wrap:wrap;gap:2rem;margin-top:3rem}
+.metric{flex:1 1 200px;text-align:center;border:1px solid #222;border-radius:8px;padding:1.5rem}
+.metric strong{display:block;font-size:2.2rem;margin-bottom:.4rem;color:var(--accent)}
+/* ---------- FOOTER ---------- */
+footer{padding:4rem 2vw;text-align:center;font-size:.9rem;opacity:.75}
+/* ---------- MEDIA ---------- */
+@media(max-width:600px){
+  .metrics{flex-direction:column}
+  nav a{margin:0 .6rem}
+}
+</style>
+</head>
+<body>
+<!-- ---------- NAV ---------- -->
+<nav id="topNav">
+  <a href="#overview">Overview</a>
+  <a href="#tech">Technical Highlights</a>
+  <a href="#gallery">Procedural Gallery</a>
+  <a href="#metrics">Metrics</a>
+  <a href="#credits">Credits</a>
+</nav>
+
+<!-- ---------- HERO ---------- -->
+<header class="hero">
+  <canvas id="hero-canvas"></canvas>
+  <h1>ENGINE FROM SCRATCH</h1>
+  <p class="tagline">A <em>zero‑to‑one</em> rendering pipeline <br> built, profiled &amp; polished by me.</p>
+  <div class="scroll-cue">▼ scroll</div>
+</header>
+
+<!-- ---------- OVERVIEW ---------- -->
+<section id="overview" class="reveal">
+  <h2>Project Overview</h2>
+  <p>After years of piecemeal graphics tinkering, I set myself an audacious goal: craft a production‑grade 3D engine from the ground up. No middleware. No spaghetti. Just raw WebGPU + C++ core, embraced by a tiny cross‑platform shell.</p>
+  <p>Every subsystem—scene graph, task scheduler, shader hot‑reloader, PBR renderer, live‑capture profiler—was sculpted to teach, test and showcase modern rendering architecture.</p>
+</section>
+
+<!-- ---------- TECH ---------- -->
+<section id="tech" class="reveal">
+  <h2>Technical Highlights</h2>
+  <ul>
+    <li><strong>Pico‑Kernel ECS:</strong> Archetype‑packed, lock‑free for multi‑core command recording.</li>
+    <li><strong>Bindless WebGPU 🡒 DX12/Vulkan:</strong> Single descriptor heap driving <code>1 M+</code> draw calls.</li>
+    <li><strong>Spectral PBR:</strong> Custom BRDF LUTs generated at launch in less than 40 ms.</li>
+    <li><strong>Hybrid GI:</strong> Inline RT for primary bounces, Signed‑Distance‑Field probe grid for diffuse.</li>
+    <li><strong>Live Shader Scratchpad:</strong> Any file save triggers auto‑pipeline rebuild with sub‑10 ms hotswap.</li>
+  </ul>
+</section>
+
+<!-- ---------- GALLERY (Procedural) ---------- -->
+<section id="gallery" class="reveal">
+  <h2>Procedural Gallery</h2>
+  <p>The thumbnails below are generated on‑the‑fly by WebGL fragment‑shader snippets—proof that math is gorgeous.</p>
+  <div class="gallery" id="galleryGrid"></div>
+</section>
+
+<!-- ---------- METRICS ---------- -->
+<section id="metrics" class="reveal">
+  <h2>Performance &amp; Scale</h2>
+  <p>Key figures recorded on an RTX 4070 Super @ 1440p.</p>
+  <div class="metrics">
+    <div class="metric"><strong data-target="2700">0</strong>FPS (Unlit Stress Test)</div>
+    <div class="metric"><strong data-target="145">0</strong>k Triangles/Frame</div>
+    <div class="metric"><strong data-target="93">0</strong>% GPU Utilization</div>
+    <div class="metric"><strong data-target="14">0</strong>ms Worst‑Case Frame</div>
+  </div>
+</section>
+
+<!-- ---------- CREDITS / FOOTER ---------- -->
+<footer id="credits" class="reveal">
+  <p>Built with sweat, coffee and curiosity.<br>&copy; 2025 Your Name – Graphics Engineer.</p>
+</footer>
+
+<script>
+/* ==========================================================================
+   1. HERO – Animated Torus‑Knot using raw WebGL
+   ========================================================================== */
+(() => {
+  const canvas = document.getElementById('hero-canvas');
+  const gl = canvas.getContext('webgl');
+  if(!gl){return;}
+  // Resize handling
+  const resize = () => {canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0,0,canvas.width,canvas.height);}
+  window.addEventListener('resize',resize); resize();
+
+  // Minimal vertex/fragment shaders
+  const vs = `attribute vec3 p;uniform mat4 mvp;void main(){gl_Position=mvp*vec4(p,1.0);} `;
+  const fs = `precision highp float;void main(){float g=gl_FragCoord.z;gl_FragColor=vec4(vec3(0.5+0.5*cos(g*50.0)),1.0);} `;
+  const prog = gl.createProgram();
+  const compile = (type,src)=>{const s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s); if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(s)); return s;}
+  gl.attachShader(prog,compile(gl.VERTEX_SHADER,vs));
+  gl.attachShader(prog,compile(gl.FRAGMENT_SHADER,fs));
+  gl.linkProgram(prog); gl.useProgram(prog);
+
+  const locMVP = gl.getUniformLocation(prog,'mvp');
+
+  /* Generate torus‑knot (quick & dirty) */
+  const verts=[];
+  const R=1.2,r=.4,p=2,q=3,steps=210,rad=Math.PI*2;
+  for(let i=0;i<steps;i++){
+    const t=i/steps*rad*q;
+    const ct=Math.cos(t),st=Math.sin(t);
+    const x=(R+r*Math.cos(p*t/q))*ct;
+    const y=(R+r*Math.cos(p*t/q))*st;
+    const z=r*Math.sin(p*t/q);
+    verts.push(x,y,z);
+  }
+  const buf=gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(verts),gl.STATIC_DRAW);
+  const locPos=gl.getAttribLocation(prog,'p');
+  gl.enableVertexAttribArray(locPos);
+  gl.vertexAttribPointer(locPos,3,gl.FLOAT,false,0,0);
+
+  function mat4persp(out,fov,asp,nf,nm){const f=1/Math.tan(fov/2);out[0]=f/asp;out[5]=f;out[10]=(nm+nf)/(nf-nm);out[11]=-1;out[14]=2*nm*nf/(nm-nf);}
+  const mvp=new Float32Array(16);
+  let t=0;
+  (function draw(){
+    t+=0.008;
+    gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+    const asp=canvas.width/canvas.height;
+    // Simple rotating MVP
+    const s=Math.sin(t),c=Math.cos(t);
+    mat4persp(mvp,1.1,asp,0.1,100);
+    mvp[12]=0;mvp[13]=0;mvp[14]=-4;
+    mvp[0]*=c; mvp[4]=s; mvp[1]=-s; mvp[5]*=c;
+    gl.uniformMatrix4fv(locMVP,false,mvp);
+    gl.drawArrays(gl.LINE_LOOP,0,steps);
+    requestAnimationFrame(draw);
+  })();
+})();
+
+/* ==========================================================================
+   2. Scroll‑Triggered Reveals & Nav Styling
+   ========================================================================== */
+const observer = new IntersectionObserver((entries)=>entries.forEach(e=>e.isIntersecting&&e.target.classList.add('visible')), {threshold:.18});
+document.querySelectorAll('.reveal').forEach(el=>observer.observe(el));
+
+const nav=document.getElementById('topNav');
+window.addEventListener('scroll',()=>nav.classList.toggle('scrolled',window.scrollY>40));
+
+/* ==========================================================================
+   3. Animated Metric Counters
+   ========================================================================== */
+document.addEventListener('DOMContentLoaded',()=> {
+  const metrics=document.querySelectorAll('[data-target]');
+  const animate=el=>{
+    const target=+el.dataset.target;
+    const step=Math.max(1,target/200);
+    let cur=0;
+    const tick=()=>{cur+=step; if(cur<target){el.textContent=Math.floor(cur); requestAnimationFrame(tick);}else{el.textContent=target;}}
+    tick();
+  };
+  const mo=new IntersectionObserver((es)=>es.forEach(e=>e.isIntersecting&&(animate(e.target),mo.unobserve(e.target))),{threshold:.6});
+  metrics.forEach(m=>mo.observe(m));
+});
+
+/* ==========================================================================
+   4. Procedural Gallery – Fragment‑shader thumbnails > images
+   ========================================================================== */
+const galleryShaders=[
+  `vec2 uv=gl_FragCoord.xy/res;float t=iTime*.2;vec2 p=(uv-.5);float r=length(p)*4.0;float a=atan(p.y,p.x);gl_FragColor=vec4(.5+.5*cos(6.*a-r+t),1.0);`,
+  `vec2 uv=gl_FragCoord.xy/res;float t=iTime*.3;float v=sin(uv.x*20.+t)+sin(uv.y*10.-t*1.2);gl_FragColor=vec4(vec3(.5+.5*sin(v)),1.0);`,
+  `vec2 uv=gl_FragCoord.xy/res;float d=distance(uv,vec2(.5));float glow=smoothstep(.3,.0,d);gl_FragColor=vec4(vec3(glow),1.0);`,
+  `vec2 uv=gl_FragCoord.xy/res;float t=iTime*.7;float stripe=step(.5,fract((uv.x+uv.y+t)*10.0));gl_FragColor=vec4(vec3(stripe),1.0);`
+];
+
+const makeThumb=(frag,dim=256)=>{
+  const c=document.createElement('canvas');c.width=c.height=dim;
+  const gl=c.getContext('webgl');
+  const vs=`attribute vec2 p;void main(){gl_Position=vec4(p,0,1);} `;
+  frag=`precision mediump float;uniform vec2 res;uniform float iTime;void main(){${frag}}`;
+  const prog=gl.createProgram();
+  const cc=(t,s)=>{const sh=gl.createShader(t);gl.shaderSource(sh,s);gl.compileShader(sh);if(!gl.getShaderParameter(sh,gl.COMPILE_STATUS))console.error(gl.getShaderInfoLog(sh));return sh;}
+  gl.attachShader(prog,cc(gl.VERTEX_SHADER,vs));
+  gl.attachShader(prog,cc(gl.FRAGMENT_SHADER,frag));
+  gl.linkProgram(prog);gl.useProgram(prog);
+  const buf=gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
+  const loc=gl.getAttribLocation(prog,'p');gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
+  const uRes=gl.getUniformLocation(prog,'res'),uTime=gl.getUniformLocation(prog,'iTime');
+  gl.uniform2f(uRes,dim,dim);
+  gl.uniform1f(uTime,Math.random()*10);
+  gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+  return c.toDataURL();
+};
+
+const gallery=document.getElementById('galleryGrid');
+galleryShaders.forEach(f=>{
+  const img=new Image();
+  img.src=makeThumb(f);
+  gallery.appendChild(img);
+});
+</script>
+</body>
+</html>

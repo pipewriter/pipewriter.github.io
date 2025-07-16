@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Engine from Scratch ⚙️ | Portfolio Deep‑Dive</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+/* ---------- Global reset & helpers ---------- */
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;width:100%;scroll-behavior:smooth;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;color:#e6e6e6;background:#0d0d0d;overflow-x:hidden}
+h1,h2{font-weight:700;letter-spacing:0.03em}
+section{position:relative;padding:8rem 6vw;min-height:100vh;display:flex;flex-direction:column;justify-content:center;gap:1.6rem;opacity:0;transform:translateY(40px);transition:opacity .9s ease,transform .9s ease}
+canvas{max-width:100%;height:auto;border-radius:8px;box-shadow:0 12px 24px rgba(0,0,0,.6)}
+a.btn{display:inline-block;margin-top:1.2rem;padding:.8rem 1.6rem;border:1px solid #ffa600;border-radius:4px;text-decoration:none;font-weight:600;color:#ffa600;transition:.3s}
+a.btn:hover{background:#ffa600;color:#0d0d0d}
+
+/* ---------- Hero ---------- */
+#hero{ padding:0;overflow:hidden }
+#hero::before{
+    content:'';position:absolute;inset:0;
+    background:radial-gradient(circle at 40% 50%,#3434ff,#000 70%);
+    animation:shiftBg 15s linear infinite alternate;
+}
+@keyframes shiftBg{to{transform:scale(1.4) rotate(30deg)}}
+.glitch{
+    position:relative;font-size:clamp(2.4rem,7vw,5rem);line-height:1.05;
+    text-transform:uppercase;
+    color:#fff;text-align:center;margin-top:35vh;
+}
+.glitch::before,.glitch::after{
+    content:attr(data-text);position:absolute;inset:0;
+}
+.glitch::before{left:2px;text-shadow:-2px 0 #f0f;}
+.glitch::after{left:-2px;text-shadow:-2px 0 #0ff;}
+@keyframes glitchAnim{
+    0%{clip-path:polygon(0 2%,100% 2%,100% 33%,0 33%)}
+    20%{clip-path:polygon(0 60%,100% 60%,100% 80%,0 80%)}
+    40%{clip-path:polygon(0 10%,100% 10%,100% 45%,0 45%)}
+    60%{clip-path:polygon(0 70%,100% 70%,100% 98%,0 98%)}
+    80%{clip-path:polygon(0 40%,100% 40%,100% 55%,0 55%)}
+    100%{clip-path:polygon(0 5%,100% 5%,100% 25%,0 25%)}
+}
+.glitch::before{animation:glitchAnim 2s infinite cubic-bezier(.25,.46,.45,.94)}
+.glitch::after{animation:glitchAnim 2.3s infinite cubic-bezier(.25,.46,.45,.94) reverse}
+
+/* ---------- Section accent bars ---------- */
+section::before{
+    content:'';position:absolute;top:0;left:0;width:12px;height:100%;background:linear-gradient(#ffa600,#ff006a);
+    transform-origin:left;transition:transform 1s ease;
+}
+section.visible::before{transform:scaleY(1)} /* will be triggered in JS */
+
+/* ---------- Scroll‑reveals ---------- */
+section.visible{opacity:1;transform:translateY(0)}
+
+/* ---------- Star‑field canvas (hero BG layer) ---------- */
+#stars{position:absolute;inset:0;z-index:0}
+
+/* ---------- Responsive tweaks ---------- */
+@media(max-width:600px){
+    section{padding:6rem 5vw}
+}
+</style>
+</head>
+<body>
+
+<!-- ********** HERO ********** -->
+<canvas id="stars"></canvas>
+<header id="hero">
+    <h1 class="glitch" data-text="ENGINE FROM SCRATCH">ENGINE FROM SCRATCH</h1>
+</header>
+
+<!-- ********** OVERVIEW ********** -->
+<section id="overview">
+    <h2>What & Why</h2>
+    <p>
+        Over the past two years I designed and built a <strong>cross‑platform real‑time rendering engine</strong> completely from the ground up—no middleware, no external math or asset pipelines.  
+        The goal was crystal‑clear: <em>prove mastery of GPU architecture by distilling modern graphics techniques into teachable, performant code.</em>
+    </p>
+    <p>
+        Every subsystem—task graph scheduler, metal‑esque command buffer API, physically‑based shading, virtual texture system, and an ECS—was handwritten in C++.  
+        This deep‑dive walks through the highlights and shows live snapshots generated right in your browser.
+    </p>
+    <a href="#gallery" class="btn">Jump to the gallery ↓</a>
+</section>
+
+<!-- ********** PIPELINE ********** -->
+<section id="pipeline">
+    <h2>Pipeline in Three Phases</h2>
+    <ol style="margin-left:1.2rem;line-height:1.6">
+        <li><strong>Geometry Hub:</strong> CPU‑driven culling, bindless material batching, BVH construction in <span style="white-space:nowrap;">1.2 ms @ 1080p</span>.</li>
+        <li><strong>Light Stage:</strong> clustered forward+ passes <em>and</em> an experimental ReSTIR GI path (per‑tile light reservoirs).</li>
+        <li><strong>Post Lab:</strong> HDR tonemap, TAAU upscaler (custom Alchemy filter), and async readback for live debug HUD.</li>
+    </ol>
+</section>
+
+<!-- ********** SAMPLE IMAGE GALLERY (GENERATED) ********** -->
+<section id="gallery">
+    <h2>Live Gallery</h2>
+    <p>The thumbnails below are rendered procedurally on page‑load with pure Canvas 2D + WebGL 1—no external assets:</p>
+    <div id="thumbs" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:2rem;"></div>
+</section>
+
+<!-- ********** METRICS ********** -->
+<section id="metrics">
+    <h2>Performance Numbers</h2>
+    <p>Measured on an RTX 4070 Laptop GPU (Max‑Q) at 2560×1440:</p>
+    <ul style="margin-left:1.2rem;line-height:1.6">
+        <li><strong>Frame time:</strong> 2.3 ms geometry, 4.8 ms lighting, 1.4 ms post → <mark style="background:#ffa60022;padding:.1em .3em;border-radius:3px;">≈ 144 FPS</mark></li>
+        <li><strong>GPU occupancy:</strong> 93 %</li>
+        <li><strong>Memory footprint:</strong> 612 MB (with streamed virtual textures)</li>
+    </ul>
+</section>
+
+<!-- ********** LESSONS ********** -->
+<section id="lessons">
+    <h2>Key Takeaways</h2>
+    <ul style="margin-left:1.2rem;line-height:1.6">
+        <li><strong>Build tools matter.</strong> A single‑button reflection/mac‑meta generator saved hundreds of boilerplate lines.</li>
+        <li><strong>Shape data early.</strong> Batch‑friendly memory layouts trump elegant object hierarchies when chasing nanoseconds.</li>
+        <li><strong>Embrace off‑main‑thread.</strong> GPU timelines unlock startling simplicity once fences and semaphores click.</li>
+        <li><strong>Metrics drive design.</strong> Every feature shipped only after a red/green perf gate.</li>
+    </ul>
+</section>
+
+<!-- ********** CTA ********** -->
+<section id="cta">
+    <h2>Curious to Know More?</h2>
+    <p>I maintain an open‑source sandbox where the engine evolves in public (MIT license).  
+       If you’re interested in collaboration, academic licensing, or just nerding out about frame timings, reach out!</p>
+    <a href="mailto:you@example.com" class="btn">Email the author ✉️</a>
+</section>
+
+<script>
+/* ===========================================================
+   STAR‑FIELD BACKGROUND (hero)
+   =========================================================== */
+(() => {
+    const canvas = document.getElementById('stars');
+    const ctx = canvas.getContext('2d');
+    let w, h, stars;
+    function resize() {
+        w = canvas.width = innerWidth;
+        h = canvas.height = innerHeight;
+        // regenerate stars
+        stars = Array.from({length: Math.round(w*h/2000)}, () => ({
+            x: Math.random()*w, y: Math.random()*h,
+            size: Math.random()*1.2 + .2,
+            speed: Math.random()*0.3 + 0.05
+        }));
+    }
+    function frame() {
+        ctx.clearRect(0,0,w,h);
+        ctx.fillStyle='#fff';
+        stars.forEach(s=>{
+            s.y += s.speed;
+            if(s.y>h) s.y=0, s.x=Math.random()*w;
+            ctx.globalAlpha = s.size/1.4;
+            ctx.fillRect(s.x,s.y,s.size,s.size);
+        });
+        requestAnimationFrame(frame);
+    }
+    addEventListener('resize', resize);
+    resize(); frame();
+})();
+
+/* ===========================================================
+   SCROLL‑REVEAL SECTIONS
+   =========================================================== */
+const io = new IntersectionObserver((entries)=>{
+    entries.forEach(e=>{
+        if(e.isIntersecting){
+            e.target.classList.add('visible');
+            io.unobserve(e.target);
+        }
+    });
+},{threshold:0.2});
+document.querySelectorAll('section').forEach(s=>io.observe(s));
+
+/* ===========================================================
+   LIVE THUMBNAIL GENERATION
+   =========================================================== */
+(function createGallery(){
+  const thumbs = document.getElementById('thumbs');
+  const demos = [
+    {w:512,h:288,title:'Ray‑marched Torus', draw:raymarchTorus},
+    {w:512,h:288,title:'Plasma Noise', draw:plasma},
+    {w:512,h:288,title:'Orbiting Particles', draw:particles}
+  ];
+  demos.forEach(demo=>{
+     const wrapper=document.createElement('div');
+     const c=document.createElement('canvas');
+     c.width=demo.w; c.height=demo.h;
+     wrapper.appendChild(c);
+     const caption=document.createElement('p');
+     caption.textContent=demo.title;
+     caption.style.marginTop='.6rem';
+     caption.style.fontWeight='600';
+     wrapper.appendChild(caption);
+     thumbs.appendChild(wrapper);
+     demo.draw(c);
+  });
+
+  /* ---------- Demo 1: Ray‑marching via WebGL ---------- */
+  function raymarchTorus(canvas){
+     const gl = canvas.getContext('webgl', {antialias:false});
+     if(!gl){fallback(canvas);return;}
+     const vs=`attribute vec2 p;void main(){gl_Position=vec4(p,0,1);}`;
+     const fs=`precision highp float;
+        uniform float t;uniform vec2 res;
+        float sdTorus(vec3 p, vec2 t){vec2 q=vec2(length(p.xz)-t.x,p.y);return length(q)-t.y;}
+        vec3 getRayDir(vec2 uv){uv=uv*2.-1.;uv.x*=res.x/res.y;vec3 rd=normalize(vec3(uv,1.2));return rd;}
+        void main(){
+            vec2 uv=gl_FragCoord.xy/res;
+            vec3 ro=vec3(0.0,0.0,-3.5+sin(t*.3)*.8);
+            vec3 rd=getRayDir(uv);
+            float d=0.;float i;vec3 p;
+            for(i=0.;i<64.;i++){
+                p=ro+rd*d;
+                float s=sdTorus(p,vec2(1.0,0.35));
+                if(abs(s)<0.002||d>10.)break;
+                d+=s;
+            }
+            float shade=exp(-i*0.04);
+            vec3 col=vec3(0.3+0.7*shade,0.4,0.8)*shade;
+            gl_FragColor=vec4(col,1.0);
+        }`;
+     const prog=gl.createProgram();
+     const s=[vs,fs].map((src,i)=>{
+        const sh=gl.createShader(i?gl.FRAGMENT_SHADER:gl.VERTEX_SHADER);
+        gl.shaderSource(sh,src);gl.compileShader(sh);gl.attachShader(prog,sh);return sh;
+     });
+     gl.linkProgram(prog);gl.useProgram(prog);
+     const buf=gl.createBuffer();
+     gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+     gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
+     const loc=gl.getAttribLocation(prog,'p');
+     gl.enableVertexAttribArray(loc);
+     gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
+     const uT=gl.getUniformLocation(prog,'t');
+     gl.uniform2f(gl.getUniformLocation(prog,'res'),canvas.width,canvas.height);
+     let time=0;
+     function f(){
+        time+=.016;
+        gl.uniform1f(uT,time);
+        gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+        requestAnimationFrame(f);
+     }f();
+  }
+
+  /* ---------- Demo 2: Plasma fractal in 2D ---------- */
+  function plasma(canvas){
+    const ctx=canvas.getContext('2d');
+    const w=canvas.width,h=canvas.height;
+    let t=0;
+    function f(){
+        const img=ctx.createImageData(w,h);
+        for(let i=0;i<img.data.length;i+=4){
+            const x=(i/4)%w, y=Math.floor(i/4/w);
+            const v=128+128*Math.sin(x*0.04)+128*Math.sin(y*0.04)+128*Math.sin((x+y)*0.03+t);
+            img.data[i]=v;img.data[i+1]=255-v;img.data[i+2]=v*0.8;img.data[i+3]=255;
+        }
+        ctx.putImageData(img,0,0);
+        t+=0.04;
+        requestAnimationFrame(f);
+    }f();
+  }
+
+  /* ---------- Demo 3: Orbiting particle system ---------- */
+  function particles(canvas){
+    const ctx=canvas.getContext('2d');
+    const w=canvas.width,h=canvas.height;
+    const N=160,parts=[];
+    for(let i=0;i<N;i++){
+        parts.push({a:Math.random()*Math.PI*2,r:60+Math.random()*120,s:0.005+Math.random()*0.006});
+    }
+    function f(){
+        ctx.fillStyle='rgba(0,0,0,0.15)';
+        ctx.fillRect(0,0,w,h);
+        ctx.translate(w/2,h/2);
+        parts.forEach(p=>{
+            p.a+=p.s;
+            const x=Math.cos(p.a)*p.r, y=Math.sin(p.a)*p.r;
+            ctx.fillStyle=`hsl(${(p.a*57)%360},100%,70%)`;
+            ctx.fillRect(x,y,2,2);
+        });
+        ctx.setTransform(1,0,0,1,0,0);
+        requestAnimationFrame(f);
+    }
+    f();
+  }
+
+  function fallback(c){
+     const ctx=c.getContext('2d');
+     ctx.fillStyle='#ff006a';
+     ctx.fillRect(0,0,c.width,c.height);
+     ctx.fillStyle='#000';
+     ctx.font='20px sans-serif';
+     ctx.fillText('WebGL unsupported',20,40);
+  }
+})();
+
+</script>
+</body>
+</html>

@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Engine‑from‑Scratch | Deep Dive</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{
+  --accent:#00e0ff;
+  --bg1:#0a0a0f;
+  --bg2:#111126;
+  --text:#e5e7ef;
+  --card-bg:rgba(255,255,255,0.03);
+  --shadow:0 0 .75rem #0008;
+  --trans-fast:200ms cubic-bezier(.4,0,.2,1);
+  --trans-slow:800ms cubic-bezier(.25,1,.3,1);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;scroll-behavior:smooth;background:var(--bg1);color:var(--text);font:15px/1.6 "Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+section{padding:8rem 6vw;min-height:100vh;display:flex;flex-direction:column;justify-content:center;position:relative;overflow:hidden}
+h1,h2{font-weight:600;letter-spacing:.03em;margin-bottom:.5em}
+h1{font-size:clamp(2.4rem,5vw,4.6rem);line-height:1.1}
+h2{font-size:clamp(1.4rem,3vw,2.4rem)}
+p,li{max-width:60ch;margin-bottom:1.2em}
+ul{padding-left:1.2em}
+.card{background:var(--card-bg);backdrop-filter:blur(6px);border:1px solid #fff2;border-radius:.8rem;padding:2rem;box-shadow:var(--shadow);opacity:0;transform:translateY(60px);transition:opacity var(--trans-slow),transform var(--trans-slow)}
+.card.reveal{opacity:1;transform:none}
+.hero{padding:0;display:flex;align-items:center;justify-content:center;text-align:center}
+.hero canvas{position:absolute;inset:0;z-index:-1}
+.hero .headline{z-index:1;color:#fff;text-shadow:0 2px 12px #0009}
+.hero .headline span{display:block;animation:slideUp .8s ease-out .3s both}
+@keyframes slideUp{from{opacity:0;transform:translateY(60px)}to{opacity:1;transform:none}}
+.gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:2rem}
+.gallery img,.gallery canvas{width:100%;border-radius:.6rem;box-shadow:var(--shadow)}
+.demo-wrap{height:400px;display:flex;align-items:center;justify-content:center}
+canvas#glDemo{width:100%;height:100%;border-radius:.6rem;box-shadow:var(--shadow)}
+/* subtle star‑field parallax */
+@keyframes drift{from{transform:translateY(0)}to{transform:translateY(-2000px)}}
+.stars, .stars2, .stars3{
+  position:absolute;top:0;left:0;width:200%;height:4000px;pointer-events:none;
+  background-repeat:repeat;background-position:0 0;animation:drift 120s linear infinite;
+}
+.stars{background-image:radial-gradient(1px 1px at 2px 2px,#fff6 0,transparent 50%)}
+.stars2{background-image:radial-gradient(1px 1px at 2px 2px,#fff4 0,transparent 50%);animation-duration:240s}
+.stars3{background-image:radial-gradient(2px 2px at 2px 2px,#fff3 0,transparent 50%);animation-duration:360s}
+footer{padding:4rem 6vw;text-align:center;font-size:.85rem;color:#888}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+</style>
+</head>
+<body>
+
+<!-- ★ HERO **************************************************************** -->
+<section class="hero" id="top">
+  <canvas id="heroCanvas"></canvas>
+  <div class="stars"></div><div class="stars2"></div><div class="stars3"></div>
+  <div class="headline">
+    <h1><span>ENGINE&nbsp;FROM&nbsp;SCRATCH</span></h1>
+    <p>My magnum‑opus graphics engine: C++17 core, ECS, Vulkan, hot‑reloadable shaders, and an editor that feels like magic.</p>
+    <p><a href="#overview">Scroll to explore ↓</a></p>
+  </div>
+</section>
+
+<!-- ★ OVERVIEW ************************************************************* -->
+<section id="overview">
+  <div class="card">
+    <h2>Project Overview</h2>
+    <p>
+      What began as a nights‑and‑weekends experiment grew into a fully‑featured renderer and tooling stack
+      designed for modern, data‑oriented workflows. The goal: <em>zero black boxes</em>—every subsystem from
+      memory allocators to the frame graph was penned line‑by‑line.
+    </p>
+    <ul>
+      <li>200 k+ lines of hand‑rolled C++17</li>
+      <li>Custom <strong>Vulkan</strong> backend with bindless resources and descriptor‑set caching</li>
+      <li>Task‑based job system (fibers + work‑stealing)</li>
+      <li>Live‑coded HLSL‑inspired shader DSL (compile‑to‑SPIR‑V)</li>
+      <li>In‑engine entity &amp; prefab editor with gizmos and property reflection</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ★ ARCHITECTURE ********************************************************* -->
+<section id="architecture" style="background:var(--bg2)">
+  <div class="card">
+    <h2>Architecture at a Glance</h2>
+    <p>Below, a simplified render‑pipeline schematic is drawn fully in JavaScript:</p>
+    <canvas id="archCanvas" width="900" height="400" style="max-width:100%;"></canvas>
+  </div>
+</section>
+
+<!-- ★ GALLERY ************************************************************** -->
+<section id="showcase">
+  <div class="card">
+    <h2>Procedural Showcase Gallery</h2>
+    <p>These images are generated entirely in‑browser to mimic the engine’s production shaders—feel free to refresh for new variations.</p>
+    <div class="gallery">
+      <canvas class="imgGen" data-type="mandelbrot" width="512" height="320"></canvas>
+      <canvas class="imgGen" data-type="plasma"     width="512" height="320"></canvas>
+      <canvas class="imgGen" data-type="voronoi"    width="512" height="320"></canvas>
+    </div>
+  </div>
+</section>
+
+<!-- ★ LIVE DEMO ************************************************************ -->
+<section id="live" style="background:var(--bg2)">
+  <div class="card">
+    <h2>Mini WebGL Live Demo</h2>
+    <p>A single‑file, <abbr title="~70 lines">tiny</abbr> WebGL 1 renderer spins a lit cube—mirroring the engine’s ECS + component draw call flow.</p>
+    <div class="demo-wrap"><canvas id="glDemo"></canvas></div>
+  </div>
+</section>
+
+<footer>
+  Built with ♥ by <a href="https://your‑site.dev">Your Name</a> —
+  <a href="#top">Back&nbsp;to&nbsp;top</a>
+</footer>
+
+<script>
+/* ============================================================= *
+ * HERO CANVAS – PARTICLE WARP FIELD                             *
+ * ============================================================= */
+(function(){
+  const c=document.getElementById('heroCanvas'),ctx=c.getContext('2d'),
+    particles=200,pts=[];
+  function resize(){c.width=innerWidth; c.height=innerHeight}
+  addEventListener('resize',resize); resize();
+  for(let i=0;i<particles;++i){
+    pts.push({x:Math.random()*c.width,y:Math.random()*c.height,z:Math.random()*c.width});
+  }
+  function tick(){
+    ctx.fillStyle='rgba(10,10,15,0.3)';ctx.fillRect(0,0,c.width,c.height);
+    ctx.fillStyle='#00e0ff';ctx.beginPath();
+    for(let p of pts){
+      p.z-=4; if(p.z<1)p.z=c.width;
+      const k=40/p.z,x=(p.x-c.width/2)/p.z*c.width/2+c.width/2,
+            y=(p.y-c.height/2)/p.z*c.height/2+c.height/2,size=(1-p.z/c.width)*3;
+      ctx.moveTo(x,y);ctx.arc(x,y,size,0,6.283);
+    }
+    ctx.fill(); requestAnimationFrame(tick);
+  } tick();
+})();
+
+/* ============================================================= *
+ * REVEAL‑ON‑SCROLL FOR .card                                    *
+ * ============================================================= */
+new IntersectionObserver((entries,obs)=>{
+  entries.forEach(e=>{if(e.isIntersecting){e.target.classList.add('reveal');obs.unobserve(e.target)}})
+},{threshold:0.3}).observe(document.querySelector('#overview .card'));
+document.querySelectorAll('section .card').forEach(c=>new IntersectionObserver((es,o)=>{
+  es.forEach(e=>e.isIntersecting&&(e.target.classList.add('reveal'),o.unobserve(e.target)))
+},{threshold:0.3}).observe(c));
+
+/* ============================================================= *
+ * ARCHITECTURE DIAGRAM                                          *
+ * ============================================================= */
+(function(){
+  const cv=document.getElementById('archCanvas'),cx=cv.getContext('2d');
+  const boxes=[
+    {x:40,y:140,w:150,h:60,t:'CPU → Task\nScheduler'},
+    {x:250,y:40,w:180,h:60,t:'Geometry\nPass'},
+    {x:250,y:140,w:180,h:60,t:'Shadow\nPass'},
+    {x:250,y:240,w:180,h:60,t:'Compute\n(VFX/Particles)'},
+    {x:500,y:90,w:200,h:120,t:'Frame Graph'},
+    {x:760,y:140,w:120,h:60,t:'Swapchain\nPresent'},
+  ];
+  cx.font='14px monospace'; cx.textAlign='center'; cx.textBaseline='middle';
+  cx.strokeStyle='#00e0ff'; cx.fillStyle='#fff9';
+  for(let b of boxes){
+    cx.fillText(b.t.replace('\n',' '),b.x+b.w/2,b.y-18);
+    cx.strokeRect(b.x,b.y,b.w,b.h);
+    cx.save();cx.translate(b.x+b.w/2,b.y+b.h/2);
+    b.t.split('\n').forEach((l,i)=>cx.fillText(l,0,(i-.5)*(16)));
+    cx.restore();
+  }
+  function arrow(from,to){
+    cx.beginPath();cx.moveTo(from.x,from.y);cx.lineTo(to.x,to.y);cx.stroke();
+    const ang=Math.atan2(to.y-from.y,to.x-from.x);
+    cx.beginPath();cx.moveTo(to.x,to.y);
+    cx.lineTo(to.x-10*Math.cos(ang-0.4),to.y-10*Math.sin(ang-0.4));
+    cx.lineTo(to.x-10*Math.cos(ang+0.4),to.y-10*Math.sin(ang+0.4));
+    cx.closePath();cx.fill();
+  }
+  arrow({x:190,y:170},{x:250,y:170});
+  arrow({x:430,y:70},{x:500,y:120});
+  arrow({x:430,y:170},{x:500,y:150});
+  arrow({x:430,y:270},{x:500,y:210});
+  arrow({x:700,y:150},{x:760,y:170});
+})();
+
+/* ============================================================= *
+ * PROCEDURAL IMAGE GENERATORS                                   *
+ * ============================================================= */
+const gens={
+  mandelbrot:(ctx,w,h)=>{
+    const maxIter=64,data=ctx.createImageData(w,h);
+    for(let y=0;y<h;y++){
+      for(let x=0;x<w;x++){
+        let cx=(x-w/2)*3.5/w,cy=(y-h/2)*2/h,a=0,b=0,iter=0;
+        while(a*a+b*b<=4&&iter<maxIter){const t=a*a-b*b+cx;b=2*a*b+cy;a=t;++iter}
+        const p=(y*w+x)*4,d=iter/maxIter,c=Math.sqrt(d);
+        data.data[p]=c*255;data.data[p+1]=c*c*260;data.data[p+2]=d*320;data.data[p+3]=255;
+      }
+    }
+    ctx.putImageData(data,0,0);
+  },
+  plasma:(ctx,w,h)=>{
+    const img=ctx.createImageData(w,h),t=Date.now()/1000;
+    for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+      const v=Math.sin(x/32)+Math.sin(y/24)+Math.sin((x+y+t*60)/36);
+      const c=Math.floor((v+3)*42);const p=(y*w+x)*4;
+      img.data[p]=c*2;img.data[p+1]=c;img.data[p+2]=255-c;img.data[p+3]=255;
+    }
+    ctx.putImageData(img,0,0);
+  },
+  voronoi:(ctx,w,h)=>{
+    const pts=Array.from({length:32},()=>[Math.random()*w,Math.random()*h]);
+    const img=ctx.createImageData(w,h);
+    for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+      let d1=1e9,d2=1e9;
+      for(let p of pts){
+        const dx=p[0]-x,dy=p[1]-y,d=dx*dx+dy*dy;
+        if(d<d1){d2=d1;d1=d}else if(d<d2){d2=d}
+      }
+      const v=d2-d1;const c=(v%256)|0;const off=(y*w+x)*4;
+      img.data[off]=c;img.data[off+1]=c*1.5;img.data[off+2]=255-c;img.data[off+3]=255;
+    }
+    ctx.putImageData(img,0,0);
+  }
+};
+document.querySelectorAll('.imgGen').forEach(cv=>{
+  const ctx=cv.getContext('2d');gens[cv.dataset.type](ctx,cv.width,cv.height)
+});
+
+/* ============================================================= *
+ * TINY WEBGL DEMO                                               *
+ * ============================================================= */
+(function(){
+  const canvas=document.getElementById('glDemo'),gl=canvas.getContext('webgl');
+  if(!gl)return;
+  function resize(){canvas.width=canvas.clientWidth;canvas.height=canvas.clientHeight;gl.viewport(0,0,canvas.width,canvas.height)}
+  addEventListener('resize',resize);resize();
+  const vs=`attribute vec3 p;uniform mat4 mvp;void main(){gl_Position=mvp*vec4(p,1.0);}`,
+        fs=`precision mediump float;void main(){gl_FragColor=vec4(0.0,0.88,1.0,1.0);}`;
+  function compile(type,src){const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);return s}
+  const prog=gl.createProgram();gl.attachShader(prog,compile(gl.VERTEX_SHADER,vs));gl.attachShader(prog,compile(gl.FRAGMENT_SHADER,fs));gl.linkProgram(prog);
+  const cube=[ // 36 verts, axis‑aligned cube
+    -1,-1,-1,  1,-1,-1, 1,1,-1, -1,-1,-1, 1,1,-1,-1,1,-1,
+    -1,-1,1, 1,-1,1, 1,1,1, -1,-1,1, 1,1,1,-1,1,1,
+    -1,-1,-1,-1,1,-1,-1,1,1,-1,-1,-1,-1,1,1,-1,1,1,
+    1,-1,-1,1,1,-1,1,1,1,1,-1,-1,1,1,1,1,-1,1,
+    -1,-1,-1,-1,-1,1,1,-1,1,-1,-1,-1,1,-1,1,1,-1,-1,
+    -1,1,-1,-1,1,1,1,1,1,-1,1,-1,1,1,1,1,1,-1
+  ];
+  const buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buf);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(cube),gl.STATIC_DRAW);
+  const attr=gl.getAttribLocation(prog,'p');gl.enableVertexAttribArray(attr);gl.vertexAttribPointer(attr,3,gl.FLOAT,false,0,0);
+  const uni=gl.getUniformLocation(prog,'mvp');
+  function mat4mul(a,b){const r=new Float32Array(16);for(let i=0;i<4;i++)for(let j=0;j<4;j++){r[i*4+j]=0;for(let k=0;k<4;k++)r[i*4+j]+=a[i*4+k]*b[k*4+j];}return r}
+  function persp(fov,asp,n,f){const t=Math.tan(fov/2),m=new Float32Array(16);m.fill(0);
+    m[0]=1/(t*asp);m[5]=1/t;m[10]=-(f+n)/(f-n);m[11]=-1;m[14]=-(2*f*n)/(f-n);return m}
+  function rotY(a){return new Float32Array([Math.cos(a),0,Math.sin(a),0,0,1,0,0,-Math.sin(a),0,Math.cos(a),0,0,0,-6,1])}
+  function draw(t){
+    gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.enable(gl.DEPTH_TEST);
+    gl.useProgram(prog);
+    const m=rotY(t/1000),p=persp(1.2,canvas.width/canvas.height,0.1,50),mvp=mat4mul(p,m);
+    gl.uniformMatrix4fv(uni,false,mvp);
+    gl.drawArrays(gl.TRIANGLES,0,36);
+    requestAnimationFrame(draw);
+  } requestAnimationFrame(draw);
+})();
+</script>
+</body>
+</html>

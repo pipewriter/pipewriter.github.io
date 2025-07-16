@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Nebula ‑ a Graphics Engine from Scratch</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<!-- ----------  GLOBAL STYLES & ANIMATIONS  ---------- -->
+<style>
+:root{
+	--accentA:#00c9ff;
+	--accentB:#92fe9d;
+	--dark:#0b101b;
+	--light:#f1f9ff;
+	--radius:12px;
+	--shadow:0 10px 30px rgba(0,0,0,.35);
+	--trans:.6s cubic-bezier(.25,.8,.25,1);
+	--gradSize:400%;
+}
+
+/* Reset & base */
+*{margin:0;padding:0;box-sizing:border-box;font-family:system-ui,Roboto,Helvetica,Arial,sans-serif}
+html,body{height:100%;scroll-behavior:smooth;background:#0e1624;color:var(--light);overflow-x:hidden}
+
+/* Animated gradient background applied to hero & section headings */
+@keyframes flow{
+	0%{background-position:0% 50%}
+	50%{background-position:100% 50%}
+	100%{background-position:0% 50%}
+}
+
+/* ----------  HERO  ---------- */
+header{
+	position:relative;
+	height:100vh;
+	display:flex;
+	flex-direction:column;
+	justify-content:center;
+	align-items:center;
+	text-align:center;
+	overflow:hidden;
+}
+#starfield{
+	position:absolute;
+	inset:0;
+	z-index:-2;
+	background:#000;
+}
+header::before{
+	content:"";
+	position:absolute;
+	inset:0;
+	z-index:-1;
+	background:linear-gradient(120deg,var(--accentA),var(--accentB),#4d00ff);
+	background-size:var(--gradSize) var(--gradSize);
+	animation:flow 20s infinite alternate;
+	mix-blend-mode:overlay;
+	opacity:.4;
+}
+header h1{
+	font-size:clamp(2.5rem,7vw,6rem);
+	letter-spacing:.04em;
+	text-shadow:0 0 30px rgba(0,0,0,.7);
+}
+header p{
+	max-width:600px;
+	padding:1rem 2rem;
+	font-size:1.1rem;
+	backdrop-filter:blur(6px);
+	background:rgba(0,0,0,.25);
+	border-radius:var(--radius);
+	box-shadow:var(--shadow);
+	margin-top:1rem;
+}
+
+/* ----------  SECTION WRAPPER &  reveal-on-scroll  ---------- */
+section{
+	padding:10vh 8vw;
+	position:relative;
+}
+section h2{
+	font-size:clamp(1.8rem,3vw,3rem);
+	margin-bottom:1.2rem;
+	background:linear-gradient(90deg,var(--accentA),var(--accentB));
+	-webkit-background-clip:text;
+	-webkit-text-fill-color:transparent;
+	background-size:var(--gradSize) var(--gradSize);
+	animation:flow 15s infinite linear;
+}
+
+/* fade / slide in */
+.reveal{opacity:0;transform:translateY(40px);transition:all .8s ease-out .2s;}
+.reveal.visible{opacity:1;transform:none;}
+
+/* ----------  ARCHITECTURE CARDS  ---------- */
+.grid{
+	display:grid;
+	gap:2rem;
+	grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
+}
+.card{
+	padding:2rem;
+	background:rgba(255,255,255,.05);
+	border-radius:var(--radius);
+	box-shadow:var(--shadow);
+	transition:var(--trans);
+	backdrop-filter:blur(8px);
+}
+.card:hover{transform:translateY(-8px) rotateX(6deg) rotateY(-5deg);}
+
+/* ----------  LIVE DEMO CANVAS  ---------- */
+#cubeDemo{
+	display:block;
+	margin:0 auto;
+	background:#111;
+	border-radius:var(--radius);
+	box-shadow:var(--shadow);
+	max-width:600px;
+	width:100%;
+	aspect-ratio:1/1;
+}
+
+/* ----------  GALLERY  ---------- */
+.gallery{
+	display:flex;
+	gap:1.5rem;
+	flex-wrap:wrap;
+	justify-content:center;
+}
+.gallery img{
+	width:300px;
+	border-radius:var(--radius);
+	box-shadow:var(--shadow);
+	filter:hue-rotate(0deg);
+	transition:filter .8s ease, transform .8s ease;
+}
+.gallery img:nth-child(odd){filter:hue-rotate(60deg);}
+.gallery img:hover{transform:scale(1.08) rotate(2deg);filter:hue-rotate(200deg);}
+
+/* ----------  FOOTER / CTA  ---------- */
+footer{
+	text-align:center;
+	padding:6rem 1rem 3rem;
+}
+footer a{
+	display:inline-block;
+	margin-top:1.3rem;
+	padding:.9rem 2rem;
+	border-radius:var(--radius);
+	background:linear-gradient(120deg,var(--accentA),var(--accentB));
+	color:#06141e;
+	font-weight:bold;
+	text-decoration:none;
+	box-shadow:var(--shadow);
+	transition:transform .4s cubic-bezier(.34,1.56,.64,1);
+}
+footer a:hover{transform:scale(1.08);}
+</style>
+</head>
+
+<body>
+<!-- ----------  HERO  ---------- -->
+<header>
+	<canvas id="starfield"></canvas>
+	<h1>Nebula Engine</h1>
+	<p>My magnum‑opus graphics engine crafted from bare metal WebGL, mathematical elegance, and unreasonable obsession.<br>
+	<em>Everything on this page—effects, demo, screenshots—is produced in pure vanilla JavaScript.</em></p>
+</header>
+
+<!-- ----------  OVERVIEW  ---------- -->
+<section>
+	<h2 class="reveal">Project Overview</h2>
+	<p class="reveal">Nebula Engine is a modular renderer built fully from scratch—no frameworks, no shortcuts.  It features a customizable <strong>deferred shading pipeline</strong>, PBR‑correct lighting, realtime atmospherics, and an ECS‑driven scene graph able to stream gargantuan worlds.</p>
+</section>
+
+<!-- ----------  ARCHITECTURE  ---------- -->
+<section>
+	<h2 class="reveal">Architecture Highlights</h2>
+	<div class="grid">
+		<div class="card reveal">
+			<h3>Sub‑pixel Rasterizer</h3>
+			<p>Hand‑rolled triangle rasterizer reaches <code>&gt;350 Mpix/s</code> in JS thanks to scan‑line caching and SIMD‑style loops.</p>
+		</div>
+		<div class="card reveal">
+			<h3>PBR Shader Suite</h3>
+			<p>Metal/roughness workflow with BRDF integration table generated at load—no baked LUTs.</p>
+		</div>
+		<div class="card reveal">
+			<h3>Virtual Texture Streamer</h3>
+			<p>Feedback driven page‑table updates keep memory footprint under 64 MB even for 16K assets.</p>
+		</div>
+	</div>
+</section>
+
+<!-- ----------  LIVE DEMO  ---------- -->
+<section>
+	<h2 class="reveal">Live Demo — Vanilla 3‑D Cube</h2>
+	<canvas id="cubeDemo" class="reveal"></canvas>
+	<p class="reveal" style="text-align:center;margin-top:1rem">Drag to orbit • Scroll wheel to zoom • Resizes with the window</p>
+</section>
+
+<!-- ----------  GALLERY  ---------- -->
+<section>
+	<h2 class="reveal">Procedurally Generated Screenshots</h2>
+	<div class="gallery" id="gallery"></div>
+</section>
+
+<!-- ----------  CALL TO ACTION  ---------- -->
+<footer>
+	<h2 class="reveal">Like what you see?</h2>
+	<p class="reveal">Let’s talk about photons, frame‑times and how I can push your visuals to 11.</p>
+	<a href="mailto:your.email@domain.com">Get in touch</a>
+</footer>
+
+<!-- ----------  100 % VANILLA JS  ---------- -->
+<script>
+/* -------------------------------------------------------------
+   1. HERO STARFIELD  (perspective‑correct point sprites)
+----------------------------------------------------------------*/
+(()=>{
+	const canvas=document.getElementById('starfield'),ctx=canvas.getContext('2d');
+	let w,h,stars=[],count=600;
+	function resize(){w=canvas.width=innerWidth;h=canvas.height=innerHeight}
+	function init(){
+		stars=[];
+		for(let i=0;i<count;i++){
+			stars.push({x:(Math.random()*2-1)*w,y:(Math.random()*2-1)*h,z:Math.random()*w});
+		}
+	}
+	function draw(){
+		ctx.fillStyle='#000';ctx.fillRect(0,0,w,h);
+		for(const s of stars){
+			s.z-=4;if(s.z<=0)s.z=w;
+			const k=128/s.z,x=s.x*k+w/2,y=s.y*k+h/2;
+			if(x<0||x>=w||y<0||y>=h)continue;
+			const size=(1-s.z/w)*3,alp=1-s.z/w;
+			ctx.fillStyle=`rgba(255,255,255,${alp})`;
+			ctx.fillRect(x,y,size,size);
+		}
+		requestAnimationFrame(draw);
+	}
+	addEventListener('resize',()=>{resize();init();});
+	resize();init();draw();
+})();
+
+/* -------------------------------------------------------------
+   2. SCROLL‑TRIGGERED REVEALS
+----------------------------------------------------------------*/
+const observer=new IntersectionObserver((entries)=>{
+	entries.forEach(e=>{if(e.isIntersecting)e.target.classList.add('visible');});
+},{threshold:.15});
+document.querySelectorAll('.reveal').forEach(el=>observer.observe(el));
+
+/* -------------------------------------------------------------
+   3. LIVE 3‑D CUBE (hand‑rolled WebGL)
+----------------------------------------------------------------*/
+(()=>{
+	const canvas=document.getElementById('cubeDemo'),gl=canvas.getContext('webgl',{antialias:true});
+	if(!gl){canvas.replaceWith('WebGL unavailable ❌');return;}
+	let W,H,rotX=.5,rotY=.2,dist=4,drag=false,prev=[0,0];
+
+	/* Shader helpers */
+	const vs=`attribute vec3 p; attribute vec3 c; uniform mat4 mvp; varying vec3 v; void main(){v=c;gl_Position=mvp*vec4(p,1.0);} `,
+		  fs=`precision mediump float;varying vec3 v;void main(){gl_FragColor=vec4(v,1.0);} `;
+	const prog=gl.createProgram();
+	function compile(type,src){const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);gl.attachShader(prog,s);}
+	compile(gl.VERTEX_SHADER,vs);compile(gl.FRAGMENT_SHADER,fs);gl.linkProgram(prog);gl.useProgram(prog);
+
+	/* Cube data */
+	const V=new Float32Array([
+	 //x y z   r g b
+	 -1,-1, 1, 1,0,0,  1,-1, 1, 1,0,0,  1, 1, 1, 1,0,0, -1, 1, 1, 1,0,0, /* front red */
+	 -1,-1,-1, 0,1,0,  1,-1,-1, 0,1,0,  1, 1,-1, 0,1,0, -1, 1,-1, 0,1,0  /* back  green */
+	]);
+	const I=new Uint16Array([
+	 0,1,2, 2,3,0,        /* front */
+	 4,5,6, 6,7,4,        /* back */
+	 3,2,6, 6,7,3,        /* top */
+	 0,1,5, 5,4,0,        /* bottom */
+	 1,2,6, 6,5,1,        /* right */
+	 0,3,7, 7,4,0         /* left  */
+	]);
+	const vbo=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,vbo);gl.bufferData(gl.ARRAY_BUFFER,V,gl.STATIC_DRAW);
+	const ibo=gl.createBuffer();gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ibo);gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,I,gl.STATIC_DRAW);
+	const stride=24;
+	const locP=gl.getAttribLocation(prog,'p'),locC=gl.getAttribLocation(prog,'c');
+	gl.enableVertexAttribArray(locP);gl.vertexAttribPointer(locP,3,gl.FLOAT,false,stride,0);
+	gl.enableVertexAttribArray(locC);gl.vertexAttribPointer(locC,3,gl.FLOAT,false,stride,12);
+	const locMVP=gl.getUniformLocation(prog,'mvp');
+
+	/* Matrices */
+	const mat4=()=>new Float32Array(16);
+	function ident(m){m.set([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);}
+	function multiply(o,a,b){const r=mat4();for(let c=0;c<4;c++)for(let d=0;d<4;d++){r[c*4+d]=0;for(let k=0;k<4;k++)r[c*4+d]+=a[c*4+k]*b[k*4+d];}o.set(r);}
+	function perspective(out,fovy,asp,n,f){
+		const t=Math.tan(fovy/2);ident(out);
+		out[0]=1/(asp*t);out[5]=1/t;out[10]=-(f+0)/(f-n);out[11]=-1;out[14]=-(2*f*n)/(f-n);out[15]=0;
+	}
+	function lookAt(out,ey,cn,up){
+		const z=[ey[0]-cn[0],ey[1]-cn[1],ey[2]-cn[2]],zn=1/Math.hypot(...z);z.forEach((v,i)=>z[i]*=zn);
+		const x=[up[1]*z[2]-up[2]*z[1],up[2]*z[0]-up[0]*z[2],up[0]*z[1]-up[1]*z[0]],xn=1/Math.hypot(...x);x.forEach((v,i)=>x[i]*=xn);
+		const y=[z[1]*x[2]-z[2]*x[1],z[2]*x[0]-z[0]*x[2],z[0]*x[1]-z[1]*x[0]];
+		ident(out);
+		out.set([x[0],y[0],z[0],0, x[1],y[1],z[1],0, x[2],y[2],z[2],0, 0,0,0,1]);
+		const t=mat4();ident(t);t[12]=-ey[0];t[13]=-ey[1];t[14]=-ey[2];multiply(out,out,t);
+	}
+	function rotateY(out,a){ident(out);out[0]= Math.cos(a);out[2]= Math.sin(a);out[8]=-Math.sin(a);out[10]=Math.cos(a);}
+	function rotateX(out,a){ident(out);out[5]=Math.cos(a);out[6]=-Math.sin(a);out[9]=Math.sin(a);out[10]=Math.cos(a);}
+
+	function resize(){
+		W=canvas.clientWidth;H=canvas.clientHeight;
+		canvas.width=W*devicePixelRatio;canvas.height=H*devicePixelRatio;
+		gl.viewport(0,0,canvas.width,canvas.height);
+	}
+	addEventListener('resize',resize);resize();
+
+	/* Input */
+	canvas.addEventListener('pointerdown',e=>{drag=true;prev=[e.clientX,e.clientY];canvas.setPointerCapture(e.pointerId);});
+	canvas.addEventListener('pointermove',e=>{
+		if(!drag)return;
+		const dx=(e.clientX-prev[0])/100,dy=(e.clientY-prev[1])/100;
+		rotY+=dx;rotX+=dy;prev=[e.clientX,e.clientY];
+	});
+	canvas.addEventListener('pointerup',()=>drag=false);
+	canvas.addEventListener('wheel',e=>{dist+=e.deltaY*0.002;dist=Math.min(Math.max(dist,2),10);});
+
+	/* Render loop */
+	const proj=mat4(),view=mat4(),model=mat4(),mv=mat4(),mvp=mat4();
+	function render(){
+		gl.enable(gl.DEPTH_TEST);gl.clearColor(0,0,0,1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+		perspective(proj,1.2,W/H,.1,100);
+		lookAt(view,[0,0,dist],[0,0,0],[0,1,0]);
+		const rx=mat4(),ry=mat4();rotateX(rx,rotX);rotateY(ry,rotY);multiply(model,ry,rx);
+		multiply(mv,view,model);multiply(mvp,proj,mv);
+		gl.uniformMatrix4fv(locMVP,false,mvp);
+		gl.drawElements(gl.TRIANGLES,I.length,gl.UNSIGNED_SHORT,0);
+		requestAnimationFrame(render);
+	}
+	render();
+})();
+
+/* -------------------------------------------------------------
+   4. PROCEDURAL SCREENSHOTS  (canvas → dataURL)
+----------------------------------------------------------------*/
+(()=>{
+	const gallery=document.getElementById('gallery');
+	const shots=5;
+	for(let i=0;i<shots;i++){
+		const size=256,can=document.createElement('canvas');can.width=can.height=size;
+		const ctx=can.getContext('2d');
+		// --- simple plasma fractal ---
+		for(let y=0;y<size;y++){
+			for(let x=0;x<size;x++){
+				const v=Math.sin(x/16)+Math.sin(y/8)+Math.sin((x+y)/24);
+				const r=Math.floor((v+2)*60),g=Math.floor((v+2)*60+80),b=Math.floor((v+2)*60+160);
+				ctx.fillStyle=`rgb(${r},${g},${b})`;
+				ctx.fillRect(x,y,1,1);
+			}
+		}
+		// frame
+		ctx.strokeStyle='rgba(255,255,255,.5)';
+		ctx.lineWidth=4;ctx.strokeRect(0,0,size,size);
+		// inject into DOM
+		const img=new Image();img.src=can.toDataURL('image/png');
+		img.alt='Procedural render #'+(i+1);
+		gallery.appendChild(img);
+	}
+})();
+</script>
+</body>
+</html>
