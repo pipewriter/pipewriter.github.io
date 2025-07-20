@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Engine from Scratch — Deep Dive</title>
+
+<!-- =========  COLOR SYSTEM  ========= -->
+<style>
+:root{
+  /* EARTH‑TONE CORE (tweak H, S, L to retune the whole site) */
+  --terracotta: hsl(14, 65%, 56%);   /* headers, accents   */
+  --sage:       hsl(165,24%,58%);    /* soft highlights    */
+  --ochre:      hsl(36, 69%, 70%);   /* call‑to‑action btn */
+  --charcoal:   hsl(216,15%,22%);    /* primary bg / text  */
+
+  --charcoal-light: hsl(216,12%,30%);
+  --paper: hsl(45, 15%, 94%);
+  --radius: 12px;
+  --shadow: 0 4px 14px -4px rgba(0,0,0,.35);
+  --transition: .6s cubic-bezier(.28,.8,.43,1);
+}
+
+/* GLOBAL RESET */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font: 400 18px/1.6 system-ui, sans-serif;
+  color: var(--paper);
+  background: var(--charcoal);
+  overflow-x:hidden;
+  scroll-behavior:smooth;
+}
+
+/* TYPOGRAPHY */
+h1,h2,h3{
+  font-weight:700;
+  letter-spacing:.03em;
+  color:var(--terracotta);
+  text-shadow:1px 1px 2px rgba(0,0,0,.4);
+  margin-bottom:.3em;
+}
+h1{font-size:clamp(2.5rem,5vw,4.5rem);}
+h2{font-size:2rem;}
+p,li{max-width:65ch}
+
+/* LAYOUT HELPERS */
+section{
+  padding:6rem 8vw;
+  opacity:0;
+  transform:translateY(60px);
+  transition:opacity .8s ease,transform .8s ease;
+  will-change:transform,opacity;
+}
+section.reveal{opacity:1;transform:none}
+.wrapper{max-width:900px;margin:0 auto}
+
+/* HERO CANVAS */
+#hero{
+  position:relative;
+  height:100vh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  overflow:hidden;
+}
+#hero canvas{
+  position:absolute;
+  inset:0;
+  width:100%;height:100%;
+  filter:blur(.6px) contrast(1.1);
+}
+#hero .headline{
+  position:relative;
+  text-align:center;
+  z-index:1;
+}
+.headline::after{ /* shimmer */
+  content:'';
+  position:absolute;
+  inset:0;
+  background:linear-gradient(120deg, transparent 0%, rgba(255,255,255,.25) 40%, transparent 80%);
+  transform:translateX(-100%);
+  animation:shine 5s infinite linear;
+}
+@keyframes shine{
+  to{transform:translateX(200%);}
+}
+
+/* CONTENT SECTIONS */
+ul.features li{
+  margin:.5em 0;
+  padding-left:1.2em;
+  position:relative;
+}
+ul.features li::before{
+  content:'■';
+  position:absolute;
+  left:0;
+  color:var(--sage);
+}
+
+/* GALLERY */
+.gallery{
+  display:grid;
+  gap:1.2rem;
+  grid-template-columns:repeat(auto-fill,minmax(260px,1fr));
+}
+.gallery img{
+  width:100%;
+  border-radius:var(--radius);
+  box-shadow:var(--shadow);
+  transition:transform .4s ease, box-shadow .4s ease;
+}
+.gallery img:hover{
+  transform:scale(1.04);
+  box-shadow:0 8px 20px -6px rgba(0,0,0,.55);
+}
+
+/* CTA */
+.btn{
+  display:inline-block;
+  padding:.9em 1.8em;
+  border-radius:var(--radius);
+  background:var(--ochre);
+  color:var(--charcoal);
+  font-weight:600;
+  text-decoration:none;
+  margin-top:2rem;
+  transition:background var(--transition), transform .3s ease;
+}
+.btn:hover{background:hsl(36,69%,76%);transform:translateY(-2px)}
+
+/* PARALLAX BG */
+.parallax{
+  background:linear-gradient( to bottom, var(--charcoal) 0%, var(--charcoal-light) 100%);
+  background-attachment:fixed;
+}
+
+/* MOTION REDUCTION */
+@media(prefers-reduced-motion:reduce){
+  *{animation:none !important;transition:none !important}
+}
+
+</style>
+
+</head>
+<body>
+
+<!-- =========  HERO  ========= -->
+<header id="hero">
+  <canvas id="heroCanvas"></canvas>
+  <div class="headline">
+    <h1>ENGINE&nbsp;FROM&nbsp;SCRATCH</h1>
+    <p>My magnum opus — a zero‑dependency real‑time 3‑D renderer crafted bit‑by‑bit.</p>
+    <a href="#deepdive" class="btn">Explore the Build</a>
+  </div>
+</header>
+
+<!-- =========  OVERVIEW  ========= -->
+<section id="deepdive" class="parallax">
+  <div class="wrapper">
+    <h2>Project Overview</h2>
+    <p>
+      Over eight months I architected and implemented a custom graphics pipeline,
+      building every subsystem—from mathematical foundations to a multi‑threaded
+      renderer—without leaning on existing engines or third‑party libraries.
+      The result is a <strong>~32 kLOC</strong> codebase capable of Deferred + Forward,
+      tiled light‑culling, clustered shadows and a flexible material graph.
+    </p>
+    <ul class="features">
+      <li>CPU‑side ECS with archetype hot‑swapping</li>
+      <li>SSE/AVX vector math and cache‑coherent scene graph</li>
+      <li>GPU skinning, PBR BRDF, and clustered shadow cascades</li>
+      <li>Editor &amp; hot‑reload scripting via Tiny C Interpreter</li>
+      <li>Frame‑deterministic replay and regression harness</li>
+    </ul>
+  </div>
+</section>
+
+<!-- =========  ENGINEERING CHALLENGES  ========= -->
+<section class="challenges">
+  <div class="wrapper">
+    <h2>Engineering Highlights</h2>
+    <p><strong>Culling at Scale:</strong> Hierarchical Z Buffers paired with a Morton‑sorted BVH
+       reduced over‑draw by <em>97%</em> on a 2 M‑triangle test scene.</p>
+    <p><strong>Data‑oriented Everything:</strong> Transform, Lighting and Animation passes
+       operate on SoA blocks for branch‑free SIMD. That alone netted a <em>5.3×</em> speed‑up
+       compared with the initial AoS prototype.</p>
+    <p><strong>C.I. for Pixels:</strong> A bespoke Golden‑Image diff tool surfaces ≤ 0.5 %
+       RMS error across driver updates—because correctness is a feature.</p>
+  </div>
+</section>
+
+<!-- =========  GALLERY  ========= -->
+<section class="gallery-section">
+  <div class="wrapper">
+    <h2>Generated Gallery</h2>
+    <p>The images below are procedurally generated on page‑load to demonstrate
+       engine output — they never touch the network.</p>
+    <div class="gallery" id="gallery"></div>
+  </div>
+</section>
+
+<!-- =========  CALL TO ACTION  ========= -->
+<section class="cta parallax">
+  <div class="wrapper" style="text-align:center">
+    <h2>Ready for a Deeper Chat?</h2>
+    <p>Let’s discuss graphics, systems architecture, or how I can elevate your rendering stack.</p>
+    <a href="mailto:me@example.com" class="btn">Get in Touch</a>
+  </div>
+</section>
+
+<!-- =========  SCRIPTS  ========= -->
+<script>
+/* === IntersectionObserver to reveal sections === */
+const observerOpts = { threshold: .15 };
+const reveal = new IntersectionObserver((entries)=>{
+  entries.forEach(e=> e.isIntersecting && e.target.classList.add('reveal'))
+},observerOpts);
+document.querySelectorAll('section').forEach(s=>reveal.observe(s));
+
+/* === Hero Canvas: Rotating Icosahedron === */
+(function(){
+  const canvas = document.getElementById('heroCanvas');
+  const ctx = canvas.getContext('2d');
+  const TAU = Math.PI*2;
+  const size = 160;
+  let t = 0, w, h;
+
+  const φ = (1 + Math.sqrt(5))/2;
+  const verts = [
+    [-1,  φ, 0],[1,  φ, 0],[-1,-φ, 0],[1,-φ, 0],
+    [0,-1,  φ],[0, 1,  φ],[0,-1,-φ],[0, 1,-φ],
+    [ φ,0,-1],[ φ,0, 1],[-φ,0,-1],[-φ,0, 1]
+  ];
+  const edges = new Set();
+  /* build edge list once */
+  for(let i=0;i<verts.length;i++)
+    for(let j=i+1;j<verts.length;j++){
+      const d = verts[i].map((v,k)=>v-verts[j][k])
+                        .reduce((s,v)=>s+v*v,0);
+      if(Math.abs(d-2)<=1e-2) edges.add([i,j]);
+    }
+
+  function resize(){
+    w = canvas.width = innerWidth;
+    h = canvas.height = innerHeight;
+  }
+  addEventListener('resize',resize);resize();
+
+  function loop(){
+    ctx.clearRect(0,0,w,h);
+    ctx.save();
+    ctx.translate(w/2,h/2);
+    ctx.strokeStyle='rgba(255,255,255,.6)';
+    ctx.lineWidth=2;
+    const rotY = t*.0006, rotX = t*.0004;
+    const proj = [];
+    verts.forEach(([x,y,z])=>{
+      /* Rotation matrices */
+      let X = x*Math.cos(rotY)+z*Math.sin(rotY);
+      let Z = -x*Math.sin(rotY)+z*Math.cos(rotY);
+      let Y = y*Math.cos(rotX)-Z*Math.sin(rotX);
+      Z = y*Math.sin(rotX)+Z*Math.cos(rotX);
+      const scale = size/(size+Z*40);
+      proj.push([X*scale,Y*scale,scale]);
+    });
+    edges.forEach(([a,b])=>{
+      const [ax,ay,as] = proj[a];
+      const [bx,by,bs] = proj[b];
+      ctx.globalAlpha = Math.min(as,bs);
+      ctx.beginPath();ctx.moveTo(ax,ay);ctx.lineTo(bx,by);ctx.stroke();
+    });
+    ctx.restore();
+    t = performance.now();
+    requestAnimationFrame(loop);
+  }
+  loop();
+})();
+
+/* === Gallery Generation === */
+(function(){
+  const gallery = document.getElementById('gallery');
+  for(let i=0;i<6;i++){
+    const c=document.createElement('canvas');
+    c.width=480;c.height=270;
+    const g=c.getContext('2d');
+    // background gradient
+    const grad=g.createLinearGradient(0,0,0,270);
+    grad.addColorStop(0,'#3d405b');grad.addColorStop(1,'#81b29a');
+    g.fillStyle=grad;g.fillRect(0,0,480,270);
+    // quasi-random wire-frame shapes
+    g.strokeStyle='rgba(255,255,255,.8)';
+    g.lineWidth=1.5;
+    const r = ()=>Math.random()*480;
+    for(let l=0;l<18;l++){
+      g.beginPath();
+      g.moveTo(r(),r()/2);
+      g.lineTo(r(),r()/2);
+      g.lineTo(r(),r()/2);
+      g.closePath();
+      g.stroke();
+    }
+    const img=document.createElement('img');
+    img.alt='Procedurally generated preview '+(i+1);
+    img.src=c.toDataURL('image/png');
+    gallery.appendChild(img);
+  }
+})();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Engine From Scratch — Deep Dive</title>
+
+<style>
+/* ---------- Colour System (Earth Tones) ---------- */
+:root{
+  --earth-dark:#3B2E2A;   /* espresso */
+  --earth-mid:#7C5E40;    /* milk‑chocolate */
+  --earth-light:#C2A47E;  /* desert sand */
+  --earth-accent:#D9C2A4; /* bleached driftwood */
+  --earth-olive:#7F8B5F;  /* sage/olive */
+  --text-main:#F9F8F6;    /* near‑white */
+  --text-sub:rgba(249,248,246,.8);
+  --shadow:0 6px 18px rgba(0,0,0,.25);
+}
+
+/* ---------- Hard Reset / Layout ---------- */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font:16px/1.6 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:var(--text-main);background:#000;overflow-x:hidden;}
+section{padding:clamp(5rem,10vw,9rem) 9vw;position:relative}
+img,canvas{max-width:100%;display:block}
+
+/* ---------- Animated Gradient Backdrop ---------- */
+body::before{
+  content:"";
+  position:fixed;inset:0;z-index:-2;
+  background:linear-gradient(120deg,var(--earth-light),var(--earth-olive),var(--earth-mid));
+  background-size:400% 400%;
+  animation:bgShift 35s ease-in-out infinite;
+}
+@keyframes bgShift{0%,100%{background-position:0 0}50%{background-position:100% 50%}}
+
+/* ---------- Noise Overlay for Tactility ---------- */
+body::after{
+  content:"";
+  position:fixed;inset:0;pointer-events:none;z-index:-1;
+  background:url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAMAAAAoyzS7AAAAD1BMVEUAAAD///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////8QgJz0AAAADXRSTlMAAQMDBQYICQoLDA0ODxASD/8L0B8AAAAJcEhZcwAACxMAAAsTAQCanBgAAAAOSURBVAjXY2AAAAACAAGjCh0AAAAASUVORK5CYII=');
+  opacity:.08;
+}
+
+/* ---------- Navigation ---------- */
+nav{position:fixed;top:0;left:0;width:100%;padding:1rem 9vw;display:flex;justify-content:space-between;align-items:center;backdrop-filter:blur(8px);background:rgba(59,46,42,.55);z-index:10;box-shadow:var(--shadow)}
+nav a{color:var(--text-main);text-decoration:none;margin-left:2.5rem;font-weight:600;letter-spacing:.05em;transition:.3s}
+nav a:hover{color:var(--earth-accent)}
+
+/* ---------- Hero ---------- */
+.hero{height:100vh;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;position:relative;overflow:hidden}
+.hero h1{font-size:clamp(2.8rem,6vw,5.5rem);line-height:1.08;font-weight:800;text-transform:uppercase;text-shadow:var(--shadow);transform:translateY(40px);opacity:0;transition:1.2s ease-out}
+.hero p{max-width:40ch;margin-top:1.2rem;font-size:1.1rem;opacity:0;transform:translateY(40px);transition:1.2s .15s ease-out}
+.hero .scrollCue{margin-top:3rem;width:28px;height:45px;border:2px solid var(--text-main);border-radius:30px;position:relative;opacity:0;transform:translateY(40px);transition:1.2s .3s ease-out}
+.hero .scrollCue::after{content:"";width:6px;height:6px;border-radius:50%;background:var(--text-main);position:absolute;top:8px;left:50%;transform:translateX(-50%);animation:mouseScroll 2s infinite}
+@keyframes mouseScroll{0%{opacity:0;transform:translate(-50%,0)}50%{opacity:1}100%{opacity:0;transform:translate(-50%,12px)}}
+
+/* ---------- Panels ---------- */
+.panel{opacity:0;transform:translateY(60px);transition:.9s ease-out}
+.panel.in-view{opacity:1;transform:none}
+
+/* ---------- Card ---------- */
+.card{background:rgba(59,46,42,.75);border-radius:12px;padding:2rem;box-shadow:var(--shadow);transform-style:preserve-3d;transition:transform .3s}
+.card:hover{transform:rotateX(6deg) rotateY(-6deg);}
+
+/* ---------- Gallery ---------- */
+.gallery-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:2rem;margin-top:2.5rem}
+.gallery-grid canvas{border-radius:10px;cursor:pointer;box-shadow:var(--shadow);}
+
+/* ---------- Light‑box ---------- */
+#lightbox{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;justify-content:center;align-items:center;z-index:50}
+#lightbox img{max-width:90vw;max-height:80vh;border-radius:8px;box-shadow:var(--shadow)}
+#lightbox:target{display:flex;}
+
+/* ---------- Footer ---------- */
+footer{padding:4rem 9vw;background:rgba(59,46,42,.85);text-align:center;font-size:.9rem}
+
+/* ---------- Utility ---------- */
+.reveal{opacity:0;transform:translateY(70px);transition:1s ease}
+.reveal.in-view{opacity:1;transform:none}
+</style>
+</head>
+
+<body>
+<nav>
+  <strong>⚙️ Portfolio</strong>
+  <div>
+    <a href="#overview">Overview</a>
+    <a href="#tech">Tech Breakdown</a>
+    <a href="#gallery">Gallery</a>
+  </div>
+</nav>
+
+<header class="hero">
+  <h1 class="reveal">Engine From Scratch</h1>
+  <p class="reveal">A multi‑year odyssey into low‑level rendering, asset pipelines, and the sheer thrill of watching pixels you coaxed into existence dance across the screen.</p>
+  <div class="scrollCue reveal"></div>
+</header>
+
+<section id="overview" class="panel reveal">
+  <h2>Project Snapshot</h2>
+  <p>This engine is not a wrapper, not a fork, and definitely not a tutorial follow‑along.  
+  It is a lovingly hand‑rolled, <em>bespoke</em> C++17 &amp; Vulkan code‑base that boots from a blank window into a fully deferred, HDR‑linear workspace in under 25 ms.  All asset hot‑loading, live shader editing, and GPU crash‑dump introspection included.</p>
+</section>
+
+<section id="tech" class="panel reveal">
+  <h2>Under The Hood</h2>
+  <div class="card">
+    <ul>
+      <li><strong>Renderer:</strong> clustered forward+, bindless descriptor sets, async compute post‑stack.</li>
+      <li><strong>Animation:</strong> GPU skinning (> 120 k bones/s), dual‑quaternion blending.</li>
+      <li><strong>Virtual Texturing:</strong> clip‑map feedback + GPU page table compaction; spikes < 0.4 ms.</li>
+      <li><strong>Tooling:</strong> ECS‑driven editor with ImGui + custom node‑graph DSL.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="gallery" class="panel reveal">
+  <h2>Procedural Gallery</h2>
+  <p>Click a frame to pop it full‑screen. All images are generated live via Canvas to prove the point.</p>
+  <div class="gallery-grid" id="galleryGrid">
+    <!-- Canvases injected here -->
+  </div>
+</section>
+
+<footer>
+  © 2025 Your Name — Crafted with raw bits &amp; coffee.
+</footer>
+
+<!-- ---------- Light‑box ---------- -->
+<div id="lightbox">
+  <img id="lightboxImg" alt="Full view">
+</div>
+
+<script>
+/* ---------- IntersectionObserver for scroll reveals ---------- */
+const io=new IntersectionObserver((entries)=>entries.forEach(e=>{
+  if(e.isIntersecting){e.target.classList.add('in-view');io.unobserve(e.target);}
+}),{threshold:.2});
+document.querySelectorAll('.reveal,.panel').forEach(el=>io.observe(el));
+
+/* ---------- Parallax Hero ---------- */
+window.addEventListener('scroll',()=>{
+  const hero=document.querySelector('.hero');
+  const top=hero.getBoundingClientRect().top;
+  hero.style.transform=`translateY(${top*0.25}px)`;
+});
+
+/* ---------- Canvas Generators ---------- */
+function makeCanvas(w,h,fn){
+  const c=document.createElement('canvas');c.width=w;c.height=h;
+  const ctx=c.getContext('2d');fn(ctx,w,h);return c;
+}
+
+/* 1. Ray‑Marched Spheres */
+function drawSpheres(ctx,w,h){
+  const g=ctx.createRadialGradient(w*.5,h*.45,0,w*.5,h*.45,w*.6);
+  g.addColorStop(0,'#FFF7E8');g.addColorStop(1,'#C2A47E');
+  ctx.fillStyle=g;ctx.fillRect(0,0,w,h);
+  for(let i=0;i<5;i++){
+    const r=Math.random()*60+30,x=Math.random()*(w-2*r)+r,y=Math.random()*(h-2*r)+r;
+    const ig=ctx.createRadialGradient(x-r*.4,y-r*.4, r*.2, x,y,r);
+    ig.addColorStop(0,'#F9F8F6');ig.addColorStop(1,'#3B2E2A');
+    ctx.fillStyle=ig;ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill();
+  }
+}
+
+/* 2. Height‑mapped Terrain */
+function drawTerrain(ctx,w,h){
+  const imgData=ctx.createImageData(w,h);
+  for(let y=0;y<h;y++){
+    for(let x=0;x<w;x++){
+      const i=(y*w+x)*4;
+      const n=(1+Math.sin(x*.08)+Math.cos(y*.06))*0.5;
+      const shade=Math.floor(100+155*n);
+      imgData.data.set([shade,shade*.9,shade*.6,255],i);
+    }
+  }
+  ctx.putImageData(imgData,0,0);
+  ctx.globalCompositeOperation='overlay';
+  ctx.fillStyle='rgba(127,139,95,.35)';
+  ctx.fillRect(0,0,w,h);
+  ctx.globalCompositeOperation='source-over';
+}
+
+/* 3. UV Test Grid */
+function drawGrid(ctx,w,h){
+  const size=32;
+  for(let y=0;y<h;y+=size){
+    for(let x=0;x<w;x+=size){
+      ctx.fillStyle=(Math.floor(x/size)+Math.floor(y/size))%2? '#7C5E40':'#D9C2A4';
+      ctx.fillRect(x,y,size,size);
+    }
+  }
+  ctx.strokeStyle='rgba(0,0,0,.15)';ctx.lineWidth=2;
+  for(let x=0;x<=w;x+=size)ctx.beginPath(),ctx.moveTo(x,0),ctx.lineTo(x,h),ctx.stroke();
+  for(let y=0;y<=h;y+=size)ctx.beginPath(),ctx.moveTo(0,y),ctx.lineTo(w,y),ctx.stroke();
+}
+
+/* ---------- Populate Gallery ---------- */
+const gallery=document.getElementById('galleryGrid');
+const thumbs=[
+  {w:420,h:260,draw:drawSpheres},
+  {w:420,h:260,draw:drawTerrain},
+  {w:420,h:260,draw:drawGrid}
+];
+thumbs.forEach(({w,h,draw})=>{
+  const c=makeCanvas(w,h,draw);
+  c.tabIndex=0; // focusable for a11y
+  c.addEventListener('click',()=>openLightbox(c.toDataURL()));
+  c.addEventListener('keyup',(e)=>{if(e.key==='Enter')openLightbox(c.toDataURL());});
+  gallery.appendChild(c);
+});
+
+/* ---------- Light‑box ---------- */
+function openLightbox(src){
+  const lb=document.getElementById('lightbox');
+  document.getElementById('lightboxImg').src=src;
+  lb.style.display='flex';
+  lb.onclick=()=>lb.style.display='none';
+  document.addEventListener('keyup',escClose,{once:true});
+  function escClose(e){if(e.key==='Escape')lb.style.display='none';}
+}
+</script>
+</body>
+</html>

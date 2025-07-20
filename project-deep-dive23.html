@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Engine From Scratch · Project Deep‑Dive</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+
+<!-- ===== EARTH‑TONE PALETTE ===== -->
+<style>
+:root{
+  --earth-0:#221811;      /* near‑black espresso                            */
+  --earth-1:#3E2723;      /* dark walnut                                    */
+  --earth-2:#5A3D31;      /* roasted chestnut                               */
+  --earth-3:#8C6A5D;      /* baked clay                                     */
+  --earth-4:#B19B8C;      /* river‑stone                                    */
+  --earth-5:#D7CCC8;      /* warm limestone                                 */
+  --accent-1:#6D9773;     /* muted sage                                     */
+  --accent-2:#DDA15E;     /* honey‑ochre highlight                          */
+  --white:#FCF9F4;        /* parchment background                           */
+  --font-sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --transition:300ms cubic-bezier(.25,.8,.25,1);
+  background:var(--white);
+  color:var(--earth-1);
+  font-family:var(--font-sans);
+  line-height:1.6;
+  scroll-behavior:smooth;
+}
+
+/* ===== GLOBAL ELEMENTS ===== */
+body{margin:0;overflow-x:hidden;}
+h1,h2,h3{font-weight:600;margin:0 0 .4em}
+h1{font-size:clamp(2.5rem,6vw,5rem);letter-spacing:-1px;color:var(--earth-0)}
+h2{font-size:clamp(1.6rem,4vw,2.4rem);color:var(--earth-1)}
+section{padding:6rem 8vw;max-width:100rem;margin:0 auto;opacity:.05;transform:translateY(60px);transition:opacity var(--transition),transform var(--transition);}
+section.visible{opacity:1;transform:none}
+a{color:var(--accent-1);text-underline-offset:4px}
+code{background:var(--earth-5);padding:.2em .4em;border-radius:4px;color:var(--earth-0)}
+
+/* ===== HERO ===== */
+#hero{position:relative;height:100vh;display:flex;align-items:center;justify-content:center;text-align:center;overflow:hidden}
+#hero canvas{position:absolute;inset:0;width:100%;height:100%}
+#tagline{font-size:clamp(1rem,2.5vw,1.4rem);letter-spacing:.15em;color:var(--earth-3);margin-top:1rem;opacity:.8}
+
+/* Glitch headline */
+.glitch{position:relative;}
+.glitch::before,.glitch::after{
+  content:attr(data-text);position:absolute;left:0;top:0;width:100%;overflow:hidden;
+  clip-path:inset(0 0 0 0);
+}
+.glitch::before{animation:gl1 3s infinite linear alternate-reverse;color:var(--accent-1);mix-blend-mode:difference}
+.glitch::after {animation:gl2 2.5s infinite linear alternate-reverse;color:var(--accent-2);mix-blend-mode:overlay}
+@keyframes gl1{0%{clip-path:inset(0 0 90% 0)}50%{clip-path:inset(40% 0 40% 0)}100%{clip-path:inset(90% 0 0 0)}}
+@keyframes gl2{0%{clip-path:inset(0 0 85% 0)}50%{clip-path:inset(30% 0 50% 0)}100%{clip-path:inset(85% 0 0 0)}}
+
+/* ===== SECTION ACCENTS ===== */
+.section-title{margin-bottom:2rem;position:relative;padding-left:.6rem}
+.section-title::before{
+  content:'';position:absolute;left:0;top:0;height:100%;width:.25rem;background:var(--accent-2);
+}
+blockquote{border-left:.25rem solid var(--accent-1);padding:0 1rem;font-style:italic;color:var(--earth-2)}
+
+/* ===== PROGRESS BAR ===== */
+#progress{
+  position:fixed;top:0;left:0;height:.35rem;width:0;background:linear-gradient(to right,var(--accent-2),var(--accent-1));
+  z-index:999;transition:width .1s linear;
+}
+
+/* ===== MEDIA ===== */
+canvas.sample-frame{width:100%;max-width:900px;height:auto;border-radius:8px;display:block;margin:2rem auto;box-shadow:0 6px 24px rgba(0,0,0,.08)}
+img.generated{width:100%;max-width:900px;border-radius:8px;display:block;margin:2rem auto;box-shadow:0 6px 24px rgba(0,0,0,.08)}
+
+/* ===== INTERACTIVE CUBE DEMO ===== */
+#cube-demo{width:300px;height:300px;margin:2rem auto;position:relative}
+#cube-demo canvas{width:100%;height:100%;}
+
+/* ===== FOOTER ===== */
+footer{padding:4rem 8vw;text-align:center;color:var(--earth-3);font-size:.9rem}
+</style>
+</head>
+<body>
+
+<!-- ===== SCROLL PROGRESS ===== -->
+<div id="progress"></div>
+
+<!-- ===== HERO ===== -->
+<header id="hero">
+  <canvas id="heroCanvas"></canvas>
+  <div>
+    <h1 class="glitch" data-text="ENGINE FROM SCRATCH">ENGINE FROM SCRATCH</h1>
+    <div id="tagline">A pragmatic deep‑dive into my self‑built real‑time graphics engine</div>
+  </div>
+</header>
+
+<!-- ===== CORE SECTIONS ===== -->
+<section id="overview">
+  <h2 class="section-title">Overview</h2>
+  <p>
+    Building a <strong>bespoke rendering engine</strong> from bit‑hacking boot‑straps to a bleeding‑edge compositor is my favorite way to
+    test architectural nerve. No off‑the‑shelf helpers—just raw math, a handful of
+    <code>malloc</code>s, and a conviction that elegance can be measured in milliseconds.
+  </p>
+</section>
+
+<section id="architecture">
+  <h2 class="section-title">Architecture</h2>
+  <p>The engine walks the thin line between vintage minimalism and modern throughput:</p>
+  <ul>
+    <li>💠 <em>Data‑Oriented Core:</em> dense SoA render graph eats cache misses for breakfast.</li>
+    <li>🔀 <em>Task‑Based Scheduler:</em> lock‑free ring buffers &amp; job stealing across <code>std::jthread</code>.</li>
+    <li>🎯 <em>Explicit GPU Batching:</em> <code>bindless</code> resource tables + persistent mapping.</li>
+    <li>🌲 <em>Forest Culling:</em> clustered‑light BVH pruned every 2 frames by compute shader.</li>
+  </ul>
+</section>
+
+<section id="features">
+  <h2 class="section-title">Flagship Features</h2>
+  <blockquote>“Pixels are cheap; narrative photons are priceless.”</blockquote>
+  <p>High level candy you can feel:</p>
+  <ul>
+    <li>PBR with area lights and MIS</li>
+    <li>Signed‑distance‑field decals &amp; font atlas</li>
+    <li>Async gpu‑driven occlusion</li>
+    <li>Frame‑to‑frame reprojection for temporal anti‑aliasing</li>
+  </ul>
+</section>
+
+<section id="screenshots">
+  <h2 class="section-title">Generated Frames</h2>
+  <canvas id="frame1" class="sample-frame" width="900" height="450"></canvas>
+  <canvas id="frame2" class="sample-frame" width="900" height="450"></canvas>
+</section>
+
+<section id="demo">
+  <h2 class="section-title">Interactive Cube Demo</h2>
+  <div id="cube-demo"><canvas id="cubeCanvas" width="300" height="300"></canvas></div>
+  <p>Drag to rotate · Wheel to zoom ✦</p>
+</section>
+
+<section id="performance">
+  <h2 class="section-title">Performance Snapshot</h2>
+  <p>
+    With VSYNC off and a 144 Hz monitor my reference scene pushes
+    <strong>11.2 ms/frame ≈ 89 FPS</strong> on a mobile RTX 4060 Laptop GPU.
+    <small>(Measurements captured via a ring‑buffered timestamp query pool.)</small>
+  </p>
+</section>
+
+<section id="lessons">
+  <h2 class="section-title">Lessons &amp; Next Steps</h2>
+  <ol>
+    <li><em>Design beats optimization.</em> I shaved >30 % of frame time by re‑thinking component layout before touching a profiler.</li>
+    <li><em>Tooling is a feature.</em> Building an in‑engine live shader hot‑loader made iteration ~4× faster.</li>
+    <li><em>Next:</em> real‑time GI via surfel baking and sparse‑voxel cone tracing.</li>
+  </ol>
+</section>
+
+<footer>
+  © 2025 • Designed in an unreasonably cozy earth‑tone workspace ✦
+</footer>
+
+<!-- ===== SCRIPTS ===== -->
+<script>
+/* ---------- Scroll‑Reveal & Progress Bar ---------- */
+const sections=[...document.querySelectorAll('section')];
+const progress=document.getElementById('progress');
+const observer=new IntersectionObserver(entries=>{
+  entries.forEach(e=>e.isIntersecting&&e.target.classList.add('visible'));
+},{threshold:.15});
+sections.forEach(s=>observer.observe(s));
+window.addEventListener('scroll',()=>{ 
+  const ratio=window.scrollY/(document.body.scrollHeight-window.innerHeight);
+  progress.style.width=(ratio*100)+'%';
+});
+
+/* ---------- HERO CANVAS (dynamic wireframe) ---------- */
+const heroCanvas=document.getElementById('heroCanvas');
+const hCtx=heroCanvas.getContext('2d');
+function resizeHero(){
+  heroCanvas.width=heroCanvas.offsetWidth;
+  heroCanvas.height=heroCanvas.offsetHeight;
+}
+window.addEventListener('resize',resizeHero);
+resizeHero();
+let t=0;
+function drawHero(){
+  t+=0.015;
+  const {width:w,height:h}=heroCanvas;
+  hCtx.clearRect(0,0,w,h);
+  hCtx.strokeStyle='rgba(109,151,115,0.4)';
+  hCtx.lineWidth=1;
+  const spacing=40;
+  for(let y=-spacing;y<h+spacing;y+=spacing){
+    hCtx.beginPath();
+    for(let x=-spacing;x<w+spacing;x+=spacing){
+      const yOsc=y+Math.sin((x*0.03)+t)*spacing*0.3;
+      hCtx.lineTo(x,yOsc);
+    }
+    hCtx.stroke();
+  }
+  requestAnimationFrame(drawHero);
+}
+drawHero();
+
+/* ---------- Fake Frames (noise + gradient) ---------- */
+function generateFrame(canvas,seed){
+  const ctx=canvas.getContext('2d');
+  const {width:w,height:h}=canvas;
+  const grd=ctx.createLinearGradient(0,0,w,h);
+  grd.addColorStop(0,'#6D9773');
+  grd.addColorStop(1,'#221811');
+  ctx.fillStyle=grd;
+  ctx.fillRect(0,0,w,h);
+  const imgData=ctx.createImageData(w,h);
+  const d=imgData.data;
+  function rand(i){return Math.abs(Math.sin(i*seed))*256|0}
+  for(let i=0;i<d.length;i+=4){
+    const v=rand(i/4);
+    d[i]=d[i+1]=d[i+2]=v;
+    d[i+3]=80; /* alpha */
+  }
+  ctx.putImageData(imgData,0,0);
+  ctx.globalCompositeOperation='screen';
+  ctx.drawImage(canvas,4,4);
+  ctx.globalCompositeOperation='source-over';
+}
+generateFrame(document.getElementById('frame1'),1.345);
+generateFrame(document.getElementById('frame2'),5.987);
+
+/* ---------- Interactive Cube (very small software renderer) ---------- */
+class Cube{
+  constructor(cvs){
+    this.cvs=cvs;
+    this.ctx=cvs.getContext('2d');
+    this.points=[];
+    for(let x=-1;x<=1;x+=2)
+      for(let y=-1;y<=1;y+=2)
+        for(let z=-1;z<=1;z+=2)
+          this.points.push([x,y,z]);
+    this.edges=[];
+    const ps=this.points;
+    for(let i=0;i<ps.length;i++)
+      for(let j=i+1;j<ps.length;j++){
+        const d=[0,1,2].reduce((s,k)=>s+Math.abs(ps[i][k]-ps[j][k]),0);
+        if(d===2) this.edges.push([i,j]);
+      }
+    this.rotX=this.rotY=0;
+    this.dist=4;
+    this.initInteraction();
+    this.draw();
+  }
+  initInteraction(){
+    let drag=false,prev=[0,0];
+    this.cvs.addEventListener('mousedown',e=>{drag=true;prev=[e.clientX,e.clientY]});
+    window.addEventListener('mouseup',()=>drag=false);
+    window.addEventListener('mousemove',e=>{
+      if(!drag)return;
+      const dx=(e.clientX-prev[0])/100,dy=(e.clientY-prev[1])/100;
+      this.rotY+=dx;this.rotX+=dy;prev=[e.clientX,e.clientY];
+    });
+    this.cvs.addEventListener('wheel',e=>{
+      this.dist+=e.deltaY>0?0.3:-0.3;
+      this.dist=Math.min(Math.max(this.dist,2),8);
+      e.preventDefault();
+    });
+  }
+  proj([x,y,z]){
+    const s=Math.sin,c=Math.cos;
+    const rx=[x,
+      y*c(this.rotX)-z*s(this.rotX),
+      y*s(this.rotX)+z*c(this.rotX)];
+    const ry=[
+      rx[0]*c(this.rotY)+rx[2]*s(this.rotY),
+      rx[1],
+     -rx[0]*s(this.rotY)+rx[2]*c(this.rotY)];
+    const f=160/(ry[2]+this.dist);
+    return [f*ry[0]+150,f*ry[1]+150];
+  }
+  draw=()=>{
+    const ctx=this.ctx,{width:w,height:h}=this.cvs;
+    ctx.clearRect(0,0,w,h);
+    ctx.strokeStyle='rgba(173,138,105,.9)';
+    ctx.lineWidth=2;
+    for(const [i,j] of this.edges){
+      const a=this.proj(this.points[i]),b=this.proj(this.points[j]);
+      ctx.beginPath();ctx.moveTo(...a);ctx.lineTo(...b);ctx.stroke();
+    }
+    requestAnimationFrame(this.draw);
+  }
+}
+new Cube(document.getElementById('cubeCanvas'));
+</script>
+</body>
+</html>

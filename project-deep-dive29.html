@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Engine from Scratch — deep dive</title>
+
+<!-- =======================  STYLE  ======================= -->
+<style>
+:root{
+  /* Earth‑tone system (CIE L*a*b* balanced) */
+  --clay:#8d6e63;   /* mid brown */
+  --sand:#d7ccc8;   /* warm gray‑beige */
+  --sage:#a9b7a0;   /* muted green */
+  --rust:#bf360c;   /* accent */
+  --ink:#212121;    /* text */
+  --cream:#fff8e1;  /* paper */
+}
+
+/* reset */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font:16px/1.55 "Segoe UI",system-ui,sans-serif;
+  color:var(--ink);
+  background:var(--sand);
+  overflow-x:hidden;
+  scroll-behavior:smooth;
+}
+
+/* ---------- HERO ---------- */
+.hero{
+  position:relative;
+  height:100vh;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  align-items:center;
+  text-align:center;
+  background:linear-gradient(120deg,var(--sand) 0%,var(--cream) 100%);
+  overflow:hidden;
+}
+.hero canvas{
+  position:absolute;inset:0;
+  width:100%;height:100%;
+  z-index:-1;
+  filter:blur(80px) brightness(.7);
+}
+h1{
+  font-size:clamp(3rem,8vw,7rem);
+  letter-spacing:.03em;
+  text-transform:uppercase;
+  position:relative;
+  background:linear-gradient(90deg, var(--ink) 0% 30%, var(--rust) 45% 55%, var(--ink) 70% 100%);
+  -webkit-background-clip:text;
+  color:transparent;
+  animation:shine 6s linear infinite;
+}
+@keyframes shine{
+  from{background-position:200%}
+  to{background-position:-200%}
+}
+.tagline{
+  margin-top:.75rem;
+  font-size:clamp(1rem,2vw,1.25rem);
+  color:var(--clay);
+}
+.scroll-hint{
+  position:absolute;bottom:2rem;left:50%;translate:-50% 0;
+  width:26px;height:42px;
+  border:2px solid var(--clay);border-radius:13px;
+}
+.scroll-hint::after{
+  content:"";
+  position:absolute;top:8px;left:50%;
+  width:4px;height:4px;border-radius:50%;
+  background:var(--clay);
+  animation:scroll 1.8s cubic-bezier(.65,.05,.36,1) infinite;
+}
+@keyframes scroll{
+  0%{opacity:0;translate:-50% 0}
+  60%{opacity:1}
+  100%{opacity:0;translate:-50% 12px}
+}
+
+/* ---------- SECTIONS ---------- */
+section{
+  padding:7rem 6vw;
+  max-width:70rem;margin-inline:auto;
+}
+section:nth-of-type(odd){background:var(--cream)}
+h2{
+  font-size:2rem;
+  margin-bottom:1rem;
+  position:relative;
+  display:inline-block;
+}
+h2::after{
+  content:"";
+  position:absolute;bottom:-.2rem;left:0;
+  width:60%;height:3px;
+  background:var(--rust);
+  transform-origin:left;
+  transform:scaleX(.3);
+  transition:transform .6s ease;
+}
+.reveal.show h2::after{transform:scaleX(1)}
+p{margin:.8rem 0}
+
+/* fade/slide reveal */
+.reveal{opacity:0;translate:0 40px;transition:opacity .8s ease,translate .8s ease}
+.reveal.show{opacity:1;translate:0 0}
+
+/* ---------- GALLERY ---------- */
+.gallery{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(270px,1fr));
+  gap:1rem;
+  margin-top:1.5rem;
+}
+.gallery canvas{
+  width:100%;aspect-ratio:1/1;border-radius:.5rem;
+  box-shadow:0 4px 10px #0002;
+  transition:transform .4s ease;
+}
+.gallery canvas:hover{transform:rotate(-2deg) scale(1.04)}
+
+/* ---------- PROGRESS BARS ---------- */
+.stats{margin-top:2rem;display:grid;gap:1rem}
+.progress{
+  background:var(--sand);border-radius:6px;position:relative;height:18px;
+}
+.progress span{
+  position:absolute;inset:0;
+  border-radius:inherit;
+  background:var(--sage);
+  width:0;
+  animation:bar 2s ease forwards;
+}
+@keyframes bar{to{width:var(--value)}}
+.progress::after{
+  content:attr(data-label);
+  position:absolute;left:8px;top:50%;translate:0 -50%;
+  font-size:.8rem;color:var(--ink);
+}
+
+/* ---------- BACK TO TOP ---------- */
+#topBtn{
+  position:fixed;bottom:1.7rem;right:1.4rem;
+  padding:.55rem .8rem;border:none;border-radius:50%;
+  background:var(--clay);color:var(--cream);
+  font-size:1.2rem;line-height:1;
+  box-shadow:0 3px 6px #0003;
+  cursor:pointer;opacity:0;pointer-events:none;
+  transition:opacity .3s ease;
+}
+#topBtn.show{opacity:1;pointer-events:auto}
+#topBtn:hover{background:var(--rust)}
+</style>
+</head>
+
+<!-- =======================  BODY  ======================= -->
+<body>
+
+<!-- HERO -->
+<header class="hero">
+  <canvas id="heroCanvas"></canvas>
+  <h1>Engine from Scratch</h1>
+  <p class="tagline">A graphics engineer’s magnum opus &nbsp;·&nbsp; zero middleware, infinite control</p>
+  <span class="scroll-hint"></span>
+</header>
+
+<!-- OVERVIEW -->
+<section class="reveal">
+  <h2>Vision</h2>
+  <p>
+    I set out to build a real‑time 3‑D engine written <em>entirely from first principles</em>—memory allocators,
+    ECS, render graph, PBR pipeline, editor, the works. No Unity, no Unreal, no external math libraries—just
+    raw C++20 and a relentless desire to understand every transistor tick along the way.
+  </p>
+  <p>
+    The result is a modular, data‑driven engine that boots to first pixels in <span class="accent">46 ms</span>,
+    streams in open‑world terrain on a <abbr title="Samsung Galaxy A34">mid‑tier Android device</abbr>, and
+    scales up to path‑traced GI on desktop GPUs.
+  </p>
+</section>
+
+<!-- GALLERY -->
+<section class="reveal">
+  <h2>Procedural Playground</h2>
+  <p>
+    Every image below is generated at runtime by the engine’s material node graph and deferred renderer.
+    Hover to feel the parallax pop.
+  </p>
+  <div class="gallery">
+    <canvas class="demo" data-seed="1"></canvas>
+    <canvas class="demo" data-seed="2"></canvas>
+    <canvas class="demo" data-seed="3"></canvas>
+    <canvas class="demo" data-seed="4"></canvas>
+  </div>
+</section>
+
+<!-- TECH -->
+<section class="reveal">
+  <h2>Key Systems</h2>
+  <ul>
+    <li><strong>Render Graph:</strong> automatic resource hazard tracking + async compute overlap.</li>
+    <li><strong>ECS:</strong> archetype chunk allocator hitting 98 % cache‑line residency.</li>
+    <li><strong>GPU Transcoding:</strong> on‑the‑fly BC7 / ASTC from lossless originals.</li>
+    <li><strong>Path‑Tracing:</strong> ReSTIR‑GI, sky‑probe cache, MIS importance warp.</li>
+  </ul>
+
+  <!-- animated stats -->
+  <div class="stats">
+    <div class="progress" style="--value:95%" data-label="GPU Occupancy"></div>
+    <div class="progress" style="--value:89%" data-label="L2 Cache Hit"></div>
+    <div class="progress" style="--value:72%" data-label="Streaming Throughput"></div>
+  </div>
+</section>
+
+<!-- PERF -->
+<section class="reveal">
+  <h2>Numbers that Matter</h2>
+  <p>
+    540 k instanced meshes @ 60 fps on RTX 4060 Laptop; <br>
+    19 ms → 6 ms after render‑graph async split; <br>
+    8× asset size reduction via ASTC 6×6 + <abbr title="Multiple Basis Universal">BasisU‑derived</abbr> textures.
+  </p>
+</section>
+
+<!-- CALL TO ACTION -->
+<section class="reveal">
+  <h2>Let’s build something breathtaking</h2>
+  <p>
+    I’m looking for teams where low‑level curiosity and high‑level polish meet
+    to create experiences that feel <em>alive</em>.  
+    Want the full perf capture, source tour, or Vulkan backend deep‑dive?  
+    <a href="mailto:hello@example.com" style="color:var(--rust);text-decoration:none;border-bottom:2px solid var(--rust)">Email me</a>.
+  </p>
+</section>
+
+<button id="topBtn" aria-label="Back to top">↑</button>
+
+<!-- =======================  SCRIPT  ======================= -->
+<script>
+/* ---------- SCROLL REVEALS ---------- */
+const observer=new IntersectionObserver((entries)=>
+  entries.forEach(e=>e.isIntersecting&&e.target.classList.add('show')), {threshold:.18});
+document.querySelectorAll('.reveal').forEach(el=>observer.observe(el));
+
+/* ---------- BACK‑TO‑TOP ---------- */
+const topBtn=document.getElementById('topBtn');
+window.addEventListener('scroll',()=>topBtn.classList.toggle('show',scrollY>250));
+topBtn.onclick=()=>scrollTo({top:0,behavior:'smooth'});
+
+/* ---------- HERO BACKGROUND ---------- */
+const heroCanvas=document.getElementById('heroCanvas');
+const ctxH=heroCanvas.getContext('2d');
+const resize=()=>{heroCanvas.width=innerWidth*devicePixelRatio;heroCanvas.height=innerHeight*devicePixelRatio};
+addEventListener('resize',resize);resize();
+
+const PALETTE=['#d7ccc8','#a9b7a0','#8d6e63','#bf360c'];
+function blob(x,y,r,c){const g=ctxH.createRadialGradient(x,y,0,x,y,r);g.addColorStop(0,c+'ee');g.addColorStop(1,c+'00');ctxH.fillStyle=g;ctxH.beginPath();ctxH.arc(x,y,r,0,Math.PI*2);ctxH.fill();}
+(function heroLoop(t){
+  ctxH.clearRect(0,0,heroCanvas.width,heroCanvas.height);
+  for(let i=0;i<9;i++){
+    const k=(i+t/24000)%1;
+    const x=k*heroCanvas.width;
+    const y=(Math.sin(k*6.28)+1)*.4*heroCanvas.height;
+    const r=heroCanvas.height*.35*(.9-Math.abs(.5-k));
+    blob(x,y,r,PALETTE[i%PALETTE.length]);
+  }
+  requestAnimationFrame(heroLoop);
+})();
+
+/* ---------- DEMO CANVASES ---------- */
+document.querySelectorAll('.demo').forEach((cnv,i)=>{
+  const ctx=cnv.getContext('2d');
+  const r=()=>Math.random();
+  const seed=+cnv.dataset.seed;
+  const resizeDemo=()=>{cnv.width=cnv.clientWidth*devicePixelRatio;cnv.height=cnv.width};
+  resizeDemo();new ResizeObserver(resizeDemo).observe(cnv);
+  function draw(){
+    ctx.clearRect(0,0,cnv.width,cnv.height);
+    const n=24+seed*5;
+    for(let j=0;j<n;j++){
+      const t=(j/n+performance.now()/12000)%1;
+      const ang=t*2*Math.PI;
+      const rad=cnv.width*.42*(.2+.8*Math.abs(Math.sin(t*Math.PI)));
+      const x=cnv.width/2+Math.cos(ang)*rad;
+      const y=cnv.height/2+Math.sin(ang)*rad;
+      ctx.fillStyle=PALETTE[(j+seed)%PALETTE.length]+'aa';
+      ctx.beginPath();ctx.arc(x,y,cnv.width*.07,0,Math.PI*2);ctx.fill();
+    }
+    requestAnimationFrame(draw);
+  }draw();
+});
+</script>
+</body>
+</html>

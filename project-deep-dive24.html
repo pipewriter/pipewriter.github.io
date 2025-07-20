@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Engine from Scratch | Graphics Engineer Deep Dive</title>
+
+<!-- =======  COLOR PALETTE  ======= -->
+<style>
+:root{
+    --c-umber:#2F1B0C;      /* deepest umber             */
+    --c-cocoa:#4F301F;      /* dark cocoa headline        */
+    --c-terracotta:#8E5A30; /* punchy accent              */
+    --c-clay:#C6A176;       /* mid‑tone surface           */
+    --c-sand:#E3D5B1;       /* primary background         */
+    --c-olive:#6B8F71;      /* success / link / buttons   */
+    --c-bone:#F8F6F2;       /* near‑white text surfaces   */
+
+    --font-body: system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    --t-slow: 800ms;
+    --t-fast: 250ms;
+
+    color-scheme: light;    /* improve form control theming */
+}
+
+*{box-sizing:border-box;}
+
+html,body{
+    margin:0;
+    padding:0;
+    background:var(--c-sand);
+    color:var(--c-cocoa);
+    font-family:var(--font-body);
+    line-height:1.55;
+    scroll-behavior:smooth;
+}
+
+/* -----  LAYOUT & TYPOGRAPHY  ----- */
+h1,h2,h3{
+    color:var(--c-umber);
+    letter-spacing:0.02em;
+    margin:0 0 0.5em;
+}
+h1{font-size:clamp(2.5rem,5vw,4rem);}
+h2{font-size:clamp(1.6rem,3vw,2.5rem);}
+h3{font-size:1.25rem;}
+
+section{
+    padding:7rem 8vw;
+    position:relative;
+    overflow:hidden;
+}
+
+/* -----  HERO  ----- */
+#hero{
+    display:grid;
+    place-items:center;
+    text-align:center;
+    min-height:100svh;
+    background:
+        radial-gradient(circle at 50% 20%,rgba(255,255,255,0.12) 0 40%,transparent 41%),
+        linear-gradient(135deg,var(--c-clay),var(--c-sand) 60%);
+}
+#hero h1 span{color:var(--c-terracotta);}
+#hero p{max-width:40rem;font-size:1.25rem;margin-inline:auto;}
+#scrollCue{
+    position:absolute;bottom:2rem;left:50%;transform:translateX(-50%);
+    width:34px;height:34px;border:3px solid var(--c-terracotta);
+    border-radius:50%;
+    animation: bounce 1.8s infinite;
+}
+@keyframes bounce{0%,100%{transform:translate(-50%,0);}50%{transform:translate(-50%,-12px);}}
+
+/* -----  REVEALS  ----- */
+.reveal{opacity:0;transform:translateY(60px);transition:opacity var(--t-slow) ease,transform var(--t-slow) ease;}
+.reveal.inview{opacity:1;transform:none;}
+
+/* -----  PARALLAX BACKGROUNDS  ----- */
+[data-parallax]::before{
+    content:"";position:absolute;inset:0;
+    background:linear-gradient(135deg,var(--c-terracotta),var(--c-clay));
+    opacity:0.08;
+    transform:translateY(-30%);
+    will-change:transform;
+}
+
+/* -----  GALLERY  ----- */
+.gallery{
+    display:grid;
+    gap:1.5rem;
+    grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
+}
+.gallery figure{
+    margin:0;padding:0;position:relative;overflow:hidden;
+    border-radius:10px;background:var(--c-bone);
+    transition:transform var(--t-fast) ease,box-shadow var(--t-fast);
+}
+.gallery img{display:block;width:100%;height:auto;}
+.gallery figcaption{
+    position:absolute;inset:0;display:grid;place-items:center;
+    background:rgba(47,27,12,0.85);color:var(--c-bone);
+    opacity:0;transition:opacity var(--t-fast);
+    font-size:1.1rem;padding:1rem;text-align:center;
+}
+.gallery figure:hover{transform:translateY(-6px);box-shadow:0 8px 18px rgba(0,0,0,0.18);}
+.gallery figure:hover figcaption{opacity:1;}
+
+/* -----  CODE CANVAS  ----- */
+#demoCanvas{
+    display:block;width:100%;max-width:760px;height:380px;margin:0 auto;border-radius:10px;
+    background:var(--c-bone);box-shadow:inset 0 0 0 2px var(--c-terracotta);
+}
+
+/* -----  BUTTON  ----- */
+.btn{
+    display:inline-block;padding:0.75em 1.5em;font-weight:600;
+    background:var(--c-olive);color:var(--c-bone);
+    border:none;border-radius:6px;text-decoration:none;
+    transition:background var(--t-fast),transform var(--t-fast);
+}
+.btn:hover{background:var(--c-terracotta);transform:translateY(-2px);}
+
+/* -----  UTILITIES  ----- */
+.center{text-align:center;}
+.flow>*+*{margin-top:1.25em;}
+
+footer{
+    text-align:center;
+    font-size:0.9rem;
+    padding:4rem 8vw;
+    background:var(--c-clay);
+    color:var(--c-bone);
+}
+</style>
+</head>
+
+<body>
+
+<!-- ========================================================== -->
+<header id="hero">
+    <div class="flow">
+        <h1><span>Engine&nbsp;from&nbsp;Scratch</span><br>Realtime 3‑D Renderer</h1>
+        <p>A five‑year odyssey into low‑level graphics: from binary file‑format loaders and SIMD math libraries, to Vulkan‑backed PBR pipelines with GPU ray‑traced shadows.</p>
+        <a href="#tech" class="btn">See the Tech →</a>
+    </div>
+    <div id="scrollCue" aria-hidden="true"></div>
+</header>
+
+<!-- ========================================================== -->
+<section id="overview" class="reveal" data-parallax>
+    <h2>What makes this engine special?</h2>
+    <p class="flow">Hand‑rolled from the boot sector up, the renderer eschews frameworks in favor of precision‑tuned SIMD, cache‑aware data layouts, bindless descriptor heaps, and a task‑graph driven frame scheduler. The result is buttery‑smooth 240 FPS on consumer GPUs.</p>
+</section>
+
+<!-- ========================================================== -->
+<section id="gallery" class="reveal center">
+    <h2>Procedural Worlds Gallery</h2>
+    <div class="gallery">
+
+        <!-- Sample Image 1 : SVG cliff face -->
+        <figure>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice">
+                <defs>
+                    <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="#C6A176"/>
+                        <stop offset="100%" stop-color="#8E5A30"/>
+                    </linearGradient>
+                </defs>
+                <rect width="400" height="300" fill="url(#g1)"/>
+                <path d="M0 260 Q80 220 160 260 T320 260 T400 260 L400 300 L0 300 Z" fill="#2F1B0C"/>
+                <circle cx="290" cy="80" r="40" fill="#E3D5B1"/>
+            </svg>
+            <figcaption>Volumetric terrain sculpted with marching‑cubes & cosine‑fractal noise.</figcaption>
+        </figure>
+
+        <!-- Sample Image 2 : SVG canyon -->
+        <figure>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice">
+                <rect width="400" height="300" fill="#E3D5B1"/>
+                <path d="M0 150 Q75 130 150 150 T300 150 T400 140 L400 300 L0 300 Z" fill="#C6A176"/>
+                <path d="M0 180 Q75 170 150 190 T300 180 T400 175 L400 300 L0 300 Z" fill="#8E5A30"/>
+            </svg>
+            <figcaption>Physically‑based canyon walls with multi‑layer parallax mapping.</figcaption>
+        </figure>
+
+        <!-- Sample Image 3 : SVG night scene -->
+        <figure>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice">
+                <rect width="400" height="300" fill="#2F1B0C"/>
+                <g fill="#F8F6F2">
+                    <circle cx="70" cy="60" r="2"/>
+                    <circle cx="120" cy="90" r="1.5"/>
+                    <circle cx="200" cy="40" r="2.5"/>
+                    <circle cx="350" cy="70" r="2"/>
+                    <circle cx="260" cy="110" r="1.8"/>
+                </g>
+                <rect y="220" width="400" height="80" fill="#4F301F"/>
+            </svg>
+            <figcaption>High‑dynamic‑range moonlit scene rendered with stochastic sampling.</figcaption>
+        </figure>
+    </div>
+</section>
+
+<!-- ========================================================== -->
+<section id="demo" class="reveal center" data-parallax>
+    <h2>Live Shader Toy</h2>
+    <canvas id="demoCanvas" aria-label="Procedural water demo"></canvas>
+    <p>Drag to orbit the camera – pure fragment shader on a single quad.</p>
+</section>
+
+<!-- ========================================================== -->
+<section id="tech" class="reveal">
+    <h2>Under the Hood</h2>
+    <ul class="flow">
+        <li><strong>Renderer&nbsp;Core:</strong> Vulkan 1.3, bindless resources, pipeline cache warming.</li>
+        <li><strong>Task Graph:</strong> lock‑free work‑stealing + fiber scheduler (~8 µs overhead).</li>
+        <li><strong>Memory:</strong> custom LDS allocator, GPU virtual memory paging, sparse textures.</li>
+        <li><strong>Tooling:</strong> hot‑reloadable C++20 modules, reflection‑driven UI, live GPU capture.</li>
+        <li><strong>Feature Highlights:</strong> hardware‑accelerated BVH traversal, mesh‑shading, real‑time GI (DDGI).</li>
+    </ul>
+    <a href="#hero" class="btn">Back to top ↑</a>
+</section>
+
+<footer>
+    Built with ♥ and lots of ochre.<br>
+    © 2025 Your Name – All Rights Reserved
+</footer>
+
+
+
+<!-- ============  JS  ============ -->
+<script>
+/* ---------- Intersection‑Observer reveals ---------- */
+const reveals=document.querySelectorAll('.reveal');
+const io=new IntersectionObserver((entries)=>entries.forEach(e=>{
+    if(e.isIntersecting){e.target.classList.add('inview');io.unobserve(e.target);}
+}),{threshold:0.3});
+reveals.forEach(el=>io.observe(el));
+
+/* ---------- Parallax background shift ---------- */
+const parallaxSections=[...document.querySelectorAll('[data-parallax]')];
+window.addEventListener('scroll',()=>{
+    parallaxSections.forEach(s=>{
+        const rect=s.getBoundingClientRect();
+        const offset=rect.top* -0.08; // parallax factor
+        s.style.setProperty('--parallax',offset+'px');
+        s.style.transform=`translateY(${offset}px)`; // subtle
+    });
+});
+
+/* ---------- Canvas shader demo ---------- */
+const canvas=document.getElementById('demoCanvas'),
+      gl=canvas.getContext('webgl2');
+let resize=()=>{canvas.width=canvas.clientWidth*devicePixelRatio;
+                canvas.height=canvas.clientHeight*devicePixelRatio;
+                gl.viewport(0,0,canvas.width,canvas.height);};
+window.addEventListener('resize',resize,{passive:true});resize();
+
+const vSrc=`#version 300 es
+in vec2 pos;out vec2 uv;
+void main(){uv=pos*0.5+0.5;gl_Position=vec4(pos,0,1);}`;
+
+const fSrc=`#version 300 es
+precision highp float;
+out vec4 frag;
+in vec2 uv;
+uniform float t;
+void main(){
+    vec2 p=uv-0.5;
+    float l=length(p);
+    float waves=sin(10.0*(l-t))+sin(15.0*(l*1.2-t*0.8));
+    float shade=0.5+0.5*waves/(1.0+20.0*l);
+    vec3 water=mix(vec3(0.38,0.47,0.45),vec3(0.21,0.29,0.27),shade);
+    frag=vec4(water,1.0);
+}`;
+
+function compile(type,src){
+    const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);
+    if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(s));
+    return s;
+}
+const prog=gl.createProgram();
+gl.attachShader(prog,compile(gl.VERTEX_SHADER,vSrc));
+gl.attachShader(prog,compile(gl.FRAGMENT_SHADER,fSrc));
+gl.linkProgram(prog);gl.useProgram(prog);
+
+const tLoc=gl.getUniformLocation(prog,'t'),
+      buf=gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
+const vao=gl.createVertexArray();gl.bindVertexArray(vao);
+const posLoc=gl.getAttribLocation(prog,'pos');
+gl.enableVertexAttribArray(posLoc);
+gl.vertexAttribPointer(posLoc,2,gl.FLOAT,false,0,0);
+
+let start=performance.now();
+function frame(now){
+    gl.uniform1f(tLoc,(now-start)*0.0004);
+    gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+    requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Engine from Scratch | Graphics Engineer Deep Dive</title>
+
+<!-- =====  COLOR VARIABLES  ===== -->
+<style>
+:root{
+  --bg-dark:#0d1117;
+  --bg-light:#171b23;
+  --text-main:#e6edf3;
+  --text-dim:#8892b0;
+
+  /* split–complementary pair offset ~150° from cyan */
+  --accent-cyan:#00e8ff;
+  --accent-magenta:#ff007a;
+
+  --radius:12px;
+  --trans-fn:cubic-bezier(.4,.0,.2,1);
+}
+@media(prefers-color-scheme:light){
+  :root{
+    --bg-dark:#fbfbfe;
+    --bg-light:#ffffff;
+    --text-main:#121721;
+    --text-dim:#5a6478;
+  }
+}
+
+/* =====  BASE LAYOUT  ===== */
+*{box-sizing:border-box;margin:0;padding:0;}
+body{
+  font:400 16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+  background:var(--bg-dark);
+  color:var(--text-main);
+  overflow-x:hidden;
+  scroll-behavior:smooth;
+}
+section{padding:7rem 8vw;position:relative;}
+h1,h2,h3{font-weight:600;letter-spacing:-.03em;color:var(--accent-cyan);}
+p{max-width:60ch;margin:.7em 0;}
+a{color:var(--accent-magenta);text-decoration:none;}
+a:hover{text-decoration:underline;}
+
+.btn{
+  display:inline-block;margin-top:1.4rem;padding:.9em 1.8em;
+  background:var(--accent-cyan);color:var(--bg-dark);
+  border-radius:var(--radius);font-weight:600;letter-spacing:.04em;
+  transition:transform .2s var(--trans-fn),box-shadow .2s var(--trans-fn);
+}
+.btn:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(0,232,255,.35);}
+.btn:active{transform:translateY(0);box-shadow:none;}
+
+/* =====  HERO  ===== */
+.hero{
+  min-height:100vh;display:grid;place-items:center;
+  position:relative;padding:0;border-bottom:1px solid var(--bg-light);
+}
+canvas.hero-canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
+.hero-inner{position:relative;text-align:center;z-index:1;padding:0 10vw;}
+.hero h1{font-size:clamp(2.4rem,5vw,4.2rem);text-transform:uppercase;}
+.hero h1 span{color:var(--accent-magenta);}
+.hero p{color:var(--text-dim);font-size:1.125rem;margin-top:1.2rem;}
+.scroll-indicator{
+  position:absolute;bottom:3rem;left:50%;translate:-50% 0;color:var(--text-dim);
+  animation:float 3s infinite var(--trans-fn);
+}
+@keyframes float{50%{transform:translateY(8px);}}
+
+/* =====  SECTION EFFECTS  ===== */
+.reveal{opacity:0;transform:translateY(60px);transition:opacity .8s var(--trans-fn),transform .8s var(--trans-fn);}
+.reveal.show{opacity:1;transform:none;}
+.split{display:flex;flex-direction:column;gap:4rem;}
+@media(min-width:900px){.split{flex-direction:row;align-items:center;}}
+
+/* cards */
+.card{
+  background:var(--bg-light);
+  border-radius:var(--radius);padding:2rem;position:relative;
+  overflow:hidden;box-shadow:0 0 0 rgba(0,0,0,0);
+  transition:box-shadow .3s var(--trans-fn),transform .3s var(--trans-fn);
+}
+.card:hover{transform:translateY(-6px);box-shadow:0 14px 34px rgba(0,0,0,.25);}
+.card::before{
+  content:"";position:absolute;inset:0;
+  background:linear-gradient(130deg,transparent,rgba(0,232,255,.08));
+  opacity:0;transition:opacity .4s var(--trans-fn);
+}
+.card:hover::before{opacity:1;}
+
+/* galaxy canvas sizing */
+#galaxy{width:100%;height:320px;border-radius:var(--radius);display:block;background:var(--bg-dark);}
+
+/* =====  FOOTER  ===== */
+footer{padding:4rem 8vw;text-align:center;font-size:.875rem;color:var(--text-dim);}
+footer a{color:var(--accent-cyan);}
+</style>
+</head>
+<body>
+
+<!-- =========================================================== -->
+<header class="hero">
+  <canvas id="webgl" class="hero-canvas"></canvas>
+  <div class="hero-inner reveal">
+    <h1><span>Engine&nbsp;</span>from Scratch</h1>
+    <p>Ten months, 37&nbsp;KLOC, one graphics engineer’s magnum opus.<br/>
+       Follow the journey from first triangle to fully‑deferred renderer.</p>
+    <a href="#features" class="btn">Explore the Deep Dive</a>
+  </div>
+  <div class="scroll-indicator">▼ Scroll</div>
+</header>
+
+<!-- =========================================================== -->
+<section id="features">
+  <h2 class="reveal">Core Innovations</h2>
+  <div class="split">
+    <article class="card reveal">
+      <h3>Physically&nbsp;Based&nbsp;Pipeline</h3>
+      <p>Custom BRDF, HDR workflow, ACES tone‑mapping, and 32‑bit light
+         accumulation for uncompromising fidelity.</p>
+    </article>
+    <article class="card reveal">
+      <h3>Entity Component System</h3>
+      <p>Lock‑free concurrent job graph; archetype shuffling hits
+         1.1 M entities at 250 FPS on an M2 Pro.</p>
+    </article>
+    <article class="card reveal">
+      <h3>GPU‑Driven Culling</h3>
+      <p>Shader‑based clustering + radix sort leaves the CPU free for
+         gameplay; dispatch is linear in light count.</p>
+    </article>
+  </div>
+</section>
+
+<!-- =========================================================== -->
+<section>
+  <h2 class="reveal">Visual Samples — In Browser</h2>
+  <p class="reveal">Everything below is running live ⇢ reload to randomize.</p>
+  <canvas id="galaxy" class="reveal" width="900" height="320"></canvas>
+</section>
+
+<!-- =========================================================== -->
+<section>
+  <h2 class="reveal">Lessons&nbsp;Learned</h2>
+  <p class="reveal">From mis‑aligned UVs at 2 AM to the elegance of a
+     compile‑time reflection system, this project taught me the value of
+     *relentless iteration* and *measurable baselines*.  
+     It also sharpened my belief that engineering artistry blooms when
+     **color, motion and mathematics** intersect.</p>
+</section>
+
+<!-- =========================================================== -->
+<footer>
+  Crafted with zero frameworks &nbsp;·&nbsp;
+  <a href="#top">Back to top</a>  
+</footer>
+
+<!-- ======================  SCRIPTS  =========================== -->
+<script>
+/* =====  SCROLL REVEAL  ===== */
+const reveals=[...document.querySelectorAll('.reveal')];
+const io=new IntersectionObserver((e)=>e.forEach(
+  o=>o.isIntersecting&&o.target.classList.add('show')),{
+  threshold:0.2
+});
+reveals.forEach(el=>io.observe(el));
+
+/* =====  HERO WEBGL METABALLS  ===== */
+(function metaballs(){
+  const canvas=document.getElementById('webgl');
+  const gl=canvas.getContext('webgl');
+  if(!gl){canvas.remove();return;}   // fallback
+  const vsrc=`attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);} `;
+  const fsrc=`precision highp float;
+    uniform float t;uniform vec2 res;
+    vec3 palette(float d){
+      return vec3(
+        .5+.5*cos(6.283*(d+vec3(0.,.33,.66)))
+      );
+    }
+    float meta(vec3 p){
+      vec3 c1=vec3(sin(t),cos(t),sin(t*.7))*1.3;
+      vec3 c2=vec3(cos(t*.5),sin(t*.8),cos(t*.9))*1.7;
+      return .6/length(p-c1) + .6/length(p-c2);
+    }
+    void main(){
+      vec2 uv=(gl_FragCoord.xy-.5*res)/res.y;
+      vec3 ro=vec3(0.,0.,-3.5),rd=normalize(vec3(uv,1.8));
+      float s=0.,d=0.;
+      for(int i=0;i<64;i++){
+        vec3 p=ro+rd*s;
+        d=meta(p)-1.;
+        if(d<.01||s>4.)break;
+        s+=d*.45;
+      }
+      float shade=exp(-s*s);
+      vec3 col=palette(shade)*mix(.9,1.1,shade);
+      gl_FragColor=vec4(col,1.);
+    }`;
+  function compile(type,src){
+    const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);
+    if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))
+      console.error(gl.getShaderInfoLog(s));
+    return s;
+  }
+  const prog=gl.createProgram();
+  gl.attachShader(prog,compile(gl.VERTEX_SHADER,vsrc));
+  gl.attachShader(prog,compile(gl.FRAGMENT_SHADER,fsrc));
+  gl.linkProgram(prog);gl.useProgram(prog);
+
+  const buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
+  const loc=gl.getAttribLocation(prog,"p");
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
+
+  const uTime=gl.getUniformLocation(prog,"t");
+  const uRes=gl.getUniformLocation(prog,"res");
+  function resize(){
+    const dpr=window.devicePixelRatio||1;
+    canvas.width=innerWidth*dpr;canvas.height=innerHeight*dpr;
+    gl.viewport(0,0,gl.drawingBufferWidth,gl.drawingBufferHeight);
+    gl.uniform2f(uRes,gl.drawingBufferWidth,gl.drawingBufferHeight);
+  }resize();addEventListener('resize',resize);
+
+  let start=performance.now();
+  function loop(t){
+    gl.uniform1f(uTime,(t-start)*.0004);
+    gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+    requestAnimationFrame(loop);
+  }loop(start);
+})();
+
+/* =====  GALAXY PARTICLES  ===== */
+(function galaxy(){
+  const canvas=document.getElementById('galaxy');
+  const ctx=canvas.getContext('2d');
+  const STAR_CT=800;
+  const stars=[];
+  function init(){
+    stars.length=0;
+    const w=canvas.width,h=canvas.height;
+    for(let i=0;i<STAR_CT;i++){
+      const r=Math.random()*Math.min(w,h)*.45;
+      const a=Math.random()*Math.PI*2;
+      stars.push({
+        x:w/2+r*Math.cos(a),
+        y:h/2+r*Math.sin(a),
+        vel:(.2+Math.random()*1.2)*(r/400+0.2),
+        size:1+Math.random()*2,
+        hue:200+Math.random()*140
+      });
+    }
+  }init();addEventListener('resize',()=>{canvas.width=canvas.clientWidth*devicePixelRatio;canvas.height=320*devicePixelRatio;init();});
+  function step(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    stars.forEach(s=>{
+      const dx=s.x-canvas.width/2,dy=s.y-canvas.height/2;
+      const ang=Math.atan2(dy,dx)+.002*s.vel;
+      const r=Math.hypot(dx,dy);
+      s.x=canvas.width/2+r*Math.cos(ang);
+      s.y=canvas.height/2+r*Math.sin(ang);
+      ctx.fillStyle=`hsla(${s.hue},100%,70%,.9)`;
+      ctx.beginPath();ctx.arc(s.x,s.y,s.size,0,Math.PI*2);ctx.fill();
+    });
+    requestAnimationFrame(step);
+  }step();
+})();
+</script>
+</body>
+</html>

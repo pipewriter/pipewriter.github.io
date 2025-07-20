@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Engine from Scratch — Deep Dive</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+/* ---------------------------  COLOR SYSTEM  --------------------------- */
+:root{
+  --bg: #0d1117;
+  --fg: #f5f7fa;
+  --dim: #a1a6ab;
+  --accent1: #00e4ff;
+  --accent2: #f200ff;
+  --accent-grad: linear-gradient(135deg,var(--accent1),var(--accent2));
+  --radius: 14px;
+  --trans-fast: .25s cubic-bezier(.4,.0,.2,1);
+  --trans-slow: .8s cubic-bezier(.4,0,.2,1);
+  color-scheme: dark;
+}
+
+/* ---------------------------  GLOBAL LAYOUT  -------------------------- */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  background:var(--bg);
+  color:var(--fg);
+  line-height:1.55;
+  overflow-x:hidden;
+  /* animated global gradient glow */
+  background-image:radial-gradient(at top left,rgba(0,228,255,.15),transparent 60%),
+                   radial-gradient(at bottom right,rgba(242,0,255,.10),transparent 55%);
+  animation:bgShift 15s linear infinite;
+}
+@keyframes bgShift{0%{background-position:0 0,100% 100%}100%{background-position:100% -200%,0% 300%}}
+
+section{padding:min(18vh,8rem) 8vw; max-width:78rem; margin-inline:auto}
+h1,h2,h3{font-weight:700;letter-spacing:-.02em}
+h2{font-size:clamp(1.6rem,4vw,2.4rem);margin-bottom:0.6em}
+p{max-width:65ch;margin-bottom:1.1em}
+a{color:var(--accent1);text-decoration:none;transition:color var(--trans-fast)}
+a:hover{color:var(--accent2)}
+
+/* ---------------------------  HERO  ----------------------------------- */
+.hero{
+  height:100vh;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  align-items:center;
+  text-align:center;
+  position:relative;
+  isolation:isolate;
+  overflow:hidden;
+}
+.hero::before{
+  content:"";
+  position:absolute;inset:-40vmax;
+  background:conic-gradient(from 180deg at 50% 50%,var(--accent1),var(--accent2),var(--accent1));
+  animation:spin 20s linear infinite;
+  opacity:.12;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+.hero h1{
+  font-size:clamp(2.6rem,8vw,5rem);
+  background:var(--accent-grad);
+  -webkit-background-clip:text;
+  color:transparent;
+  text-shadow:0 0 18px rgba(0,0,0,.2);
+}
+.scroll-indicator{
+  position:absolute;
+  bottom:4vh;
+  width:26px;height:42px;
+  border:2px solid var(--dim);border-radius:20px;
+}
+.scroll-indicator::after{
+  content:"";
+  position:absolute;left:50%;top:8px;
+  width:6px;height:6px;
+  background:var(--dim);border-radius:50%;
+  transform:translateX(-50%);
+  animation:scrollDot 2s infinite;
+}
+@keyframes scrollDot{0%{opacity:0;transform:translate(-50%,0)}40%{opacity:1}100%{opacity:0;transform:translate(-50%,20px)}}
+
+/* ---------------------------  FADE‑IN SECTIONS ------------------------ */
+.fade{opacity:0;transform:translateY(60px);transition:opacity var(--trans-slow),transform var(--trans-slow)}
+.fade.visible{opacity:1;transform:none}
+
+/* ---------------------------  TIMELINE  ------------------------------- */
+.timeline{position:relative;padding-left:3rem;border-left:2px solid var(--accent1)}
+.timeline-item{margin-bottom:4rem;position:relative}
+.timeline-item::before{
+  content:"";position:absolute;left:-13px;top:0;
+  width:14px;height:14px;border-radius:50%;
+  background:var(--accent-grad);box-shadow:0 0 0 4px rgba(0,228,255,.15);
+}
+
+/* ---------------------------  GALLERY  -------------------------------- */
+.gallery{display:grid;gap:4rem;margin-top:2rem}
+@media(min-width:768px){.gallery{grid-template-columns:repeat(3,1fr)}}
+.canvas-box{position:relative;border-radius:var(--radius);overflow:hidden;box-shadow:0 4px 22px rgba(0,0,0,.35)}
+.canvas-box canvas{width:100%;height:100%;display:block}
+
+/* ---------------------------  COUNTERS  ------------------------------- */
+.counters{display:flex;gap:2.5rem;flex-wrap:wrap}
+.counter{font-size:2.2rem;font-weight:600}
+.counter span{display:block;font-size:.55em;color:var(--dim);letter-spacing:.05em}
+
+/* ---------------------------  CARD GLOW  ------------------------------ */
+.canvas-box::after,.counter::after{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background:var(--accent-grad);mix-blend-mode:overlay;opacity:.08;
+}
+
+/* ---------------------------  BUTTON  --------------------------------- */
+.button{
+  display:inline-block;background:var(--accent-grad);padding:.85em 1.3em;
+  border:none;border-radius:var(--radius);color:#091015;font-weight:600;
+  box-shadow:0 6px 16px rgba(0,228,255,.25);
+  transition:transform .18s ease,box-shadow .18s ease;
+}
+.button:hover{transform:translateY(-3px);box-shadow:0 8px 22px rgba(0,228,255,.40)}
+.button:active{transform:translateY(0);box-shadow:0 3px 12px rgba(0,228,255,.25)}
+/* ---------------------------  FOOTER  --------------------------------- */
+footer{padding:4rem 8vw;text-align:center;font-size:.9rem;color:var(--dim)}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <h1>Engine&nbsp;from&nbsp;Scratch</h1>
+  <p style="max-width:50ch" class="fade">A zero‑to‑one graphics pipeline—CPU cages, GPU backflips, and enough SIMD to launch a small moon.</p>
+  <div class="scroll-indicator"></div>
+</header>
+
+<section class="fade">
+  <h2>Overview</h2>
+  <p>This project chronicles my odyssey from blinking pixels to a fully‑featured <strong>deferred renderer</strong> with physically‑based shading, clustered lighting, GPU culling, and an Entity‑Component‑System built from raw pointers and ice‑cold coffee.</p>
+  <p>The engine targets modern <abbr title="Vulkan &amp; WebGPU">low‑level APIs</abbr> yet remains agnostic through a thin driver layer—proof that ambition, grit, and an unhealthy relationship with validation layers can bend silicon to your whim.</p>
+  <a class="button" href="#gallery">Jump to live demos</a>
+</section>
+
+<section class="fade">
+  <h2>Architecture Highlights</h2>
+  <div class="timeline">
+    <div class="timeline-item">
+      <h3>01&nbsp;·&nbsp;Data‑Oriented Core</h3>
+      <p>Cache‑coherent component arrays paired with job‑graph scheduling push 300k entities at 144 Hz on a 2022 laptop.</p>
+    </div>
+    <div class="timeline-item">
+      <h3>02&nbsp;·&nbsp;Clustered Lighting</h3>
+      <p>Lights are culled into screen‑space Froxel grids (<em>f</em>ragment voxels) via compute shaders, keeping fragment shaders branch‑free and happy.</p>
+    </div>
+    <div class="timeline-item">
+      <h3>03&nbsp;·&nbsp;Bindless Materials</h3>
+      <p>A single descriptor array holds every texture. Materials are 64‑bit indices—<code>mov r64, [rdi+rcx*8]</code> never looked so good.</p>
+    </div>
+  </div>
+</section>
+
+<section id="gallery" class="fade">
+  <h2>Live Demo Gallery</h2>
+  <div class="gallery">
+    <figure class="canvas-box"><canvas id="cube" width="600" height="600"></canvas></figure>
+    <figure class="canvas-box"><canvas id="plasma" width="600" height="600"></canvas></figure>
+    <figure class="canvas-box"><canvas id="tunnel" width="600" height="600"></canvas></figure>
+  </div>
+</section>
+
+<section class="fade">
+  <h2>Performance Snapshots</h2>
+  <div class="counters">
+    <div class="counter" data-target="10240">0<span>draw calls / frame</span></div>
+    <div class="counter" data-target="621">0<span>shadowed lights</span></div>
+    <div class="counter" data-target="1.6">0<span>ms GPU time</span></div>
+    <div class="counter" data-target="144">0<span>FPS locked</span></div>
+  </div>
+</section>
+
+<section class="fade">
+  <h2>Retrospective &amp; Next Steps</h2>
+  <p>Building an engine solo forced brutal prioritization: “is this <em>clever</em> or is it <em>shipping</em>?”. The answer was rarely both. Future milestones:</p>
+  <ul style="margin:1em 0 0 1.25em;line-height:1.8">
+    <li>Implement sparse virtual texturing.</li>
+    <li>Rewrite math library in SIMD512 with JIT code‑gen.</li>
+    <li>Deploy WebGPU backend (this page proves the appetite!).</li>
+  </ul>
+</section>
+
+<footer>
+  Hand‑coded with ☕&nbsp;and&nbsp;{ } — © 2025 Your Name
+</footer>
+
+<script>
+/* ----------------------- SECTION FADE‑INS ---------------------------- */
+const io=new IntersectionObserver(entries=>entries.forEach(e=>{
+  if(e.isIntersecting){e.target.classList.add('visible');io.unobserve(e.target);}
+}),{threshold:.18});
+document.querySelectorAll('.fade').forEach(el=>io.observe(el));
+
+/* ----------------------- COUNTER ANIMATION --------------------------- */
+document.querySelectorAll('.counter').forEach(el=>{
+  const end=parseFloat(el.dataset.target);
+  const isInt=Number.isInteger(end);
+  let start=0,step;
+  const update=()=>{
+    const diff=end-start;
+    step=Math.max(diff/15, isInt?1:0.05);
+    start+=step;
+    if(start>=end){start=end;clearInterval(timer);}
+    el.firstChild.nodeValue=isInt?Math.round(start):start.toFixed(1);
+  };
+  const timer=setInterval(update,40);
+});
+
+/* -----------------------  CANVAS #1  –  WIRE CUBE -------------------- */
+function setupCube(){
+  const c=document.getElementById('cube'),ctx=c.getContext('2d');
+  const size=150, verts=[
+    [-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],
+    [-1,-1, 1],[1,-1,1],[1,1,1],[-1,1,1]];
+  const edges=[[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
+  let t=0;
+  const draw=()=>{
+    const w=c.width,h=c.height;
+    ctx.clearRect(0,0,w,h);
+    t+=0.015;
+    const rotY=[[ Math.cos(t),0,Math.sin(t)],
+                [0,1,0],
+                [-Math.sin(t),0,Math.cos(t)]];
+    const rotX=[[1,0,0],
+                [0,Math.cos(t*.7),-Math.sin(t*.7)],
+                [0,Math.sin(t*.7), Math.cos(t*.7)]];
+    const project=v=>{
+      // multiply rotX*rotY*v
+      let [x,y,z]=v;
+      [x,y,z]=[
+        x*rotY[0][0]+y*rotY[1][0]+z*rotY[2][0],
+        x*rotY[0][1]+y*rotY[1][1]+z*rotY[2][1],
+        x*rotY[0][2]+y*rotY[1][2]+z*rotY[2][2]];
+      [x,y,z]=[
+        x*rotX[0][0]+y*rotX[1][0]+z*rotX[2][0],
+        x*rotX[0][1]+y*rotX[1][1]+z*rotX[2][1],
+        x*rotX[0][2]+y*rotX[1][2]+z*rotX[2][2]];
+      const f= size/(z+3);
+      return [x*f+w/2,y*f+h/2];
+    };
+    ctx.strokeStyle='rgba(0,228,255,.9)';
+    ctx.lineWidth=2;
+    edges.forEach(([i,j])=>{
+      const a=project(verts[i]),b=project(verts[j]);
+      ctx.beginPath();ctx.moveTo(...a);ctx.lineTo(...b);ctx.stroke();
+    });
+    requestAnimationFrame(draw);
+  };draw();
+}
+
+/* -----------------------  CANVAS #2  –  PLASMA ----------------------- */
+function setupPlasma(){
+  const c=document.getElementById('plasma'),ctx=c.getContext('2d');
+  const w=c.width,h=c.height,img=ctx.createImageData(w,h);
+  let time=0;
+  const render=()=>{
+    time+=0.02;
+    const d=img.data;
+    for(let y=0,i=0;y<h;y++){
+      for(let x=0;x<w;x++,i+=4){
+        const v=Math.sin(x/32+time)+Math.sin(y/28-time)+Math.sin((x+y)/20);
+        const c1=(Math.sin(v+time)+1)*128;
+        const c2=(Math.sin(v+time*1.5)+1)*128;
+        const c3=(Math.sin(v+time*2)+1)*128;
+        d[i]=c1;d[i+1]=c2;d[i+2]=c3;d[i+3]=255;
+      }
+    }
+    ctx.putImageData(img,0,0);
+    requestAnimationFrame(render);
+  };render();
+}
+
+/* -----------------------  CANVAS #3  –  TUNNEL ----------------------- */
+function setupTunnel(){
+  const c=document.getElementById('tunnel'),ctx=c.getContext('2d');
+  const w=c.width,h=c.height;
+  let t=0;
+  const draw=()=>{
+    t+=0.015;
+    ctx.setTransform(1,0,0,1,0,0);
+    ctx.fillStyle='#000';ctx.fillRect(0,0,w,h);
+    for(let i=0;i<40;i++){
+      const z=(i/40)+((t)%1);
+      const s=1/(z*2);
+      const alpha=(1-z)*1.2;
+      ctx.save();
+      ctx.translate(w/2,h/2);
+      ctx.scale(s,s);
+      ctx.rotate(z*20+ t*2);
+      ctx.beginPath();
+      const len=50;
+      for(let a=0;a<6;a++){
+        ctx.lineTo(Math.cos(a*Math.PI/3)*len,Math.sin(a*Math.PI/3)*len);
+      }
+      ctx.closePath();
+      ctx.strokeStyle=`rgba(242,0,255,${alpha})`;
+      ctx.lineWidth=3;
+      ctx.stroke();
+      ctx.restore();
+    }
+    requestAnimationFrame(draw);
+  };draw();
+}
+
+/* -----------------------  KICK‑OFF  ---------------------------------- */
+setupCube();setupPlasma();setupTunnel();
+</script>
+</body>
+</html>
