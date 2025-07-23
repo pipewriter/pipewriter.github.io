@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Graphics Engine from Scratch: My Magnum Opus</title>
+    <style>
+        :root {
+            --earth-bg: #F5F5DC; /* Soft beige, like sunlit sand */
+            --earth-text: #4B3621; /* Rich dark brown, evoking fertile soil */
+            --earth-accent: #556B2F; /* Muted olive green, reminiscent of forest leaves */
+            --earth-highlight: #A0522D; /* Warm sienna, like terracotta clay */
+            --earth-shadow: #8B4513; /* Deeper brown for shadows, grounded and natural */
+            --earth-light: #D2B48C; /* Tan highlight, soft like weathered wood */
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Georgia', serif; /* Classic, earthy font for a timeless feel */
+            background-color: var(--earth-bg);
+            color: var(--earth-text);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        header {
+            position: relative;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            background: linear-gradient(to bottom, var(--earth-light), var(--earth-bg));
+            overflow: hidden;
+        }
+
+        header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle, rgba(85,107,47,0.2), transparent);
+            animation: pulse 10s infinite ease-in-out;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 0.5; transform: scale(1); }
+            50% { opacity: 0.8; transform: scale(1.05); }
+        }
+
+        h1 {
+            font-size: 4rem;
+            margin: 0;
+            text-shadow: 2px 2px 4px var(--earth-shadow);
+            animation: fadeInDown 2s ease-out;
+        }
+
+        @keyframes fadeInDown {
+            from { opacity: 0; transform: translateY(-50px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        p {
+            font-size: 1.2rem;
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 0 20px;
+        }
+
+        section {
+            padding: 80px 20px;
+            position: relative;
+            background: var(--earth-bg);
+        }
+
+        section:nth-child(even) {
+            background: linear-gradient(to right, var(--earth-bg), var(--earth-light));
+        }
+
+        h2 {
+            font-size: 2.5rem;
+            color: var(--earth-accent);
+            text-align: center;
+            margin-bottom: 40px;
+            position: relative;
+            animation: fadeIn 1.5s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .feature {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 40px;
+        }
+
+        .feature-item {
+            background: var(--earth-light);
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 8px var(--earth-shadow);
+            max-width: 300px;
+            text-align: center;
+            transform: translateY(20px);
+            opacity: 0;
+            transition: transform 0.5s, opacity 0.5s;
+        }
+
+        .feature-item.visible {
+            transform: translateY(0);
+            opacity: 1;
+        }
+
+        canvas {
+            border: 2px solid var(--earth-accent);
+            border-radius: 10px;
+            margin: 20px auto;
+            display: block;
+            background: var(--earth-bg);
+        }
+
+        .parallax {
+            position: relative;
+            height: 400px;
+            overflow: hidden;
+        }
+
+        .parallax-bg {
+            position: absolute;
+            top: -50px;
+            left: 0;
+            width: 100%;
+            height: 500px;
+            background: linear-gradient(to bottom, var(--earth-accent), var(--earth-highlight));
+            transform: translateY(0);
+            transition: transform 0.1s;
+        }
+
+        footer {
+            text-align: center;
+            padding: 20px;
+            background: var(--earth-light);
+            color: var(--earth-text);
+        }
+
+        /* Particle animation for canvas */
+        .demo-section {
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Graphics Engine from Scratch: My Magnum Opus</h1>
+        <p>As a passionate graphics engineer, I built a complete rendering engine from the ground up using low-level APIs. This project showcases real-time rendering, shader pipelines, and physics simulations—all in pure C++ with OpenGL. Dive into the earthy depths of my creation.</p>
+    </header>
+
+    <section id="overview">
+        <h2>Project Overview</h2>
+        <p>This graphics engine is my crowning achievement, designed to handle complex scenes with efficient ray tracing, particle effects, and terrain generation. Inspired by natural landscapes, it renders earth-toned worlds with stunning realism.</p>
+        <div class="feature">
+            <div class="feature-item">
+                <h3>Core Rendering</h3>
+                <p>Custom pipeline for deferred shading and ambient occlusion.</p>
+            </div>
+            <div class="feature-item">
+                <h3>Physics Integration</h3>
+                <p>Real-time simulations using Bullet Physics, grounded in natural forces.</p>
+            </div>
+            <div class="feature-item">
+                <h3>Optimization</h3>
+                <p>Achieved 60+ FPS on mid-range hardware through meticulous culling.</p>
+            </div>
+        </div>
+    </section>
+
+    <section id="architecture">
+        <h2>Architecture Breakdown</h2>
+        <p>The engine's architecture is modular, with separate layers for input, rendering, and simulation. Here's a simplified view:</p>
+        <canvas id="archCanvas" width="800" height="400"></canvas>
+    </section>
+
+    <section id="challenges">
+        <h2>Challenges & Solutions</h2>
+        <p>Building from scratch meant tackling memory leaks, shader bugs, and performance bottlenecks. I solved these with rigorous testing and profiling tools.</p>
+        <div class="parallax">
+            <div class="parallax-bg"></div>
+            <p style="position: relative; z-index: 1; color: white; text-align: center; padding-top: 180px; font-size: 1.5rem;">Overcoming obstacles, like sculpting clay into form.</p>
+        </div>
+    </section>
+
+    <section id="demos" class="demo-section">
+        <h2>Live Demos & Generated Samples</h2>
+        <p>Below are procedurally generated samples mimicking the engine's output: a particle system (earth-toned fireflies) and a terrain renderer.</p>
+        <canvas id="particleCanvas" width="600" height="400"></canvas>
+        <canvas id="terrainCanvas" width="600" height="400"></canvas>
+    </section>
+
+    <section id="conclusion">
+        <h2>Conclusion</h2>
+        <p>This project not only honed my skills but also embodied my love for natural, grounded designs. Contact me to discuss collaborations!</p>
+    </section>
+
+    <footer>
+        <p>&copy; 2025 Your Name | Graphics Engineer Portfolio</p>
+    </footer>
+
+    <script>
+        // Intersection Observer for fade-ins
+        const observer = new IntersectionObserver(entries => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('visible');
+                }
+            });
+        }, { threshold: 0.1 });
+
+        document.querySelectorAll('.feature-item').forEach(item => observer.observe(item));
+
+        // Parallax effect
+        window.addEventListener('scroll', () => {
+            const parallax = document.querySelector('.parallax-bg');
+            const scrollPos = window.scrollY;
+            parallax.style.transform = `translateY(${scrollPos * 0.5}px)`;
+        });
+
+        // Architecture Diagram on Canvas
+        const archCtx = document.getElementById('archCanvas').getContext('2d');
+        archCtx.fillStyle = '#556B2F'; // Olive green
+        archCtx.fillRect(100, 100, 200, 100); // Input Layer
+        archCtx.fillStyle = '#A0522D'; // Sienna
+        archCtx.fillRect(350, 100, 200, 100); // Rendering Layer
+        archCtx.fillStyle = '#8B4513'; // Deep brown
+        archCtx.fillRect(600, 100, 200, 100); // Simulation Layer
+
+        archCtx.fillStyle = '#4B3621';
+        archCtx.font = '16px Georgia';
+        archCtx.fillText('Input', 170, 150);
+        archCtx.fillText('Rendering', 410, 150);
+        archCtx.fillText('Simulation', 650, 150);
+
+        // Arrows
+        archCtx.beginPath();
+        archCtx.moveTo(300, 150);
+        archCtx.lineTo(350, 150);
+        archCtx.strokeStyle = '#4B3621';
+        archCtx.stroke();
+        archCtx.beginPath();
+        archCtx.moveTo(550, 150);
+        archCtx.lineTo(600, 150);
+        archCtx.stroke();
+
+        // Particle System Demo
+        const particleCanvas = document.getElementById('particleCanvas');
+        const pCtx = particleCanvas.getContext('2d');
+        let particles = [];
+
+        function createParticle() {
+            return {
+                x: Math.random() * 600,
+                y: Math.random() * 400,
+                vx: (Math.random() - 0.5) * 2,
+                vy: (Math.random() - 0.5) * 2,
+                size: Math.random() * 5 + 2,
+                color: `rgba(165, 82, 45, ${Math.random() * 0.5 + 0.5})` // Earthy sienna tones
+            };
+        }
+
+        for (let i = 0; i < 100; i++) {
+            particles.push(createParticle());
+        }
+
+        function animateParticles() {
+            pCtx.clearRect(0, 0, 600, 400);
+            particles.forEach(p => {
+                p.x += p.vx;
+                p.y += p.vy;
+                if (p.x < 0 || p.x > 600) p.vx *= -1;
+                if (p.y < 0 || p.y > 400) p.vy *= -1;
+                pCtx.beginPath();
+                pCtx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                pCtx.fillStyle = p.color;
+                pCtx.fill();
+            });
+            requestAnimationFrame(animateParticles);
+        }
+        animateParticles();
+
+        // Terrain Demo (simple wavy lines)
+        const terrainCanvas = document.getElementById('terrainCanvas');
+        const tCtx = terrainCanvas.getContext('2d');
+
+        function drawTerrain() {
+            tCtx.clearRect(0, 0, 600, 400);
+            tCtx.beginPath();
+            tCtx.moveTo(0, 400);
+            for (let x = 0; x <= 600; x += 10) {
+                const y = 300 + Math.sin(x / 50 + Date.now() / 1000) * 50; // Animate wave
+                tCtx.lineTo(x, y);
+            }
+            tCtx.lineTo(600, 400);
+            tCtx.closePath();
+            tCtx.fillStyle = '#556B2F'; // Olive green hills
+            tCtx.fill();
+
+            // Sky gradient
+            const grad = tCtx.createLinearGradient(0, 0, 0, 400);
+            grad.addColorStop(0, '#D2B48C'); // Tan sky
+            grad.addColorStop(1, '#F5F5DC');
+            tCtx.fillStyle = grad;
+            tCtx.fillRect(0, 0, 600, 400);
+            requestAnimationFrame(drawTerrain);
+        }
+        drawTerrain();
+    </script>
+</body>
+</html>

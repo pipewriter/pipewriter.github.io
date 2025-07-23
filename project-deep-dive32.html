@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mind Palace Game Engine — Deep Dive</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+/* -------  THEME  (earth‑tone, accessibility‑checked) ------------------- */
+:root{
+  --bg-1:#2e2a24;          /* espresso */
+  --bg-2:#3b372f;          /* dark khaki */
+  --fg-1:#e9e4d9;          /* bone */
+  --accent-1:#8d7851;      /* flax */
+  --accent-2:#c19c77;      /* sand */
+  --accent-3:#5b6b47;      /* sage */
+  --accent-4:#a2673f;      /* burnt umber */
+  --radius: 10px;
+  --shadow: 0 8px 20px rgba(0,0,0,.4);
+  --code-size: 0.85rem;
+  --speed: 900ms;
+  font-family: "Segoe UI", Roboto, sans-serif;
+  color-scheme: dark;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:linear-gradient(130deg,var(--bg-1),var(--bg-2));
+  color:var(--fg-1);
+  overflow-x:hidden;
+  line-height:1.5;
+}
+h1,h2,h3{font-weight:600; letter-spacing:.03em;}
+h1{
+  font-size:clamp(2.5rem,5vw,4rem);
+  text-align:center;
+  margin-top:3rem;
+  margin-bottom:1rem;
+  animation:fadeSlide var(--speed) ease-out both;
+}
+h2{
+  font-size:clamp(1.4rem,3vw,2rem);
+  margin-bottom:.5rem;
+  color:var(--accent-2);
+}
+section{
+  padding:4rem 7vw;
+  display:flex;
+  flex-wrap:wrap;
+  align-items:flex-start;
+  gap:3rem;
+  position:relative;
+  isolation:isolate;
+}
+section:nth-of-type(even){background:rgba(255,255,255,.03)}
+article{
+  flex:1 1 340px;
+  min-width:300px;
+  max-width:650px;
+}
+canvas.demo{
+  flex:1 1 340px;
+  border-radius:var(--radius);
+  box-shadow:var(--shadow);
+  width:100%;
+  height:auto;
+}
+pre{
+  background:var(--bg-2);
+  padding:1rem 1.2rem;
+  border-radius:var(--radius);
+  overflow:auto;
+  font-size:var(--code-size);
+  line-height:1.35;
+  border-left:4px solid var(--accent-3);
+  box-shadow:var(--shadow);
+  white-space:pre;
+  scroll-margin-top:6rem;
+}
+code{font-family:"Cascadia Code",Consolas,monospace;color:var(--accent-2)}
+/* syntax tint (very lightweight) */
+.keyword {color:var(--accent-3)}
+.type    {color:var(--accent-1)}
+.number  {color:#ddb892}
+.comment {color:#7a6a5e;font-style:italic}
+.string  {color:#f4dca3}
+
+/* reveal effect ---------------------------------------------------------*/
+.reveal{opacity:0;transform:translateY(40px);transition:opacity .7s ease-out,transform .7s ease-out}
+.reveal.visible{opacity:1;transform:none}
+
+/* background parallax decorative rings ---------------------------------*/
+.ring{
+  position:absolute; border:1px solid rgba(255,255,255,.05);
+  border-radius:50%; pointer-events:none;
+  animation:spin 80s linear infinite reverse;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes fadeSlide{from{opacity:0;transform:translateY(30px)}to{opacity:1;transform:none}}
+
+/* nav pill --------------------------------------------------------------*/
+nav{
+  position:fixed;right:1rem;top:50%;transform:translateY(-50%);
+  display:flex;flex-direction:column;gap:.7rem;z-index:1000;
+}
+nav a{
+  width:14px;height:14px;border-radius:50%;
+  background:var(--accent-1);display:block;transition:background .3s ease;
+  border:2px solid var(--fg-1);box-shadow:0 0 5px rgba(0,0,0,.4);
+}
+nav a:hover,nav a:focus{background:var(--accent-3);outline:none}
+
+/* sprite demo squares ---------------------------------------------------*/
+.sprite{position:absolute;width:12px;height:12px;background:var(--accent-4);opacity:.85}
+
+/* token bucket bar ------------------------------------------------------*/
+#tokenBar{
+  width:100%;height:16px;border-radius:8px;background:var(--bg-2);
+  overflow:hidden;box-shadow:var(--shadow);margin-top:.8rem;
+}
+#tokenFill{
+  width:100%;height:100%;background:var(--accent-3);transition:width .2s linear;
+}
+
+/* responsive tweaks -----------------------------------------------------*/
+@media(max-width:700px){
+  section{flex-direction:column}
+}
+</style>
+</head>
+<body>
+<nav>
+ <a href="#terrain" title="Procedural Terrain"></a>
+ <a href="#voronoi"  title="Voronoi Colour"></a>
+ <a href="#quadtree" title="Spatial Index"></a>
+ <a href="#batcher"  title="Sprite Batcher"></a>
+ <a href="#rate"     title="Token Bucket"></a>
+</nav>
+
+<h1>Mind Palace Game Engine<br><small style="font-size:1rem;color:var(--accent-1)">hand‑rolled graphics tech in Java / OpenGL</small></h1>
+
+<!-- decorative parallax rings -->
+<div class="ring" style="width:700px;height:700px;top:-250px;left:-180px"></div>
+<div class="ring" style="width:1200px;height:1200px;bottom:-650px;right:-400px"></div>
+
+<!-- ============================================================ -->
+<section id="terrain" class="reveal">
+  <article>
+    <h2>Procedural Terrain — Multi‑Octave Perlin Noise</h2>
+<pre><code>
+<span class="keyword">public</span> <span class="type">double</span> noise(<span class="type">double</span> x,<span class="type">double</span> y){
+    <span class="keyword">if</span>(octaves &lt;=<span class="number">1</span>)<span class="keyword">return</span> singleOctaveNoise(x,y);
+    <span class="type">double</span> total=<span class="number">0</span>,max=<span class="number">0</span>,amp=<span class="number">1</span>,freq=<span class="number">1</span>;
+    <span class="keyword">for</span>(<span class="type">int</span> i=<span class="number">0</span>;i&lt;octaves;i++){
+        total+=singleOctaveNoise(x*freq,y*freq)*amp;
+        max+=amp; amp*=persistence; freq*=lacunarity;
+    }
+    <span class="keyword">return</span> max&gt;<span class="number">0</span> ? total/max : total;
+}</code></pre>
+    <p>This tiny loop churns out stable, seed‑based heightmaps that
+       feed my biome, foliage and lighting passes. The demo canvas
+       renders a fresh slice every refresh so reviewers *see* the math
+       at work.</p>
+  </article>
+  <canvas id="terrainCanvas" class="demo" width="500" height="250"></canvas>
+</section>
+
+<!-- ============================================================ -->
+<section id="voronoi" class="reveal">
+  <canvas id="voronoiCanvas" class="demo" width="500" height="250"></canvas>
+  <article>
+    <h2>Infinite Voronoi Colour Sampling</h2>
+<pre><code>
+<span class="keyword">public static</span> Color getColorAt(<span class="type">double</span> ax,<span class="type">double</span> ay,
+                                      <span class="type">int</span> cellSize){
+    <span class="type">int</span> cellX=(<span class="type">int</span>)Math.floor(ax/cellSize);
+    <span class="type">int</span> cellY=(<span class="type">int</span>)Math.floor(ay/cellSize);
+    <span class="type">double</span> minDist2=<span class="type">Double</span>.MAX_VALUE; Color nearest=Color.BLACK;
+    <span class="keyword">for</span>(<span class="type">int</span> i=cellX-<span class="number">1</span>;i&lt;=cellX+<span class="number">1</span>;i++)
+      <span class="keyword">for</span>(<span class="type">int</span> j=cellY-<span class="number">1</span>;j&lt;=cellY+<span class="number">1</span>;j++){
+          Seed s=getSeedForCell(i,j,cellSize);
+          <span class="type">double</span> dx=ax-s.x,dy=ay-s.y,d2=dx*dx+dy*dy;
+          <span class="keyword">if</span>(d2&lt;minDist2){minDist2=d2;nearest=s.color;}
+      }
+    <span class="keyword">return</span> nearest;
+}</code></pre>
+    <p>Deterministic hashing means *zero* allocations per lookup and an
+       infinite, wrap‑free world palette. On the right, a live Voronoi
+       preview re‑seeds every load.</p>
+  </article>
+</section>
+
+<!-- ============================================================ -->
+<section id="quadtree" class="reveal">
+  <article>
+    <h2>Dynamic Spatial Index — Mutable Quad‑tree</h2>
+<pre><code>
+<span class="keyword">public</span> <span class="type">boolean</span> update(GameObject obj,
+                      <span class="type">double</span> oldX,<span class="type">double</span> oldY,
+                      <span class="type">double</span> newX,<span class="type">double</span> newY){
+    <span class="type">long</span> from=GameObject.getSectorKeyGiven((<span class="type">int</span>)oldX,(<span class="type">int</span>)oldY);
+    <span class="type">long</span> to  =GameObject.getSectorKeyGiven((<span class="type">int</span>)newX ,(<span class="type">int</span>)newY);
+    Main.neededNow.add(from); Main.neededNow.add(to);
+    <span class="keyword">if</span>(!(Main.InPlay.contains(from)&amp;&amp;Main.InPlay.contains(to))) <span class="keyword">return</span> false;
+    remove(oldX,oldY); obj.x=newX; obj.z=newY; add(obj); <span class="keyword">return</span> true;
+}</code></pre>
+    <p>Delete‑and‑re‑insert keeps tree balancing trivial while the
+       overlay demo animates moving dots whose colours map to sector
+       reloads.</p>
+  </article>
+  <canvas id="quadCanvas" class="demo" width="500" height="250"></canvas>
+</section>
+
+<!-- ============================================================ -->
+<section id="batcher" class="reveal">
+  <canvas id="spriteCanvas" class="demo" width="500" height="250"></canvas>
+  <article>
+    <h2>High‑Throughput Sprite Batcher (OpenGL)</h2>
+<pre><code>
+glEnableVertexAttribArray(<span class="number">0</span>);
+glVertexAttribPointer(<span class="number">0</span>, <span class="number">1</span>, GL_FLOAT, false, stride, <span class="number">0</span>);
+glEnableVertexAttribArray(<span class="number">1</span>);
+glVertexAttribPointer(<span class="number">1</span>, <span class="number">3</span>, GL_FLOAT, false, stride, <span class="number">4</span>);
+...
+glEnableVertexAttribArray(<span class="number">13</span>);
+glVertexAttribIPointer(<span class="number">13</span>,<span class="number">1</span>,GL_UNSIGNED_INT,stride,<span class="number">128</span>);</code></pre>
+    <p>A single interleaved VBO carries every per‑sprite attribute,
+       shaving draw‑calls down to a constant <em>one</em> per layer. The
+       canvas mocks 400 sprites stepping in lock‑step to highlight the
+       idea.</p>
+  </article>
+</section>
+
+<!-- ============================================================ -->
+<section id="rate" class="reveal">
+  <article>
+    <h2>Thread‑Safe Token‑Bucket Rate Limiter</h2>
+<pre><code>
+<span class="keyword">public synchronized</span> void sendRequest(Runnable r) <span class="keyword">throws</span> InterruptedException{
+    <span class="keyword">while</span>(permits==<span class="number">0</span> || System.currentTimeMillis()&lt;nextReset){
+        <span class="type">long</span> w=nextReset-System.currentTimeMillis();
+        <span class="keyword">if</span>(w&gt;<span class="number">0</span>) wait(w); <span class="keyword">else</span> resetPermits();
+    } permits--; r.run();
+}
+<span class="keyword">private synchronized</span> void resetPermits(){
+    permits=MAX; nextReset=System.currentTimeMillis()+PERIOD; notifyAll();
+}</code></pre>
+    <p>Classic concurrency pattern, no extra libraries. The bar below
+       drains in real‑time to visualise token consumption.</p>
+    <div id="tokenBar"><div id="tokenFill"></div></div>
+  </article>
+</section>
+
+<!-- ============================================================ -->
+<footer style="text-align:center;padding:3rem 1rem;font-size:.9rem;color:var(--accent-1)">
+  Built with ☕, OpenGL and way too much Perlin noise.<br>
+  © 2025 Pipewriter
+</footer>
+
+<script>
+/* ------- intersection observer for reveal anim -------------------- */
+const io=new IntersectionObserver((entries)=>
+  entries.forEach(e=>e.target.classList.toggle('visible',e.isIntersecting)),
+  {threshold:.18});
+document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
+
+/* ------- utility: seeded RNG -------------------------------------- */
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;
+ a=Math.imul(a^a>>>15,1|a);a^=a+a>>>7;return ((a>>>0)/4294967296)}}
+/* ------- PERLIN  / value noise ------------------------------------ */
+function perlin(width,height,ctx){
+ const rand=mulberry32(12345);
+ const grad=[];
+ for(let i=0;i<256;i++)grad[i]=[rand()*2-1,rand()*2-1];
+ function dotGrid(ix,iy,x,y){
+   const g=grad[(ix+iy*57)&255]; return g[0]*(x-ix)+g[1]*(y-iy);
+ }
+ function lerp(a,b,t){return a+(b-a)*t}
+ function fade(t){return t*t*t*(t*(t*6-15)+10)}
+ const img=ctx.createImageData(width,height),d=img.data;
+ for(let y=0;y<height;y++){
+  for(let x=0;x<width;x++){
+   const scale=.018;
+   let xf=x*scale,yf=y*scale;
+   const x0=Math.floor(xf),x1=x0+1,y0=Math.floor(yf),y1=y0+1;
+   const sx=fade(xf-x0),sy=fade(yf-y0);
+   const n0=dotGrid(x0,y0,xf,yf);
+   const n1=dotGrid(x1,y0,xf,yf);
+   const ix0=lerp(n0,n1,sx);
+   const n2=dotGrid(x0,y1,xf,yf);
+   const n3=dotGrid(x1,y1,xf,yf);
+   const ix1=lerp(n2,n3,sx);
+   let v=lerp(ix0,ix1,sy);
+   v=(v+1)/2; // 0..1
+   const col=v*255;
+   const idx=(x+y*width)*4;
+   d[idx]=d[idx+1]=d[idx+2]=col;
+   d[idx+3]=255;
+  }
+ }
+ ctx.putImageData(img,0,0);
+}
+
+/* ------- Voronoi --------------------------------------------------- */
+function voronoi(width,height,cell,ctx){
+ const rand=mulberry32(9876),seeds=[];
+ const cols=[[141,120,81],[193,156,119],[91,107,71],[162,103,63]];
+ for(let i=0;i<width/cell+3;i++)
+  for(let j=0;j<height/cell+3;j++)
+   seeds.push({x:(i-2)*cell+rand()*cell,y:(j-2)*cell+rand()*cell,
+               c:cols[Math.floor(rand()*cols.length)]});
+ const img=ctx.createImageData(width,height),d=img.data;
+ for(let y=0;y<height;y++){
+  for(let x=0;x<width;x++){
+   let md=1e9, col=cols[0];
+   for(const s of seeds){
+    const dx=x-s.x,dy=y-s.y,dist=dx*dx+dy*dy;
+    if(dist<md){md=dist; col=s.c;}
+   }
+   const idx=(x+y*width)*4;
+   d[idx]=col[0]; d[idx+1]=col[1]; d[idx+2]=col[2]; d[idx+3]=255;
+  }
+ }
+ ctx.putImageData(img,0,0);
+}
+
+/* ------- Quad tree demo ------------------------------------------- */
+function quadDemo(canvas){
+ const ctx=canvas.getContext('2d');
+ const size=canvas.width, n=60, sector=100;
+ const objs=Array.from({length:n},()=>({
+   x:Math.random()*size,y:Math.random()*size,
+   dx:(Math.random()-.5)*1.4,dy:(Math.random()-.5)*1.4,
+   col:`hsl(${30+Math.random()*40}deg 40% 60%)`
+ }));
+ function tick(){
+   ctx.fillStyle='rgba(46,42,36,.25)';
+   ctx.fillRect(0,0,size,size);
+   ctx.strokeStyle='rgba(140,120,80,.3)';ctx.lineWidth=1;
+   for(let i=sector;i<size;i+=sector){ctx.beginPath();
+     ctx.moveTo(i,0);ctx.lineTo(i,size);ctx.moveTo(0,i);ctx.lineTo(size,i);ctx.stroke();}
+   for(const o of objs){
+     o.x+=o.dx;o.y+=o.dy;
+     if(o.x<0||o.x>size)o.dx*=-1;
+     if(o.y<0||o.y>size)o.dy*=-1;
+     ctx.fillStyle=o.col;
+     ctx.beginPath();ctx.arc(o.x,o.y,4,0,6.28);ctx.fill();
+   }
+   requestAnimationFrame(tick);
+ }
+ tick();
+}
+
+/* ------- Sprite batcher squares ----------------------------------- */
+function spriteDemo(canvas){
+ const ctx=canvas.getContext('2d'),w=canvas.width,h=canvas.height;
+ const sprites=Array.from({length:400},(_,i)=>({
+   x:Math.random()*w,y:Math.random()*h,
+   speed:0.3+Math.random()*0.7
+ }));
+ function tick(t){
+   ctx.clearRect(0,0,w,h);
+   for(const s of sprites){
+     s.x+=s.speed;if(s.x>w)s.x=-10;
+     ctx.fillStyle='rgba(162,103,63,.9)';
+     ctx.fillRect(s.x,s.y,6,6);
+   }
+   requestAnimationFrame(tick);
+ }
+ tick();
+}
+
+/* ------- Token bucket bar ----------------------------------------- */
+let permits=100,max=100;
+function drain(){
+  permits=Math.max(0,permits-1);
+  document.getElementById('tokenFill').style.width=(permits/max*100)+'%';
+  if(permits>0)setTimeout(drain,120);
+  else{setTimeout(()=>{permits=max;drain()},1600);}
+}
+drain();
+
+/* ------- init canvases -------------------------------------------- */
+window.addEventListener('DOMContentLoaded',()=>{
+  perlin(500,250,document.getElementById('terrainCanvas').getContext('2d'));
+  voronoi(500,250,50,document.getElementById('voronoiCanvas').getContext('2d'));
+  quadDemo(document.getElementById('quadCanvas'));
+  spriteDemo(document.getElementById('spriteCanvas'));
+});
+</script>
+</body>
+</html>

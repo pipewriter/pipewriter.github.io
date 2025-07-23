@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Engine‑from‑Scratch Deep Dive — Mind Palace</title>
+
+<!-- =========  COLOR SYSTEM (earth‑tone palette)  ========= -->
+<style>
+:root{
+  --tan-50:#F4EFE7; --tan-100:#E5DAC4; --tan-200:#D9C6A3;
+  --clay-300:#C19D6E; --clay-400:#A9825A; --clay-500:#8D6748;
+  --soil-600:#6E4F33; --soil-700:#4D3A24; --soil-800:#362819;
+  --accent:#C47F46; --accent-soft:#E9C3A2;
+  --radius:14px; --code-bg:var(--soil-800); --code-fg:var(--tan-50);
+  --ease:smooth cubic-bezier(.25,.7,.25,1);
+  scroll-behavior:smooth;
+}
+
+/* =========  GLOBAL LAYOUT  ========= */
+*{margin:0;padding:0;box-sizing:border-box;font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;}
+body{background:var(--tan-50);color:var(--soil-800);line-height:1.55;overflow-x:hidden;}
+h1,h2,h3{font-weight:600;letter-spacing:.5px;color:var(--soil-700);}
+h1{font-size:clamp(2.5rem,6vw,4rem);}
+h2{font-size:clamp(1.6rem,4vw,2.3rem);margin-bottom:.4em;}
+section{padding:6rem min(6vw,3rem);}
+pre{background:var(--code-bg);color:var(--code-fg);padding:1rem;border-radius:var(--radius);overflow-x:auto;font-size:.85rem;}
+code{font-family:"JetBrains Mono",Consolas,"Courier New",monospace;}
+
+/* Hero */
+.hero{height:80vh;display:flex;flex-direction:column;justify-content:center;align-items:center;background:linear-gradient(135deg,var(--clay-300)0%,var(--tan-100)100%);position:relative;text-align:center;}
+.hero::after{content:"";position:absolute;inset:0;background:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 160 160"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="%23FFFFFF" stop-opacity="0.03"/><stop offset="1" stop-color="%23000000" stop-opacity="0.03"/></linearGradient></defs><rect width="160" height="160" fill="url(%23g)"/></svg>');mix-blend-mode:overlay;pointer-events:none;}
+.hero p{max-width:32rem;margin-top:1rem;font-size:1.1rem;color:var(--soil-600);}
+
+/* Section wrapper */
+.slice{display:grid;grid-template-columns:1fr 1fr;gap:3rem;align-items:center;opacity:0;transform:translateY(60px);transition:opacity .9s var(--ease),transform .9s var(--ease);}
+.slice:nth-child(even){grid-template-columns:1fr 1fr;direction:rtl;}
+.slice:nth-child(even) .text{direction:ltr;}
+.slice.visible{opacity:1;transform:none;}
+.text p{margin:.9rem 0;}
+canvas.demo{width:100%;border-radius:var(--radius);box-shadow:0 8px 24px rgba(0,0,0,.08);aspect-ratio:4/3;background:var(--soil-700);}
+
+/* Floating flare for spice */
+.flare{position:absolute;width:18rem;height:18rem;border-radius:50%;filter:blur(50px);opacity:.15;z-index:-1;pointer-events:none;}
+#flare1{background:var(--accent);top:-6rem;left:-6rem;}
+#flare2{background:var(--accent);bottom:-6rem;right:-6rem;}
+
+/* Footer */
+footer{padding:4rem 2rem;text-align:center;font-size:.9rem;color:var(--soil-600);}
+
+/* Scrollbar colors (chrome‑only) */
+body::-webkit-scrollbar{width:8px;}
+body::-webkit-scrollbar-thumb{background:var(--clay-400);border-radius:4px;}
+</style>
+</head>
+<body>
+<!-- Hero -->
+<header class="hero">
+  <div class="flare" id="flare1"></div><div class="flare" id="flare2"></div>
+  <h1>Mind‑Palace Engine <br><small style="font-size:.45em;font-weight:400">A graphics‑first sandbox built from scratch</small></h1>
+  <p>Selected deep‑dive highlights that prove hands‑on mastery of algorithms, data‑oriented design, multithreading, and real‑time graphics.</p>
+</header>
+
+<!-- ========== 1. PERLIN NOISE ========= -->
+<section class="slice" id="perlin">
+  <canvas class="demo" data-demo="perlin"></canvas>
+  <div class="text">
+    <h2>1 · Multi‑Octave Perlin Noise</h2>
+    <p>A reusable 2‑D module that feeds directly into the terrain shader and art‑direction LUTs.</p>
+<pre><code class="language-java">
+public class PerlinNoise {
+  private final int[] p = new int[512];
+  public PerlinNoise(long seed) {
+    Random r = new Random(seed);
+    for(int i=0;i&lt;256;i++){p[i]=i;}
+    for(int i=255;i&gt;0;i--){
+      int j=r.nextInt(i+1);
+      int tmp=p[i]; p[i]=p[j]; p[j]=tmp;
+    }
+    System.arraycopy(p,0,p,256,256);
+  }
+  // multi‑octave sample
+  public float noise(float x,float y,int oct,float pers,float lac){
+    float amp=1,freq=1,sum=0,ampSum=0;
+    for(int o=0;o&lt;oct;o++){
+       sum+=amp*single(x*freq,y*freq);
+       ampSum+=amp; amp*=pers; freq*=lac;
+    }
+    return sum/ampSum;
+  }
+  private float fade(float t){return t*t*t*(t*(t*6-15)+10);}
+  private float grad(int h,float x,float y){
+    return ((h&1)==0?x:-x)+((h&2)==0?y:-y);
+  }
+  private float single(float x,float y){
+    int X=(int)Math.floor(x)&255,Y=(int)Math.floor(y)&255;
+    x-=Math.floor(x); y-=Math.floor(y);
+    float u=fade(x),v=fade(y);
+    int A=p[X]+Y,AA=p[A],AB=p[A+1],
+        B=p[X+1]+Y,BA=p[B],BB=p[B+1];
+    float lerp1 = lerp(u, grad(p[AA],x,y), grad(p[BA],x-1,y));
+    float lerp2 = lerp(u, grad(p[AB],x,y-1), grad(p[BB],x-1,y-1));
+    return lerp(v, lerp1, lerp2);
+  }
+  private float lerp(float t,float a,float b){return a+t*(b-a);}
+}
+</code></pre>
+  </div>
+</section>
+
+<!-- ========== 2. INFINITE VORONOI ========= -->
+<section class="slice" id="voronoi">
+  <canvas class="demo" data-demo="voronoi"></canvas>
+  <div class="text">
+    <h2>2 · Infinite Voronoi Palette</h2>
+    <p>Hash‑driven lookup—unbounded plane with zero allocations and deterministic colors.</p>
+<pre><code class="language-java">
+public record Vec2i(int x,int y){}
+public class InfiniteVoronoi {
+  private static int hash(int x,int y){
+    int h=x*0x8da6b343 ^ y*0xd8163841;
+    h ^= (h>>>13); return h;
+  }
+  public static int getColorAt(int x,int y){
+    int cellX=Math.floorDiv(x,32), cellY=Math.floorDiv(y,32);
+    double best=1e9; int winner=0;
+    for(int dy=-1;dy&lt;=1;dy++)
+      for(int dx=-1;dx&lt;=1;dx++){
+        int cx=cellX+dx, cy=cellY+dy;
+        int h=hash(cx,cy);   // jitter
+        double ox=(h&0xff)/255.0, oy=((h>>8)&0xff)/255.0;
+        double px=(cx+ox)*32, py=(cy+oy)*32;
+        double d=(x-px)*(x-px)+(y-py)*(y-py);
+        if(d&lt;best){best=d;winner=h;}
+      }
+    // HSB palette mapping
+    float hue=(winner&0xff)/255f;
+    return Color.HSBtoRGB(hue,0.4f,0.9f);
+  }
+}
+</code></pre>
+  </div>
+</section>
+
+<!-- ========== 3. QUADTREE ========= -->
+<section class="slice" id="quadtree">
+  <canvas class="demo" data-demo="quadtree"></canvas>
+  <div class="text">
+    <h2>3 · Hot‑Swappable QuadTree</h2>
+    <p>Move, insert and delete in <em>O(log n)</em> while streaming sectors in/out.</p>
+<pre><code class="language-java">
+class QuadTree {
+  final Rect bounds; List&lt;Entity&gt; here=new ArrayList<>();
+  QuadTree[] child=null;
+  void insert(Entity e){
+    if(child!=null){
+      int i=subIndex(e.pos); if(i!=-1){child[i].insert(e);return;}
+    }
+    here.add(e);
+    if(here.size()>32 && child==null) split();
+  }
+  void update(Entity e,Vec2 oldPos){
+     if(!bounds.contains(e.pos)){
+        remove(e); insert(e); // re‑home entity
+     }else if(child!=null){
+        int i=subIndex(e.pos), j=subIndex(oldPos);
+        if(i!=j && j!=-1){child[j].remove(e); child[i].insert(e);}
+     }
+  }
+  /* remove(), query(), split() … */
+}
+</code></pre>
+  </div>
+</section>
+
+<!-- ========== 4. CHUNK AGGREGATOR ========= -->
+<section class="slice" id="aggregator">
+  <canvas class="demo" data-demo="aggregator"></canvas>
+  <div class="text">
+    <h2>4 · High‑Throughput Aggregator</h2>
+    <p>Off‑heap batching of 64 terrain chunks with explicit producer/consumer flow‑control.</p>
+<pre><code class="language-java">
+class AggregatorLayer implements Runnable {
+  private final ByteBuffer buf = ByteBuffer.allocateDirect(64*CHUNK_BYTES);
+  private final BlockingQueue&lt;Chunk&gt; in;
+  private final IntBuffer signal = IntBuffer.allocate(1);
+  public void run(){
+    while(true){
+      buf.clear(); int batched=0;
+      while(batched&lt;64){
+        Chunk c; try{c=in.poll(2,TimeUnit.MILLISECONDS);}catch(...) {continue;}
+        if(c==null)break;
+        c.write(buf); batched++;
+      }
+      if(batched&gt;0){
+        GL45.glNamedBufferSubData(storageHandle,0,buf);
+        synchronized(signal){ signal.set(0,batched); signal.notify(); }
+      }
+    }
+  }
+}
+</code></pre>
+  </div>
+</section>
+
+<!-- ========== 5. BINARY SNAPSHOT ========= -->
+<section class="slice" id="snapshot">
+  <canvas class="demo" data-demo="snapshot"></canvas>
+  <div class="text">
+    <h2>5 · Reflection‑Driven Snapshot</h2>
+    <p>Plug‑and‑play binary serializer for network or disk.</p>
+<pre><code class="language-java">
+public abstract class GameObject {
+  private static final Map&lt;Short,Supplier&lt;GameObject&gt;&gt; REG=new Short2ObjectOpenHashMap<>();
+  protected abstract void write(DataOutput out) throws IOException;
+  protected abstract void read(DataInput in) throws IOException;
+
+  public final ByteBuffer marshal(){
+    ByteArrayOutputStream baos=new ByteArrayOutputStream();
+    try(var out=new DataOutputStream(baos)){
+      out.writeShort(typeId());
+      write(out);
+    }catch(IOException e){throw new UncheckedIOException(e);}
+    return ByteBuffer.wrap(baos.toByteArray());
+  }
+  public static GameObject unmarshal(DataInput in)throws IOException{
+     short id=in.readShort();
+     GameObject g=REG.get(id).get();
+     g.read(in); return g;
+  }
+  protected static void register(short id,Supplier&lt;GameObject&gt; ctor){REG.put(id,ctor);}
+}
+</code></pre>
+  </div>
+</section>
+
+<!-- ========== 6. PALETTE‑SWAP SPRITE ========= -->
+<section class="slice" id="sprite">
+  <canvas class="demo" data-demo="sprite"></canvas>
+  <div class="text">
+    <h2>6 · Palette‑Swapped Sprite Pipeline</h2>
+    <p>Single‑draw skinning via 4‑color indices passed to the fragment shader.</p>
+<pre><code class="language-java">
+interface Recolorable{
+  int key0();int key1();int key2();int key3();
+}
+class Spriter{
+  void draw(Recolorable r){
+    shader.setUniform4i("uKeys",
+      r.key0(),r.key1(),r.key2(),r.key3());
+    texture.bind(0); mesh.draw();
+  }
+}
+/* GLSL (frag):
+   vec4 base = texture(tex,uv);
+   for(int i=0;i<4;i++)
+     if(base.r==i) base = palette[uKeys[i]];
+   outColor = base;
+*/
+</code></pre>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer>
+  © 2025 Pipewriter — Last updated 21 Jul 2025
+</footer>
+
+<!-- =========  INTERSECTION OBSERVER + DEMOS  ========= -->
+<script>
+/* fade‑in on scroll */
+const io = new IntersectionObserver((entries)=>entries.forEach(e=>{
+  if(e.isIntersecting){e.target.classList.add('visible');io.unobserve(e.target);}
+}),{threshold:.2});
+document.querySelectorAll('.slice').forEach(s=>io.observe(s));
+
+/* canvas demos */
+document.querySelectorAll('canvas.demo').forEach(c=>{
+  const type=c.dataset.demo, ctx=c.getContext('2d');
+  if(type==='perlin') drawPerlin(ctx);
+  else if(type==='voronoi') drawVoronoi(ctx);
+  else if(type==='quadtree') animateQuad(ctx);
+  else if(type==='aggregator') drawHeat(ctx);
+  else if(type==='snapshot') drawBytes(ctx);
+  else if(type==='sprite') animateSprite(ctx);
+});
+
+/* --------  tiny Perlin implementation -------- */
+function drawPerlin(ctx){
+ const w=ctx.canvas.width, h=ctx.canvas.height;
+ const perm=new Uint8Array(512).map((_,i)=>i%256);
+ for(let i=255;i>0;i--){const j=Math.random()*(i+1)|0; [perm[i],perm[j]]=[perm[j],perm[i]];}
+ perm.set(perm.slice(0,256),256);
+ const f=t=>t*t*t*(t*(t*6-15)+10);
+ const grad=(h,x,y)=>((h&1)?-x:x)+((h&2)?-y:y);
+ const noise=(x,y)=>{
+   const X=Math.floor(x)&255,Y=Math.floor(y)&255;
+   x-=Math.floor(x); y-=Math.floor(y);
+   const u=f(x),v=f(y);
+   const A=perm[X]+Y, AA=perm[A], AB=perm[A+1],
+         B=perm[X+1]+Y, BA=perm[B], BB=perm[B+1];
+   const lerp=(t,a,b)=>a+t*(b-a);
+   return lerp(v,
+       lerp(u,grad(perm[AA],x,y), grad(perm[BA],x-1,y)),
+       lerp(u,grad(perm[AB],x,y-1),grad(perm[BB],x-1,y-1)));
+ };
+ const img=ctx.createImageData(w,h);
+ let i=0;
+ for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+   let n=0,amp=1,freq=.02,sum=0;
+   for(let o=0;o<4;o++){sum+=amp; n+=amp*noise(x*freq,y*freq); amp*=.5; freq*=2;}
+   n=(n/sum+1)*.5; const g=n*255|0;
+   img.data[i++]=g; img.data[i++]=g; img.data[i++]=g; img.data[i++]=255;
+ }
+ ctx.putImageData(img,0,0);
+}
+
+/* --------  simple Voronoi demo -------- */
+function drawVoronoi(ctx){
+ const w=ctx.canvas.width, h=ctx.canvas.height, cell=32;
+ const img=ctx.createImageData(w,h); const data=img.data;
+ for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+   const cx=Math.floor(x/cell), cy=Math.floor(y/cell);
+   let best=1e9, hue=0;
+   for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+     const sx=cx+dx, sy=cy+dy;
+     const h=(sx*0x8da6b343 ^ sy*0xd8163841)>>>0;
+     const ox=(h&0xff)/255, oy=((h>>8)&0xff)/255;
+     const px=(sx+ox)*cell, py=(sy+oy)*cell;
+     const d=(x-px)**2+(y-py)**2;
+     if(d<best){best=d; hue=(h&0xff)/255;}
+   }
+   const rgb=hsv2rgb(hue,.4,.9), idx=(y*w+x)*4;
+   data[idx]=rgb[0];data[idx+1]=rgb[1];data[idx+2]=rgb[2];data[idx+3]=255;
+ }
+ ctx.putImageData(img,0,0);
+}
+
+/* --------  QuadTree point animation -------- */
+function animateQuad(ctx){
+ const w=ctx.canvas.width, h=ctx.canvas.height;
+ const pts=Array.from({length:120},()=>({x:Math.random()*w,y:Math.random()*h,dx:(Math.random()-.5)*2,dy:(Math.random()-.5)*2}));
+ function step(){
+  ctx.fillStyle='rgba(45,31,11,.07)';ctx.fillRect(0,0,w,h);
+  ctx.fillStyle= '#F4EFE7';
+  pts.forEach(p=>{
+     p.x=(p.x+p.dx+w)%w; p.y=(p.y+p.dy+h)%h;
+     ctx.fillRect(p.x-1,p.y-1,2,2);
+  });
+  requestAnimationFrame(step);
+ }
+ step();
+}
+
+/* --------  Chunk aggregator heat‑map -------- */
+function drawHeat(ctx){
+ const w=ctx.canvas.width, h=ctx.canvas.height;
+ for(let y=0;y<h;y+=8)for(let x=0;x<w;x+=8){
+   const v=Math.random();ctx.fillStyle=`rgba(${200+v*55},${150-v*30},${90-v*60},1)`;ctx.fillRect(x,y,8,8);
+ }
+}
+
+/* --------  Binary snapshot visual -------- */
+function drawBytes(ctx){
+ const w=ctx.canvas.width, h=ctx.canvas.height;
+ const img=ctx.createImageData(w,h),d=img.data;
+ for(let i=0;i<d.length;i+=4){
+   const bit=Math.random()<.5?0:255;
+   d[i]=d[i+1]=d[i+2]=bit; d[i+3]=255;
+ }
+ ctx.putImageData(img,0,0);
+}
+
+/* --------  Palette‑swap sprite demo -------- */
+function animateSprite(ctx){
+ const w=ctx.canvas.width, h=ctx.canvas.height, size=64;
+ const palette=[[236,217,200],[194,157,110],[93,66,38],[53,39,25]];
+ let t=0;
+ function frame(){
+   ctx.clearRect(0,0,w,h);
+   const x=w/2-size/2, y=h/2-size/2;
+   for(let py=0;py<size;py++)for(let px=0;px<size;px++){
+      const idx=(px^py)&3, color=palette[(idx+t)%4];
+      ctx.fillStyle=`rgb(${color})`; ctx.fillRect(x+px,y+py,1,1);
+   }
+   t=(t+1)%4; requestAnimationFrame(frame);
+ }
+ frame();
+}
+
+/* small HSV‑>RGB util */
+function hsv2rgb(h,s,v){
+  let r=0,g=0,b=0,i=Math.floor(h*6),f=h*6-i;
+  let p=v*(1-s),q=v*(1-f*s),t=v*(1-(1-f)*s);
+  switch(i%6){case 0:r=v,g=t,b=p;break;case 1:r=q,g=v,b=p;break;
+   case 2:r=p,g=v,b=t;break;case 3:r=p,g=q,b=v;break;
+   case 4:r=t,g=p,b=v;break;case 5:r=v,g=p,b=q;break;}
+  return [r*255|0,g*255|0,b*255|0];
+}
+</script>
+</body>
+</html>

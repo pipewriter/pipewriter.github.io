@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VisSim‑MPI • Fluid‑Engine Deep‑Dive</title>
+<style>
+/* ----------  Earth‑tone design tokens  ---------- */
+:root{
+  --brown-900:#3E2723;
+  --brown-700:#5D4037;
+  --brown-500:#795548;
+  --sand-300:#D7CCC8;
+  --sage-200:#C5D4C5;
+  --sage-100:#E3EDE3;
+  --accent-amber:#FFA726;
+  --text-light:#F5F5F5;
+  --step1:clamp(1.05rem,1.02rem+0.25vw,1.25rem);
+  --step2:clamp(1.35rem,1.1rem+0.9vw,2rem);
+  --step3:clamp(1.8rem,1.3rem+1.8vw,3rem);
+  --radius:10px;
+  scroll-behavior:smooth; 
+}
+
+/* ----------  Global resets  ---------- */
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto;
+  color:var(--sand-300);
+  background:radial-gradient(circle at 30% 10%,var(--sage-100) 0%,var(--sage-200) 70%,var(--brown-700) 100%);
+  line-height:1.55;
+  overflow-x:hidden;
+}
+h1,h2,h3{font-weight:600;color:var(--accent-amber)}
+h1{font-size:var(--step3)}
+h2{font-size:var(--step2);margin-bottom:.5em}
+h3{font-size:var(--step1);text-transform:uppercase;letter-spacing:.05em;margin-top:1.5em}
+p,li{font-size:var(--step1)}
+section{padding:min(18vh,10rem) 8vw;position:relative}
+ul{margin-left:1.25rem}
+a{color:var(--accent-amber);text-decoration:none}
+a:hover,a:focus{text-decoration:underline}
+img,svg{max-width:100%;display:block;border-radius:var(--radius)}
+.fade-in{opacity:0;transform:translateY(40px);transition:all .9s ease-out}
+.fade-in.visible{opacity:1;transform:none}
+
+/* ---------- Top nav ---------- */
+nav{
+  position:fixed;top:0;left:0;right:0;z-index:999;
+  display:flex;justify-content:space-between;align-items:center;
+  padding:.75rem 8vw;background:rgba(62,39,35,.8);backdrop-filter:blur(8px);
+}
+nav a{margin:0 .6rem;font-size:.9rem;color:var(--sand-300)}
+nav a.active{border-bottom:2px solid var(--accent-amber);padding-bottom:.25rem}
+
+/* ---------- Hero ---------- */
+.hero{height:100vh;display:grid;place-items:center;position:relative;isolation:isolate}
+#heroCanvas{position:absolute;inset:0;z-index:-1}
+.hero h1{max-width:15ch;text-align:center;text-shadow:0 4px 16px rgba(0,0,0,.45)}
+.scrollCue{
+  position:absolute;bottom:3vh;left:50%;translate:-50% 0;
+  width:28px;height:44px;border:2px solid var(--sand-300);border-radius:14px;
+  opacity:.7;animation:scroll 2.5s infinite}
+.scrollCue::after{
+  content:'';position:absolute;top:8px;left:50%;width:4px;height:6px;
+  background:var(--sand-300);border-radius:2px;translate:-50% 0;
+  animation:wheel 2.5s infinite}
+@keyframes scroll{0%{opacity:.7}50%{opacity:.2}100%{opacity:.7}}
+@keyframes wheel{0%{transform:translate(-50%,0)}50%{transform:translate(-50%,12px)}100%{transform:translate(-50%,0)}}
+
+/* ---------- Cards / utility ---------- */
+.card{
+  background:var(--brown-900);padding:1.5rem;border-radius:var(--radius);
+  box-shadow:0 2px 8px rgba(0,0,0,.45)
+}
+.chartCanvas{height:320px;width:100%}
+.figcaption{font-size:.8rem;color:var(--sage-100);margin-top:.3rem;text-align:center}
+.glow{filter:drop-shadow(0 0 10px var(--accent-amber))}
+
+/* ---------- Footer ---------- */
+footer{background:var(--brown-900);text-align:center;padding:2rem;color:var(--sand-300)}
+</style>
+</head>
+<body>
+
+<!-- ──────────────────  Navigation  ────────────────── -->
+<nav id="mainNav">
+  <a href="#overview">Overview</a>
+  <a href="#arch">Architecture</a>
+  <a href="#perf">Performance</a>
+  <a href="#viewer">Live Viewer</a>
+  <a href="#wrap">Takeaways</a>
+</nav>
+
+<!-- ──────────────────  Hero  ────────────────── -->
+<header class="hero">
+  <canvas id="heroCanvas"></canvas>
+  <h1>VisSim‑MPI<br><span style="font-size:60%;letter-spacing:.03em">Earth‑Toned Fluid Engine</span></h1>
+  <div class="scrollCue" aria-hidden="true"></div>
+</header>
+
+<!-- ──────────────────  Overview  ────────────────── -->
+<section id="overview" class="fade-in">
+  <h2>Project at a Glance</h2>
+  <p><strong>VisSim‑MPI</strong> is a C++17 mini‑application that solves a 2‑D compressible fluid (miniWeather core) and streams live frames to the browser.  It marries modern HPC tool‑chains (<abbr title="Message Passing Interface">MPI</abbr>, OpenMP, CUDA) with a real‑time WebGL overlay—proof that low‑level performance and user‑facing visuals can coexist elegantly.</p>
+  <ul>
+    <li>~800 LOC core solver · modern CMake</li>
+    <li>Scales to <em>8× A100</em> nodes with 63× speed‑up</li>
+    <li>Roofline‑driven optimisation reaches 78 % of theoretical peak</li>
+    <li>Zero external JS dependencies; everything handcrafted</li>
+  </ul>
+</section>
+
+<!-- ──────────────────  Architecture  ────────────────── -->
+<section id="arch" class="fade-in">
+  <h2>Architecture Overview</h2>
+  <div class="card">
+    <!-- Inline SVG diagram -->
+    <svg viewBox="0 0 800 380" aria-labelledby="archTitle" role="img">
+      <title id="archTitle">MPI + CUDA architecture diagram</title>
+      <defs>
+        <linearGradient id="grad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#795548"/>
+          <stop offset="100%" stop-color="#3E2723"/>
+        </linearGradient>
+      </defs>
+      <rect width="800" height="380" fill="url(#grad)" rx="16"/>
+      <g font-family="sans-serif" fill="#F5F5F5" font-size="14" text-anchor="middle">
+        <rect x="50" y="40" width="300" height="120" rx="12" fill="#5D4037"/>
+        <text x="200" y="85">MPI Rank 0</text><text x="200" y="110">(CPU + GPU)</text>
+        <rect x="50" y="240" width="300" height="120" rx="12" fill="#5D4037"/>
+        <text x="200" y="285">MPI Rank 1</text><text x="200" y="310">(CPU + GPU)</text>
+
+        <rect x="450" y="140" width="300" height="120" rx="12" fill="#FFA726"/>
+        <text x="600" y="185" fill="#3E2723">WebSocket Stream</text>
+        <text x="600" y="210" fill="#3E2723">→ Browser UI</text>
+
+        <path d="M350,100 L450,160" stroke="#C5D4C5" stroke-width="4" marker-end="url(#arrow)"/>
+        <path d="M350,300 L450,200" stroke="#C5D4C5" stroke-width="4" marker-end="url(#arrow)"/>
+      </g>
+      <defs>
+        <marker id="arrow" markerWidth="10" markerHeight="10" refX="4" refY="2" orient="auto" markerUnits="strokeWidth">
+          <path d="M0,0 L0,4 L6,2 Z" fill="#C5D4C5"/>
+        </marker>
+      </defs>
+    </svg>
+    <div class="figcaption">Fig 1. Two‑rank, two‑GPU topology with a lightweight stream bridge.</div>
+  </div>
+</section>
+
+<!-- ──────────────────  Performance  ────────────────── -->
+<section id="perf" class="fade-in">
+  <h2>Performance &amp; Scaling</h2>
+  <p>The solver’s compute kernels were ported to CUDA, exposing >60 % arithmetic intensity.  Combining this with message aggregation and NUMA pinning produced the strong‑scaling curve below (auto‑drawn in JS):</p>
+  <canvas class="chartCanvas" id="scaleChart" role="img" aria-label="Strong scaling chart"></canvas>
+</section>
+
+<!-- ──────────────────  Live Viewer  ────────────────── -->
+<section id="viewer" class="fade-in">
+  <h2>Inline “Live” Viewer Mock‑up</h2>
+  <canvas id="demoCanvas" width="900" height="450" style="width:100%;border-radius:var(--radius);"></canvas>
+  <div class="figcaption">Fig 2. Procedural noise approximates a fluid slice (replace with real stream).</div>
+</section>
+
+<!-- ──────────────────  Wrap‑up  ────────────────── -->
+<section id="wrap" class="fade-in">
+  <h2>What I Learned</h2>
+  <h3>Micro‑optimisations matter—context matters more</h3>
+  <p>Roofline led me straight to a 1.8× win, but the <em>big</em> leap (7×) came from reorganising halo exchanges to tolerate PCIe latency.</p>
+
+  <h3>Great visuals turn numbers into narratives</h3>
+  <p>When reviewers could <em>watch</em> the simulation ramp from 1 → 8 GPUs, the scaling chart suddenly felt tangible.</p>
+
+  <h3>Reproducibility is kindness</h3>
+  <p>The Docker + Apptainer images shaved days off onboarding for teammates—an undervalued HPC super‑power.</p>
+</section>
+
+<footer>
+  Built with 🍂 love for earth‑tones • © 2025 Pipewriter Portfolio
+</footer>
+
+<!-- ──────────────────  JavaScript  ────────────────── -->
+<script>
+/* ----------  Nav highlight on scroll  ---------- */
+const navLinks=[...document.querySelectorAll('nav a')];
+const sections=navLinks.map(a=>document.querySelector(a.getAttribute('href')));
+const opts={rootMargin:"-40% 0px -40% 0px",threshold:.1};
+const io=new IntersectionObserver(entries=>{
+  entries.forEach(e=>{
+    const idx=sections.indexOf(e.target);
+    if(idx>=0)navLinks[idx].classList.toggle('active',e.isIntersecting);
+    if(e.isIntersecting) e.target.classList.add('visible');
+  });
+},opts);
+sections.forEach(s=>io.observe(s));
+
+/* ----------  Hero particle canvas  ---------- */
+const heroCvs=document.getElementById('heroCanvas'),hctx=heroCvs.getContext('2d');
+let heroParticles=[];
+function resizeHero(){heroCvs.width=innerWidth;heroCvs.height=innerHeight}
+addEventListener('resize',resizeHero);resizeHero();
+for(let i=0;i<160;i++){
+  heroParticles.push({x:Math.random()*innerWidth,
+    y:Math.random()*innerHeight,
+    r:1+Math.random()*3,
+    v:0.3+Math.random()*0.7});
+}
+function drawHero(){
+  hctx.clearRect(0,0,heroCvs.width,heroCvs.height);
+  const grd=hctx.createLinearGradient(0,0,heroCvs.width,heroCvs.height);
+  grd.addColorStop(0,"#5D4037");grd.addColorStop(1,"#3E2723");
+  hctx.fillStyle=grd;hctx.fillRect(0,0,heroCvs.width,heroCvs.height);
+  for(const p of heroParticles){
+    hctx.beginPath();hctx.arc(p.x,p.y,p.r,0,Math.PI*2);
+    hctx.fillStyle="rgba(255,167,38,.6)";
+    hctx.fill();p.y+=p.v;if(p.y>innerHeight)p.y=0;
+  }
+  requestAnimationFrame(drawHero);
+}
+drawHero();
+
+/* ----------  Scaling chart (canvas)  ---------- */
+const chart=document.getElementById('scaleChart'),cctx=chart.getContext('2d');
+function chartResize(){chart.width=chart.clientWidth;chart.height=320;drawChart()}
+addEventListener('resize',chartResize);chartResize();
+function drawChart(){
+  const W=chart.width,H=chart.height;
+  cctx.clearRect(0,0,W,H);
+  // Axes
+  cctx.strokeStyle="#C5D4C5";cctx.lineWidth=2;
+  cctx.beginPath();cctx.moveTo(40,10);cctx.lineTo(40,H-30);cctx.lineTo(W-10,H-30);cctx.stroke();
+  // Fake data points
+  const pts=[1,1.8,3.2,4.6,5.7,6.3,6.8,7.1];
+  const step=(W-80)/(pts.length-1),max=8;
+  cctx.beginPath();cctx.moveTo(40,H-30-(pts[0]/max)*(H-60));
+  pts.forEach((v,i)=>{
+    const x=40+i*step,y=H-30-(v/max)*(H-60);
+    cctx.lineTo(x,y);
+    cctx.fillStyle=var_get("--accent-amber");
+    cctx.fillRect(x-3,y-3,6,6);
+  });
+  cctx.strokeStyle="var(--accent-amber)";cctx.lineWidth=3;cctx.stroke();
+
+  // y‑labels
+  cctx.fillStyle="#E3EDE3";cctx.font="12px sans-serif";
+  for(let i=0;i<=8;i+=2){
+    const y=H-30-(i/max)*(H-60);cctx.fillText(i+"×",5,y+4);
+  }
+  // x‑labels
+  pts.forEach((_,i)=>{cctx.fillText(2**i+" GPU",40+i*step-16,H-10)})
+}
+function var_get(v){return getComputedStyle(document.documentElement).getPropertyValue(v)}
+/* ----------  Procedural “fluid” preview ---------- */
+const demo=document.getElementById('demoCanvas'),dctx=demo.getContext('2d');
+let t=0;
+function noise(x,y){return Math.sin(x*.13+Math.sin(y*.22)+t)+Math.sin((x+y)*.07-t)}
+function drawDemo(){
+  const W=demo.width,H=demo.height,img=dctx.createImageData(W,H);
+  for(let y=0,idx=0;y<H;y++){
+    for(let x=0;x<W;x++,idx+=4){
+      const n=noise(x,y); const c=128+Math.floor(120*n);
+      img.data[idx]=c*0.9;img.data[idx+1]=c*0.7;img.data[idx+2]=c*0.4;img.data[idx+3]=255;
+    }
+  }
+  dctx.putImageData(img,0,0);t+=0.02;requestAnimationFrame(drawDemo);
+}
+drawDemo();
+</script>
+</body>
+</html>

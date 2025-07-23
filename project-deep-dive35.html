@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Mind‑Palace Engine | Deep Dive</title>
+
+<!-- ======== EARTH‑TONE PALETTE & BASE ========= -->
+<style>
+:root{
+  --sand:#D8CBB3;   /* light floor */
+  --tan:#C3AA88;
+  --clay:#B98E6E;
+  --terra:#8C5138;  /* headline accent */
+  --olive:#586545;  /* code bg / buttons */
+  --slate:#35414A;  /* text */
+  --offBlack:#272822;
+  --shadow:rgba(0,0,0,.35);
+  --radius:.75rem;
+  --speed:600ms cubic-bezier(.25,.1,.25,1);
+  font-size:clamp(14px,1.1vw,18px);
+  color:var(--slate);
+  scroll-behavior:smooth;
+  accent-color:var(--terra);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:"JetBrains Mono","Fira Code",Consolas,monospace;
+  background:var(--sand);
+  line-height:1.5;
+  overflow-x:hidden;
+}
+
+/* ---------- Hero Banner ---------- */
+header{
+  min-height:100vh;
+  display:grid;
+  place-items:center;
+  position:relative;
+  color:var(--offBlack);
+  text-align:center;
+  perspective:1000px;
+  overflow:hidden;
+}
+header::before{
+  content:"";
+  position:absolute;inset:0;
+  background:linear-gradient(120deg,var(--sand) 0%,var(--tan) 40%,var(--clay) 80%);
+  transform:scale(1.2);
+  animation:bgShift 30s linear infinite;
+  z-index:-2;
+}
+@keyframes bgShift{to{transform:scale(1.2) translateX(-10%)}}
+h1{
+  font-size:clamp(2.8rem,7vw,6rem);
+  text-shadow:1px 3px 8px var(--shadow);
+}
+.tagline{font-size:1.2rem;letter-spacing:.05em}
+
+/* ---------- Section Shell ---------- */
+section{
+  padding:6rem 5vw;
+  position:relative;
+  background:var(--sand);
+  clip-path:polygon(0 2%,100% 0,100% 98%,0 100%);
+}
+section:nth-of-type(even){background:var(--tan)}
+h2{
+  font-size:2rem;
+  margin-bottom:1.25rem;
+  color:var(--terra);
+}
+.card{
+  display:grid;
+  gap:1.5rem;
+  grid-template-columns:repeat(auto-fit,minmax(min(28rem,100%),1fr));
+  align-items:start;
+}
+pre{
+  background:var(--olive);
+  color:#E8E8E8;
+  padding:1rem 1.25rem;
+  border-radius:var(--radius);
+  overflow:auto;
+  max-height:55vh;
+  line-height:1.35;
+  font-size:.875rem;
+  box-shadow:0 6px 18px var(--shadow);
+  transition:transform .3s ease;
+}
+pre:hover{transform:scale(1.012)}
+canvas{width:100%;border-radius:var(--radius);box-shadow:0 6px 18px var(--shadow)}
+/* ---------- Simple Keyword Highlight ---------- */
+.keyword{color:#FFD580;font-weight:700}
+.type{color:#A8FF60}
+.comment{color:#999;font-style:italic}
+
+/* ---------- Reveal on Scroll ---------- */
+.reveal{opacity:0;transform:translateY(40px);transition:opacity .7s ease,transform .7s ease}
+.reveal.visible{opacity:1;transform:none}
+
+/* ---------- Toggle Detail (mobile friendliness) ---------- */
+details>summary{
+  cursor:pointer;
+  background:var(--olive);
+  color:#fff;
+  padding:.5rem 1rem;
+  border-radius:var(--radius);
+  margin-bottom:1rem;
+  user-select:none;
+}
+details[open]>summary{background:var(--terra)}
+summary::-webkit-details-marker{display:none}
+/* ---------- Footer ---------- */
+footer{
+  padding:4rem 5vw;
+  background:var(--clay);
+  color:var(--sand);
+  text-align:center;
+  font-size:.9rem;
+}
+a{color:inherit;text-decoration:underline dotted}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Engine&nbsp;From&nbsp;Scratch</h1>
+    <p class="tagline">Procedural worlds • Data‑oriented low‑level perf • Pure&nbsp;Java mojo</p>
+  </div>
+</header>
+
+<!-- ========================================================= -->
+<!-- === 1. WORLD STREAMING & SPATIAL PARTITIONING =========== -->
+<section class="reveal">
+  <h2>128‑m Chunk Hashing&nbsp;+ Live Quad‑Tree Updates</h2>
+  <div class="card">
+    <pre><code>
+<span class="comment">// GameObject.java</span>
+<span class="keyword">public static</span> <span class="type">long</span> xy(<span class="type">int</span> x,<span class="type">int</span> y){
+    <span class="keyword">return</span> ((<span class="type">long</span>)x) &lt;&lt; <span class="type">32</span> | y;
+}
+<span class="keyword">public</span> <span class="type">long</span> getSectorKey(){
+    <span class="type">int</span> sx = (<span class="type">int</span>)(x / <span class="type">128</span>);
+    <span class="type">int</span> sz = (<span class="type">int</span>)(z / <span class="type">128</span>);
+    <span class="keyword">return</span> xy(sx,sz);
+}
+
+<span class="comment">// QuadTree.java</span>
+<span class="keyword">public boolean</span> update(GameObject go,<br/>
+            <span class="type">double</span> oldX,<span class="type">double</span> oldZ,<br/>
+            <span class="type">double</span> newX,<span class="type">double</span> newZ){
+    <span class="type">long</span> s1 = GameObject.getSectorKeyGiven((<span class="type">int</span>)oldX,(<span class="type">int</span>)oldZ);
+    <span class="type">long</span> s2 = GameObject.getSectorKeyGiven((<span class="type">int</span>)newX,(<span class="type">int</span>)newZ);
+    Main.neededNow.add(s1);Main.neededNow.add(s2);
+    <span class="keyword">if</span>(!(Main.InPlay.contains(s1) && Main.InPlay.contains(s2)))<span class="keyword">return</span> <span class="keyword">false</span>;
+    remove(oldX,oldZ);
+    go.x=newX;go.z=newZ;
+    add(go);
+    <span class="keyword">return</span> <span class="keyword">true</span>;
+}
+    </code></pre>
+
+    <canvas id="streamCanvas" height="300"></canvas>
+  </div>
+</section>
+
+<!-- ========================================================= -->
+<!-- === 2. MULTI‑OCTAVE PERLIN TERRAIN NOISE ================ -->
+<section class="reveal">
+  <h2>Dynamic Multi‑Octave Perlin Terrain</h2>
+  <div class="card">
+    <pre><code>
+<span class="keyword">public double</span> noise(<span class="type">double</span> x,<span class="type">double</span> y){
+    <span class="type">double</span> total=0,max=0,amp=1,freq=1;
+    <span class="keyword">for</span>(<span class="type">int</span> i=0;i&lt;octaves;i++){
+        total += singleOctaveNoise(x*freq,y*freq)*amp;
+        max   += amp;
+        amp   *= persistence;
+        freq  *= lacunarity;
+    }
+    <span class="keyword">return</span> max&gt;0 ? total/max : 0;
+}
+    </code></pre>
+
+    <canvas id="perlinCanvas" height="300"></canvas>
+  </div>
+</section>
+
+<!-- ========================================================= -->
+<!-- === 3. INFINITE VORONOI COLOR PLANES ==================== -->
+<section class="reveal">
+  <h2>Hash‑Based Infinite Voronoi Plane</h2>
+  <div class="card">
+    <pre><code>
+<span class="keyword">static int</span> hash(<span class="type">int</span> x,<span class="type">int</span> y){
+    <span class="type">int</span> h = x*374761393 + y*668265263;
+    h = (h ^ (h >>> 13))*1274126177;
+    <span class="keyword">return</span> h ^ (h >>> 16);
+}
+<span class="keyword">public static</span> Color getColorAt(<span class="type">double</span> ax,<span class="type">double</span> ay,<span class="type">int</span> cell){
+    <span class="type">int</span> cx=(<span class="type">int</span>)Math.floor(ax/cell);
+    <span class="type">int</span> cy=(<span class="type">int</span>)Math.floor(ay/cell);
+    Color nearest=Color.BLACK; <span class="type">double</span> best=Double.MAX_VALUE;
+    <span class="keyword">for</span>(<span class="type">int</span> i=cx-1;i&lt;=cx+1;++i)
+        <span class="keyword">for</span>(<span class="type">int</span> j=cy-1;j&lt;=cy+1;++j){
+            Seed s=getSeedForCell(i,j,cell);
+            <span class="type">double</span> dx=ax-s.x,dy=ay-s.y,d2=dx*dx+dy*dy;
+            <span class="keyword">if</span>(d2&lt;best){best=d2; nearest=s.color;}
+        }
+    <span class="keyword">return</span> nearest;
+}
+    </code></pre>
+
+    <canvas id="voroCanvas" height="300"></canvas>
+  </div>
+</section>
+
+<!-- ========================================================= -->
+<!-- === 4. CURVED SURFACE MESH BUILDER ====================== -->
+<section class="reveal">
+  <h2>Ring Mesh Builder → ByteBuffer Bulk‑Copy</h2>
+  <div class="card">
+    <pre><code>
+<span class="keyword">static void</span> putDoubleArr(<span class="type">double[]</span> v, ByteBuffer buf){
+    buf.putInt(v.length);           <span class="comment">// vertex count</span>
+    buf.asDoubleBuffer().put(v);    <span class="comment">// bulk</span>
+    buf.position(buf.position()+v.length*8);
+}
+    </code></pre>
+
+    <canvas id="ringCanvas" height="300"></canvas>
+  </div>
+</section>
+
+<!-- ========================================================= -->
+<!-- === 5. LIGHTWEIGHT RATE‑LIMITER ========================= -->
+<section class="reveal">
+  <h2>Lightweight Synchronized Rate‑Limiter</h2>
+  <div class="card">
+    <details>
+      <summary>View code</summary>
+      <pre><code>
+<span class="keyword">public synchronized void</span> sendRequest(Runnable r)
+        <span class="keyword">throws</span> InterruptedException{
+    <span class="keyword">while</span>(availablePermits==0 
+           && System.currentTimeMillis()&lt;nextReset){
+        wait(nextReset-System.currentTimeMillis());
+    }
+    <span class="keyword">if</span>(System.currentTimeMillis()&gt;=nextReset) resetPermits();
+    --availablePermits;
+    r.run();
+}
+      </code></pre>
+    </details>
+
+    <canvas id="rateCanvas" height="300"></canvas>
+  </div>
+</section>
+
+<footer>
+  © 2025 — Mind‑Palace Graphics Engine Deep‑Dive.<br/>
+  <a href="https://github.com/pipewriter/mind-palace-game-engine" target="_blank">Full source on GitHub</a>
+</footer>
+
+<!-- =============== INTERACTIVITY / DEMOS ==================== -->
+<script>
+// -------- Reveal on scroll ----------
+const observer=new IntersectionObserver(entries=>{
+  entries.forEach(e=>{
+    if(e.isIntersecting){e.target.classList.add('visible');}
+  });
+},{threshold:.15});
+document.querySelectorAll('.reveal').forEach(el=>observer.observe(el));
+
+// ===== 1. Chunk streaming mini‑sim =========
+{
+  const c=document.getElementById('streamCanvas'), ctx=c.getContext('2d');
+  const size=16, cols=c.width/size, rows=c.height/size;
+  function draw(t){
+    ctx.clearRect(0,0,c.width,c.height);
+    for(let x=0;x<cols;x++){
+      for(let y=0;y<rows;y++){
+        const dist=Math.hypot(x-cols/2+Math.sin(t/900),y-rows/2+Math.cos(t/700));
+        const load=dist<6 ? 1 : (dist<9?0.5:0.08);
+        ctx.fillStyle=`rgba(${load*120+100},${load*110+80},${load*90+60},1)`;
+        ctx.fillRect(x*size,y*size,size-1,size-1);
+      }
+    }
+    requestAnimationFrame(draw);
+  }
+  requestAnimationFrame(draw);
+}
+
+// ===== 2. Simple Perlin implementation =====
+{
+  const w=256,h=256, c=document.getElementById('perlinCanvas');
+  c.width=w; c.height=h;
+  const ctx=c.getContext('2d'), img=ctx.createImageData(w,h);
+  const perm = new Uint8Array(512).map((_,i)=> Math.floor(Math.random()*256));
+  const fade=t=>t*t*t*(t*(t*6-15)+10);
+  const lerp=(a,b,t)=>a+(b-a)*t;
+  const grad=(hash,x,y)=>((hash&1)?x:-x)+((hash&2)?y:-y);
+  function noise(x,y){
+    const X=Math.floor(x)&255, Y=Math.floor(y)&255;
+    x-=Math.floor(x);y-=Math.floor(y);
+    const u=fade(x),v=fade(y);
+    const A=perm[X]+Y, B=perm[X+1]+Y;
+    return lerp(
+      lerp(grad(perm[A],x,y),grad(perm[B],x-1,y),u),
+      lerp(grad(perm[A+1],x,y-1),grad(perm[B+1],x-1,y-1),u),
+      v);
+  }
+  function build(){
+    let i=0;
+    for(let y=0;y<h;y++){
+      for(let x=0;x<w;x++){
+        let value=0, amp=1,freq=.01,total=0;
+        for(let o=0;o<5;o++){
+          value+=noise(x*freq,y*freq)*amp;
+          total+=amp; amp*=.5; freq*=2;
+        }
+        value=value/total*.5+.5;
+        const col=value*255;
+        img.data[i++]=col*.8+30; // R
+        img.data[i++]=col*.9+20; // G
+        img.data[i++]=col*.7+40; // B
+        img.data[i++]=255;
+      }
+    }
+    ctx.putImageData(img,0,0);
+  }
+  build();
+}
+
+// ===== 3. Infinite Voronoi pattern =====
+{
+  const c=document.getElementById('voroCanvas'), ctx=c.getContext('2d');
+  const w=c.width=256, h=c.height=256, cell=32;
+  function hash(x,y){
+    let h=x*374761393+y*668265263;
+    h=(h^(h>>>13))*1274126177;
+    return h^(h>>>16);
+  }
+  function seed(x,y){
+    const r=hash(x,y);
+    return {
+      x:(x+((r&0xff)/255))*cell,
+      y:(y+(((r>>8)&0xff)/255))*cell,
+      c:`hsl(${r&360} 60% 60%)`
+    };
+  }
+  const img=ctx.createImageData(w,h);
+  for(let y=0;y<h;y++){
+    for(let x=0;x<w;x++){
+      const cx=Math.floor(x/cell),cy=Math.floor(y/cell);
+      let best=1e9,clr='#000';
+      for(let i=cx-1;i<=cx+1;i++)
+        for(let j=cy-1;j<=cy+1;j++){
+          const s=seed(i,j);
+          const dx=x-s.x,dy=y-s.y,d=dx*dx+dy*dy;
+          if(d<best){best=d;clr=s.c;}
+        }
+      const [hue,sat,light]=clr.match(/\d+/g).map(Number);
+      const {r,g,b}=hslToRgb(hue/360,sat/100,light/100);
+      const idx=(y*w+x)*4;
+      img.data[idx]=r;img.data[idx+1]=g;img.data[idx+2]=b;img.data[idx+3]=255;
+    }
+  }
+  ctx.putImageData(img,0,0);
+  function hslToRgb(h,s,l){
+    const a=s*Math.min(l,1-l);
+    const f=n=>{
+      const k=(n+h*12)%12;
+      return l-a*Math.max(Math.min(k-3,9-k,1),-1);
+    };
+    return {r:255*f(0),g:255*f(8),b:255*f(4)};
+  }
+}
+
+// ===== 4. Ring Mesh visual =====
+{
+  const c=document.getElementById('ringCanvas'), ctx=c.getContext('2d');
+  const w=c.width=256,h=c.height=256;
+  function draw(t){
+    ctx.clearRect(0,0,w,h);
+    ctx.translate(w/2,h/2);
+    ctx.rotate(t/4000);
+    for(let i=0;i<64;i++){
+      const a=i/64*Math.PI*2;
+      const x=Math.cos(a)*70,y=Math.sin(a)*70;
+      ctx.fillStyle=`hsl(${i*6} 50% 50%)`;
+      ctx.fillRect(x,y,8,8);
+    }
+    ctx.resetTransform();
+    requestAnimationFrame(draw);
+  }
+  requestAnimationFrame(draw);
+}
+
+// ===== 5. Animated Rate‑Limiter chart =====
+{
+  const c=document.getElementById('rateCanvas'), ctx=c.getContext('2d');
+  const max=40; let permits=max, next=Date.now()+60000;
+  function loop(){
+    const now=Date.now();
+    if(now>=next){permits=max; next=now+60000}
+    if(Math.random()<.4 && permits>0)permits--;
+    ctx.clearRect(0,0,c.width,c.height);
+    ctx.fillStyle='rgba(88,101,69,.3)';
+    ctx.fillRect(0,0,c.width,c.height);
+    ctx.fillStyle='rgba(140,81,56,.8)';
+    const barH=permits/max*c.height;
+    ctx.fillRect(0,c.height-barH,c.width,barH);
+    requestAnimationFrame(loop);
+  }
+  loop();
+}
+</script>
+</body>
+</html>
