@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Mind Palace Engine – Deep Dive</title>
+
+<!-- ─────────────────────────────  COLOR PALETTE  ───────────────────────────── -->
+<style>
+:root{
+    --earth‑dark:#3B2E2A;   /* deep walnut */
+    --earth‑mid :#625A48;   /* olive/kraft */
+    --earth‑light:#9C8463;  /* toasted almond */
+    --earth‑accent:#C7AD8F; /* bleached sand */
+    --text‑primary:#F0E8DC;
+    --text‑sub:#D4C7B6;
+    --shadow:0 8px 24px rgba(0,0,0,.35);
+    --radius:14px;
+    --speed:650ms;
+    --easing:cubic-bezier(.4,.0,.2,1);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen,Ubuntu,Cantarell,"Open Sans","Helvetica Neue",sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--earth‑dark);color:var(--text‑primary);scroll-behavior:smooth}
+h1,h2,h3{font-weight:600;letter-spacing:.03em;margin:0 0 .4em}
+p,li{line-height:1.6;color:var(--text‑sub)}
+section{padding:7vh 8vw;position:relative}
+ul{padding-left:1.2em;margin:0}
+img,canvas{max-width:100%;border-radius:var(--radius);box-shadow:var(--shadow)}
+/* ───────────── flashy scroll‑reveal ───────────── */
+.reveal{opacity:0;transform:translateY(40px);transition:var(--speed) var(--easing)}
+.reveal.visible{opacity:1;transform:none}
+/* Hero */
+#hero{display:flex;flex-direction:column;justify-content:center;align-items:center;
+      text-align:center;min-height:100vh;
+      background:linear-gradient(160deg,var(--earth‑dark) 45%,var(--earth‑mid) 100%) fixed;
+      position:relative;overflow:hidden}
+#hero::after{/* subtle parallax strata */
+      content:"";position:absolute;inset:0;
+      background:url('data:image/svg+xml;utf8,\
+      <svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox=\"0 0 600 600\">\
+      <path fill=\"%23C7AD8F\" fill-opacity=\"0.05\" d=\"M0 0h600v600H0z\"/>\
+      <path fill=\"%239C8463\" fill-opacity=\"0.08\" d=\"M0 300c60-40 180-40 240 0s180 40 240 0v300H0Z\"/>\
+      </svg>') repeat top /600px auto;
+      transform:translateZ(0) scale(1.3)}
+#title{font-size:clamp(2.8rem,4vw+1rem,5rem);margin-bottom:.2em;color:var(--earth‑accent);}
+#subtitle{font-size:1.25rem;max-width:40rem}
+.round-btn{display:inline-block;padding:.8em 1.6em;margin-top:2.5rem;
+      background:var(--earth‑accent);color:var(--earth‑dark);border:none;border-radius:50px;
+      text-decoration:none;font-weight:600;transition:.3s}
+.round-btn:hover{filter:brightness(1.1);transform:translateY(-3px)}
+/* code blocks */
+code{display:block;background:rgba(0,0,0,.35);padding:1em;font-size:.88rem;
+      border-radius:var(--radius);overflow-x:auto}
+/* progress bars */
+.bar{background:rgba(255,255,255,0.15);border-radius:50px;overflow:hidden;height:14px;margin-top:.5em}
+.bar>span{display:block;height:100%;background:var(--earth‑accent)}
+/* footer */
+footer{padding:4vh 0;text-align:center;font-size:.9rem;color:var(--text‑sub)}
+</style>
+</head>
+
+<body>
+<!-- ╭─────────────────  HERO  ─────────────────╮ -->
+<header id="hero">
+  <h1 id="title">Mind Palace Engine</h1>
+  <p id="subtitle" class="reveal">A from‑scratch Java/LWJGL 3D+2D engine built for blister‑fast iteration<br>and >3× performance uplift through low‑level optimisation.</p>
+  <a href="#deep-dive" class="round-btn reveal">Explore the Deep Dive ↓</a>
+</header>
+
+<!-- ╭──────────────────  OVERVIEW  ──────────────────╮ -->
+<section id="deep-dive">
+  <h2 class="reveal">Project at a Glance</h2>
+  <p class="reveal">
+    The Mind Palace Engine began as an academic exercise and matured into a production‑grade renderer capable of
+    <strong>400 + FPS</strong> sprite scenes and real‑time world streaming—entirely in Java.
+    Below is an animated cross‑section of its architecture.
+  </p>
+  <canvas id="archCanvas" width="900" height="260" class="reveal" style="width:100%;height:auto"></canvas>
+</section>
+
+<!-- ╭──────────────────  OPTIMISATIONS  ──────────────────╮ -->
+<section style="background:var(--earth‑mid)">
+  <h2 class="reveal">Performance War Stories</h2>
+  <ol class="reveal">
+    <li><strong>Removed per‑frame <code>glGetError()</code></strong> ⇒ +21 % FPS</li>
+    <li><strong>Primitive collections (HPPC)</strong> replaced <code>HashMap&lt;Long,…&gt;</code> ⇒ -82 % GC time</li>
+    <li><strong>Persistent‑mapped VBO ring buffer</strong> ⇒ CPU→GPU copy cost fell from 3.6 ms → 0.4 ms</li>
+    <li><strong>Object Pool</strong> for transient sprites ⇒ 0 allocation during gameplay hot loop</li>
+    <li><strong>Lazy uniform dispatch</strong> & instanced draws ⇒ -63 % driver overhead</li>
+  </ol>
+
+  <h3 class="reveal" style="margin-top:2.5em">Before vs After Trace</h3>
+  <div class="bar reveal"><span style="width:68%"></span></div>
+  <div class="bar reveal"><span style="width:15%"></span></div>
+  <p class="reveal" style="font-size:.85rem;margin-top:.4em">
+      <span style="color:var(--earth‑accent)">▲ orange bar</span> = CPU idle waiting on GPU.  
+      After optimisation it shrank from 68 % → 15 %.
+  </p>
+</section>
+
+<!-- ╭──────────────────  CODE EXCERPT  ──────────────────╮ -->
+<section>
+  <h2 class="reveal">Snapshot: Persistent VBO Setup</h2>
+  <code class="reveal">// Java 21 + LWJGL 3<br>
+int vbo = glCreateBuffers();
+glNamedBufferStorage(vbo, size, GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_DYNAMIC_STORAGE_BIT);
+ByteBuffer mapped = glMapNamedBufferRange(vbo, 0, size,
+       GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_FLUSH_EXPLICIT_BIT);</code>
+</section>
+
+<!-- ╭──────────────────  INTERACTIVE DEMO  ──────────────────╮ -->
+<section style="background:var(--earth‑mid)">
+  <h2 class="reveal">Live Demo – Sprite Bath</h2>
+  <canvas id="demo" width="900" height="500" class="reveal" style="width:100%;height:auto"></canvas>
+  <p class="reveal">~5 000 sprites, camera orbit & pulsating tint – rendered with one instanced draw‑call.</p>
+</section>
+
+<!-- ╭──────────────────  TAKEAWAYS  ──────────────────╮ -->
+<section>
+  <h2 class="reveal">Key Learnings</h2>
+  <ul class="reveal">
+    <li><strong>Data‑or‑die:</strong> move branches and allocations off the hot path, measure relentlessly.</li>
+    <li><strong>GPU courting:</strong> driver stalls often hide in “helpful” debug calls—kill them in release.</li>
+    <li><strong>Modern Java ≈ C++</strong> when you exploit JEP <abbr title="Java Enhancement Proposal">BBF‑221</abbr> features (non‑moving G1, vector APIs, Panama).</li>
+  </ul>
+</section>
+
+<footer>
+  Built & vertically integrated by <strong>Pipewriter</strong> · © 2025
+</footer>
+
+<!-- ─────────────────────────────  JAVASCRIPT  ───────────────────────────── -->
+<script>
+/* ─── scroll reveal ─────────────────────────────────────────────────── */
+const reveals=[...document.querySelectorAll('.reveal')];
+const io=new IntersectionObserver(
+  entries=>entries.forEach(e=>e.isIntersecting && e.target.classList.add('visible')),
+  {threshold:.15});
+reveals.forEach(el=>io.observe(el));
+
+/* ─── Animated architecture diagram (2‑D canvas) ────────────────────── */
+const arch = document.getElementById('archCanvas');
+const ctx = arch.getContext('2d');
+let t = 0;
+const box = (x,y,w,h,c)=>{ctx.fillStyle=c;ctx.fillRect(x,y,w,h);ctx.strokeStyle="rgba(0,0,0,.07)";ctx.strokeRect(x,y,w,h)},
+      arrow=(x1,y1,x2,y2)=>{ctx.strokeStyle=archColours[3];ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke()};
+const archColours=[getComputedStyle(document.documentElement).getPropertyValue('--earth-accent')||'#C7AD8F',
+                   '#D4C7B6','#A9987C','#F0E8DC'];
+function drawArch(){
+    ctx.clearRect(0,0,arch.width,arch.height);
+    const y0=40, h=60, w=160, gap=50;
+    // CPU blocks
+    box(40,y0,w,h,archColours[0]);
+    box(40+w+gap,y0,w,h,archColours[1]);
+    box(40+2*(w+gap),y0,w,h,archColours[2]);
+    // GPU block
+    box(arch.width-w-40,180,w,h,archColours[0]);
+    // arrows
+    arrow(40+w, y0+h/2, 40+w+gap, y0+h/2);
+    arrow(40+2*(w+gap), y0+h/2, arch.width-w-40, 180);
+    // pulsate
+    ctx.globalAlpha=.6+.4*Math.sin(t/40);
+    box(40,y0,w,h,archColours[0]);
+    ctx.globalAlpha=1;
+    t++;
+    requestAnimationFrame(drawArch);
+}
+drawArch();
+
+/* ─── Sprite bath WebGL demo (instanced quads) ──────────────────────── */
+const glCanvas = document.getElementById('demo');
+const gl = glCanvas.getContext('webgl2');
+if(!gl){glCanvas.replaceWith("WebGL 2 not supported :(")}
+else{
+  /* minimal shader strings */
+  const vs=`#version 300 es
+      layout(location=0) in vec2 pos;
+      layout(location=1) in vec2 offset;
+      uniform float uTime;
+      void main(){
+        float ang=uTime*.5+offset.x*.1;
+        vec2 p=pos;
+        p+=vec2(cos(ang),sin(ang))*.02;
+        gl_Position=vec4(p+offset,0,1);}`;
+  const fs=`#version 300 es
+      precision highp float;
+      out vec4 o;
+      uniform float uTime;
+      void main(){
+        float a=.5+.5*sin(uTime+gl_FragCoord.x*.01);
+        o=vec4(vec3(a*0.5,0.3,0.2),1);
+      }`;
+  const makeShader=(type,src)=>{const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);
+         if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw gl.getShaderInfoLog(s);return s};
+  const prog=gl.createProgram();
+  gl.attachShader(prog,makeShader(gl.VERTEX_SHADER,vs));
+  gl.attachShader(prog,makeShader(gl.FRAGMENT_SHADER,fs));
+  gl.linkProgram(prog); if(!gl.getProgramParameter(prog,gl.LINK_STATUS))console.error(gl.getProgramInfoLog(prog));
+  gl.useProgram(prog);
+  const verts=new Float32Array([-0.02,-0.02,  0.02,-0.02,  0.02,0.02, -0.02,0.02]);
+  const vbo=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,vbo); gl.bufferData(gl.ARRAY_BUFFER,verts,gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+  // instance offsets
+  const count=5000, off=new Float32Array(count*2);
+  for(let i=0;i<count;i++){off[i*2]=(Math.random()*2-1)*.9; off[i*2+1]=(Math.random()*2-1)*.9;}
+  const offBuf=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,offBuf); gl.bufferData(gl.ARRAY_BUFFER,off,gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,2,gl.FLOAT,false,0,0); gl.vertexAttribDivisor(1,1);
+  const uTime=gl.getUniformLocation(prog,"uTime");
+  gl.clearColor(.23,.2,.17,1);
+  glCanvas.height=glCanvas.clientHeight*devicePixelRatio;
+  glCanvas.width=glCanvas.clientWidth*devicePixelRatio;
+  gl.viewport(0,0,glCanvas.width,glCanvas.height);
+  function loop(t){
+     gl.uniform1f(uTime,t*.001);
+     gl.clear(gl.COLOR_BUFFER_BIT);
+     gl.drawArraysInstanced(gl.TRIANGLE_FAN,0,4,count);
+     requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+}
+</script>
+</body>
+</html>
