@@ -1,0 +1,115 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Supine Walking Simulator</title>
+<style>body{margin:0;overflow:hidden}</style>
+</head>
+<body>
+<script type="module">
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.162/build/three.module.js";
+import { VRButton } from "https://cdn.jsdelivr.net/npm/three@0.162/examples/jsm/webxr/VRButton.js";
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x88ccee);
+
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.xr.enabled = true;
+document.body.appendChild(renderer.domElement);
+document.body.appendChild(VRButton.createButton(renderer));
+
+const supinePivot = new THREE.Object3D();
+supinePivot.add(camera);
+scene.add(supinePivot);
+
+// rotate viewer to lie on their back
+supinePivot.rotation.x = -Math.PI / 2;
+
+// floor (also rotated so it looks correct when supine)
+const floor = new THREE.Mesh(
+  new THREE.PlaneGeometry(1000, 1000, 10, 10),
+  new THREE.MeshStandardMaterial({ color: 0x228822 })
+);
+floor.rotation.x = -Math.PI / 2;
+scene.add(floor);
+
+// lighting
+const light = new THREE.HemisphereLight(0xffffff, 0x444444);
+light.position.set(0, 200, 0);
+scene.add(light);
+
+// random props
+const colors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
+for (let i = 0; i < 200; i++) {
+  const geo = Math.random() < 0.5 ? new THREE.BoxGeometry(2, 2, 2) : new THREE.SphereGeometry(1, 16, 16);
+  const mat = new THREE.MeshStandardMaterial({ color: colors[Math.floor(Math.random() * colors.length)] });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(200 * (Math.random() - 0.5), 5 * Math.random() + 1, 200 * (Math.random() - 0.5));
+  scene.add(mesh);
+}
+
+// locomotion vars
+let prev = 0,
+    snap = 0;
+const SNAP_INTERVAL = 0.3,
+      SNAP_ANGLE = Math.PI / 4;
+
+renderer.setAnimationLoop((t, f) => {
+  if (f) {
+    const session = renderer.xr.getSession();
+    const dt = (t - prev) / 1000;
+    prev = t;
+
+    for (const src of session.inputSources) {
+      if (!src.gamepad || !src.handedness) continue;
+
+      const gp = src.gamepad;
+      const a  = gp.axes;
+
+      // movement – right controller
+      if (src.handedness === "right") {
+        const moveX = a[2] || 0;
+        const moveY = a[3] || 0;
+        const speed = 3;
+
+        // yaw-only quaternion (ignore pitch/roll so we stay level with the floor)
+        const yawQuat = new THREE.Quaternion().setFromAxisAngle(
+          new THREE.Vector3(0, 1, 0),
+          supinePivot.rotation.y
+        );
+
+        const right   = new THREE.Vector3(1, 0, 0).applyQuaternion(yawQuat);
+        const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(yawQuat);
+
+        const moveVec = forward.multiplyScalar(-moveY).add(right.multiplyScalar(moveX));
+        supinePivot.position.add(moveVec.multiplyScalar(speed * dt));
+      }
+
+      // snap turn – left controller
+      if (src.handedness === "left") {
+        const lx = a[2] || 0;
+        if (Math.abs(lx) > 0.5 && snap <= 0) {
+          supinePivot.rotation.y -= Math.sign(lx) * SNAP_ANGLE;
+          snap = SNAP_INTERVAL;
+        }
+      }
+    }
+
+    if (snap > 0) snap -= dt;
+  }
+
+  renderer.render(scene, camera);
+});
+
+window.addEventListener("resize", () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>
