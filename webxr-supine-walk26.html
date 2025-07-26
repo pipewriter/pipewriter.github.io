@@ -1,0 +1,135 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Supine Walking Simulator</title>
+<style>body{margin:0;overflow:hidden}</style>
+</head>
+<body>
+<script type="module">
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.162/build/three.module.js";
+import { VRButton } from "https://cdn.jsdelivr.net/npm/three@0.162/examples/jsm/webxr/VRButton.js";
+import { SimplexNoise } from "https://cdn.jsdelivr.net/npm/three@0.162/examples/jsm/math/SimplexNoise.js";
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x88ccee);
+
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.xr.enabled = true;
+document.body.appendChild(renderer.domElement);
+document.body.appendChild(VRButton.createButton(renderer));
+
+/* ---------- SUPINE CAMERA PIVOT ---------- */
+const supinePivot = new THREE.Object3D();
+supinePivot.add(camera);
+scene.add(supinePivot);
+supinePivot.rotation.x = -Math.PI / 2;   // lie the user on their back
+supinePivot.position.y = 5;              // hover height
+
+/* ---------- NOISY TOPOLOGICAL FLOOR ---------- */
+const SIZE = 1000;
+const SEG  = 256;
+const simplex = new SimplexNoise();
+
+const floorGeo = new THREE.PlaneGeometry(SIZE, SIZE, SEG, SEG);
+const pos = floorGeo.attributes.position;
+const colorArr = new Float32Array(pos.count * 3);
+
+for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i) / 50;
+    const y = pos.getY(i) / 50;
+    const h = simplex.noise(x, y) * 10;      // height amplitude
+
+    pos.setZ(i, h);
+
+    // color by height
+    const col = new THREE.Color().setHSL(0.33 - (h / 20) * 0.25, 0.8, 0.5);
+    colorArr[i * 3]     = col.r;
+    colorArr[i * 3 + 1] = col.g;
+    colorArr[i * 3 + 2] = col.b;
+}
+floorGeo.setAttribute('color', new THREE.BufferAttribute(colorArr, 3));
+floorGeo.computeVertexNormals();
+
+const floorMat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true });
+const floor = new THREE.Mesh(floorGeo, floorMat);
+floor.rotation.x = -Math.PI / 2;
+scene.add(floor);
+
+/* ---------- LIGHTING ---------- */
+const hemi = new THREE.HemisphereLight(0xffffff, 0x444444);
+hemi.position.set(0, 200, 0);
+scene.add(hemi);
+
+/* ---------- SCENE DECOR ---------- */
+const colors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
+for (let i = 0; i < 200; i++) {
+    const geo = Math.random() < 0.5 ? new THREE.BoxGeometry(2, 2, 2) : new THREE.SphereGeometry(1, 16, 16);
+    const mat = new THREE.MeshStandardMaterial({ color: colors[Math.floor(Math.random() * colors.length)] });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(200 * (Math.random() - 0.5), 5 * Math.random() + 1, 200 * (Math.random() - 0.5));
+    scene.add(mesh);
+}
+
+/* ---------- LOCOMOTION ---------- */
+let prevTime = 0, snapTimer = 0;
+const SNAP_INTERVAL = 0.3;
+const SNAP_ANGLE = Math.PI / 4;
+
+renderer.setAnimationLoop((time, frame) => {
+    if (frame) {
+        const session = renderer.xr.getSession();
+        const dt = (time - prevTime) / 1000;
+        prevTime = time;
+
+        for (const src of session.inputSources) {
+            if (!src.gamepad || !src.handedness) continue;
+            const gp = src.gamepad;
+            const axes = gp.axes;
+
+            /* ----- RIGHT HAND: MOVE ----- */
+            if (src.handedness === "right") {
+                const moveX = axes[2] || 0;
+                const moveY = axes[3] || 0;
+
+                // build forward/right on the floor plane
+                let right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+                let forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+
+                right.y = 0;  right.normalize();
+                forward.y = 0; forward.normalize();
+
+                const speed = 3;
+                const moveVec = forward.multiplyScalar(-moveY).add(right.multiplyScalar(moveX)).multiplyScalar(speed * dt);
+                supinePivot.position.add(moveVec);
+                supinePivot.position.y = 5; // keep hovering
+            }
+
+            /* ----- LEFT HAND: SNAP TURN (around Z for supine) ----- */
+            if (src.handedness === "left") {
+                const lx = axes[2] || 0;
+                if (Math.abs(lx) > 0.5 && snapTimer <= 0) {
+                    supinePivot.rotation.z -= Math.sign(lx) * SNAP_ANGLE;
+                    snapTimer = SNAP_INTERVAL;
+                }
+            }
+        }
+        if (snapTimer > 0) snapTimer -= dt;
+    }
+
+    renderer.render(scene, camera);
+});
+
+/* ---------- RESIZE ---------- */
+window.addEventListener("resize", () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>

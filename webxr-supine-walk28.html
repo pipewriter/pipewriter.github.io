@@ -1,0 +1,128 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Supine Walking Simulator</title>
+<style>body{margin:0;overflow:hidden}</style>
+</head>
+<body>
+<script type="module">
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.162/build/three.module.js";
+import { VRButton } from "https://cdn.jsdelivr.net/npm/three@0.162/examples/jsm/webxr/VRButton.js";
+import SimplexNoise from "https://cdn.jsdelivr.net/npm/simplex-noise@2.4.0/+esm";
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x88ccee);
+
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, .1, 1000);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.xr.enabled = true;
+document.body.appendChild(renderer.domElement);
+document.body.appendChild(VRButton.createButton(renderer));
+
+/* PIVOT THAT LAYS THE CAMERA SUPINE */
+const supinePivot = new THREE.Object3D();
+supinePivot.add(camera);
+supinePivot.rotation.x = -Math.PI / 2;       // lie on your back
+supinePivot.position.z = 1.6;                // hover above the ground a little
+scene.add(supinePivot);
+
+/* TOPOGRAPHIC-LOOKING PERLIN NOISE FLOOR */
+const size = 256;                            // canvas resolution
+const canvas = document.createElement('canvas');
+canvas.width = canvas.height = size;
+const ctx = canvas.getContext('2d');
+const simplex = new SimplexNoise();
+
+for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+        const n = simplex.noise2D(x / 40, y / 40) * .5 + .5;  // 0‒1
+        let col;
+        if (n < .25)      col = '#003366';    // deep
+        else if (n < .35) col = '#006699';
+        else if (n < .45) col = '#669966';
+        else if (n < .55) col = '#99cc66';
+        else if (n < .65) col = '#cccc66';
+        else              col = '#eeeeaa';    // high
+        ctx.fillStyle = col;
+        ctx.fillRect(x, y, 1, 1);
+    }
+}
+
+const floorTex = new THREE.CanvasTexture(canvas);
+floorTex.wrapS = floorTex.wrapT = THREE.RepeatWrapping;
+floorTex.repeat.set(20, 20);
+
+const floor = new THREE.Mesh(
+    new THREE.PlaneGeometry(1000, 1000, 10, 10),
+    new THREE.MeshBasicMaterial({ map: floorTex })
+);
+/* Floor stays in the XY plane so its normal is +Z (matches player “up”) */
+scene.add(floor);
+
+/* LIGHTING & SOME RANDOM PROPS */
+scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1));
+
+const colors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
+for (let i = 0; i < 200; i++) {
+    const geo = Math.random() < .5 ? new THREE.BoxGeometry(2, 2, 2) : new THREE.SphereGeometry(1, 16, 16);
+    const mat = new THREE.MeshStandardMaterial({ color: colors[Math.floor(Math.random() * colors.length)] });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(200 * (Math.random() - .5), 200 * (Math.random() - .5), 5 * Math.random() - 2.5);
+    scene.add(mesh);
+}
+
+/* LOCOMOTION */
+let prev = 0, snap = 0;
+const SNAP_INTERVAL = .3, SNAP_ANGLE = Math.PI / 4;
+
+renderer.setAnimationLoop((t, f) => {
+    if (f) {
+        const session = renderer.xr.getSession();
+        const dt = (t - prev) / 1000;
+        prev = t;
+
+        for (const src of session.inputSources) {
+            if (!src.gamepad || !src.handedness) continue;
+            const gp = src.gamepad, a = gp.axes;
+
+            /* RIGHT HAND – MOVE */
+            if (src.handedness === "right") {
+                const moveX = a[2] || 0, moveY = a[3] || 0;
+                const speed = 3;
+
+                /* yaw (turn) is now around Z because “up” is +Z */
+                const yaw = supinePivot.rotation.z;
+                const forward = new THREE.Vector3(0, -1, 0).applyAxisAngle(new THREE.Vector3(0, 0, 1), yaw);
+                const right  = new THREE.Vector3(1,  0, 0).applyAxisAngle(new THREE.Vector3(0, 0, 1), yaw);
+
+                const moveVec = forward.multiplyScalar(-moveY).add(right.multiplyScalar(moveX));
+                supinePivot.position.add(moveVec.multiplyScalar(speed * dt));
+            }
+
+            /* LEFT HAND – SNAP TURN (around Z) */
+            if (src.handedness === "left") {
+                const lx = a[2] || 0;
+                if (Math.abs(lx) > .5 && snap <= 0) {
+                    supinePivot.rotation.z -= Math.sign(lx) * SNAP_ANGLE;
+                    snap = SNAP_INTERVAL;
+                }
+            }
+        }
+        if (snap > 0) snap -= dt;
+    }
+    renderer.render(scene, camera);
+});
+
+/* HANDLE RESIZE */
+window.addEventListener("resize", () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>

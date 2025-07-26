@@ -1,0 +1,121 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Supine Walking Simulator</title>
+<style>body{margin:0;overflow:hidden}</style>
+</head>
+<body>
+<script type="module">
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.162/build/three.module.js";
+import { VRButton } from "https://cdn.jsdelivr.net/npm/three@0.162/examples/jsm/webxr/VRButton.js";
+import { ImprovedNoise } from "https://cdn.jsdelivr.net/npm/three@0.162/examples/jsm/math/ImprovedNoise.js";
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x88ccee);
+
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.xr.enabled = true;
+document.body.appendChild(renderer.domElement);
+document.body.appendChild(VRButton.createButton(renderer));
+
+// Supine camera pivot
+const supinePivot = new THREE.Object3D();
+supinePivot.rotation.x = -Math.PI / 2;   // lie on back
+supinePivot.position.y = 10;             // hover height above terrain
+supinePivot.add(camera);
+scene.add(supinePivot);
+
+// Perlin-noise terrain
+const SIZE = 1000, SEG = 200;
+const terrainGeo = new THREE.PlaneGeometry(SIZE, SIZE, SEG, SEG);
+const noise = new ImprovedNoise();
+const pos = terrainGeo.attributes.position;
+const cols = [];
+
+for (let i = 0; i < pos.count; i++) {
+  const x = pos.getX(i);
+  const y = pos.getY(i);
+  const h = noise.noise(x * 0.05, y * 0.05, 0) * 20;   // height
+  pos.setZ(i, h);
+
+  // colour by height
+  const n = (h + 20) / 40;
+  const c = new THREE.Color().setHSL(0.3 - 0.25 * n, 0.8, 0.4 + 0.2 * n);
+  cols.push(c.r, c.g, c.b);
+}
+terrainGeo.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+pos.needsUpdate = true;
+
+const terrainMat = new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide });
+const terrain = new THREE.Mesh(terrainGeo, terrainMat);
+terrain.rotation.x = -Math.PI / 2;
+scene.add(terrain);
+
+// Lighting
+const hemi = new THREE.HemisphereLight(0xffffff, 0x444444);
+hemi.position.set(0, 200, 0);
+scene.add(hemi);
+
+// Random scenery
+const randCols = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
+for (let i = 0; i < 200; i++) {
+  const g = Math.random() < 0.5 ? new THREE.BoxGeometry(2, 2, 2) : new THREE.SphereGeometry(1, 16, 16);
+  const m = new THREE.MeshStandardMaterial({ color: randCols[Math.floor(Math.random() * randCols.length)] });
+  const mesh = new THREE.Mesh(g, m);
+  mesh.position.set(200 * (Math.random() - 0.5), 5 * Math.random() + 1, 200 * (Math.random() - 0.5));
+  scene.add(mesh);
+}
+
+// Movement / controls
+let prev = 0, snap = 0;
+const SNAP_INTERVAL = 0.3, SNAP_ANGLE = Math.PI / 4;
+
+renderer.setAnimationLoop((t, f) => {
+  if (f) {
+    const dt = (t - prev) / 1000;
+    prev = t;
+
+    const session = renderer.xr.getSession();
+    for (const src of session.inputSources) {
+      if (!src.gamepad || !src.handedness) continue;
+      const a = src.gamepad.axes;
+
+      // Right stick: translation
+      if (src.handedness === 'right') {
+        const moveX = a[2] || 0, moveY = a[3] || 0;
+        const speed = 3;
+        const yaw = supinePivot.rotation.z;
+        const forward = new THREE.Vector3(Math.sin(yaw), 0, -Math.cos(yaw));
+        const right  = new THREE.Vector3(Math.cos(yaw), 0,  Math.sin(yaw));
+        const move   = forward.multiplyScalar(-moveY).add(right.multiplyScalar(moveX));
+        supinePivot.position.addScaledVector(move, speed * dt);
+      }
+
+      // Left stick: snap turn (around head-up axis = Z after supine)
+      if (src.handedness === 'left') {
+        const lx = a[2] || 0;
+        if (Math.abs(lx) > 0.5 && snap <= 0) {
+          supinePivot.rotation.z -= Math.sign(lx) * SNAP_ANGLE;
+          snap = SNAP_INTERVAL;
+        }
+      }
+    }
+    if (snap > 0) snap -= dt;
+  }
+  renderer.render(scene, camera);
+});
+
+// Resize
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>

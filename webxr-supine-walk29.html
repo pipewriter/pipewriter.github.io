@@ -1,0 +1,168 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Supine Walking Simulator</title>
+<style>
+    body{margin:0;overflow:hidden}
+</style>
+</head>
+<body>
+<script type="module">
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.162/build/three.module.js";
+import { VRButton } from "https://cdn.jsdelivr.net/npm/three@0.162/examples/jsm/webxr/VRButton.js";
+import { ImprovedNoise } from "https://cdn.jsdelivr.net/npm/three@0.162/examples/jsm/math/ImprovedNoise.js";
+
+/* --------------------------------------------------
+   basic scene / camera / renderer
+-------------------------------------------------- */
+const scene   = new THREE.Scene();
+scene.background = new THREE.Color(0x88ccee);
+
+const camera  = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.xr.enabled = true;
+document.body.appendChild(renderer.domElement);
+document.body.appendChild(VRButton.createButton(renderer));
+
+/* --------------------------------------------------
+   supine pivot – yaw (around real-world up) + fixed pitch
+-------------------------------------------------- */
+const supinePivot = new THREE.Object3D();
+supinePivot.position.set(0, 8, 0);           // hover start height
+scene.add(supinePivot);
+supinePivot.add(camera);
+
+const pitchQuat = new THREE.Quaternion().setFromAxisAngle(
+        new THREE.Vector3(1,0,0), -Math.PI/2);  // lie on back
+let   yaw = 0;                                  // around world +Y
+
+function updatePivotQuaternion(){
+    const yawQuat = new THREE.Quaternion().setFromAxisAngle(
+            new THREE.Vector3(0,1,0), yaw);
+    supinePivot.quaternion.copy(yawQuat).multiply(pitchQuat);
+}
+updatePivotQuaternion();
+
+/* --------------------------------------------------
+   perlin-noise ground the player hovers above
+-------------------------------------------------- */
+const noise     = new ImprovedNoise();
+const G_SCALE   = 0.08;   // frequency
+const G_AMP     = 5;      // amplitude
+const G_SIZE    = 1000;
+const G_SEGS    = 200;
+const HOVER     = 2;      // eye height above ground
+
+function groundHeight(x,z){
+    return noise.noise(x*G_SCALE, z*G_SCALE, 0) * G_AMP;
+}
+
+const groundGeo = new THREE.PlaneGeometry(G_SIZE, G_SIZE, G_SEGS, G_SEGS);
+groundGeo.rotateX(-Math.PI/2);
+
+const colors = new Float32Array(groundGeo.attributes.position.count*3);
+const col    = new THREE.Color();
+
+for(let i=0;i<groundGeo.attributes.position.count;i++){
+    const ix = i*3;
+    const vx = groundGeo.attributes.position.array[ix    ];
+    const vz = groundGeo.attributes.position.array[ix + 2];
+    const h  = groundHeight(vx, vz);
+    groundGeo.attributes.position.array[ix + 1] = h;
+
+    // colour by height  (greens → yellows)
+    col.setHSL(0.33 - 0.06*(h/G_AMP), 0.8, 0.5);
+    colors[ix  ] = col.r;
+    colors[ix+1] = col.g;
+    colors[ix+2] = col.b;
+}
+groundGeo.setAttribute('color', new THREE.BufferAttribute(colors,3));
+groundGeo.computeVertexNormals();
+
+const groundMat = new THREE.MeshStandardMaterial({vertexColors:true, flatShading:true});
+const ground    = new THREE.Mesh(groundGeo, groundMat);
+scene.add(ground);
+
+/* --------------------------------------------------
+   lighting & some random scenery objects
+-------------------------------------------------- */
+scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1));
+
+const decoColors = [0xff0000,0x00ff00,0x0000ff,0xffff00,0xff00ff,0x00ffff];
+for(let i=0;i<200;i++){
+    const geo = (Math.random()<0.5)?
+        new THREE.BoxGeometry(2,2,2) : new THREE.SphereGeometry(1,16,16);
+    const mat = new THREE.MeshStandardMaterial({color:decoColors[Math.random()*decoColors.length|0]});
+    const mesh= new THREE.Mesh(geo,mat);
+    mesh.position.set((Math.random()-0.5)*200, 5+Math.random()*5, (Math.random()-0.5)*200);
+    scene.add(mesh);
+}
+
+/* --------------------------------------------------
+   movement / snap turn
+-------------------------------------------------- */
+const SNAP_INTERVAL = 0.3;    // seconds
+const SNAP_ANGLE    = Math.PI/4;
+let   snapTimer     = 0;
+let   prevTime      = 0;
+
+renderer.setAnimationLoop((t,frame)=>{
+    if(!frame) return;
+    const dt = (t - prevTime)/1000; prevTime = t;
+
+    const session = renderer.xr.getSession();
+    for(const src of session.inputSources){
+        if(!src || !src.gamepad) continue;
+        const gp = src.gamepad;
+        const a  = gp.axes;
+
+        /* -------- right stick : movement on ground plane -------- */
+        if(src.handedness === "right"){
+            const moveX = a[2] || 0;
+            const moveY = a[3] || 0;
+
+            const spd   = 3;
+            const yawQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), yaw);
+            const right    = new THREE.Vector3(1,0,0).applyQuaternion(yawQuat);
+            const forward  = new THREE.Vector3(0,0,-1).applyQuaternion(yawQuat);
+
+            const mv = forward.multiplyScalar(-moveY).add(right.multiplyScalar(moveX))
+                          .normalize().multiplyScalar(spd*dt);
+            supinePivot.position.add(mv);
+        }
+
+        /* -------- left stick : snap turn around world up -------- */
+        if(src.handedness === "left"){
+            const lx = a[2] || 0;
+            if(Math.abs(lx)>0.5 && snapTimer<=0){
+                yaw -= Math.sign(lx) * SNAP_ANGLE;
+                updatePivotQuaternion();
+                snapTimer = SNAP_INTERVAL;
+            }
+        }
+    }
+    if(snapTimer>0) snapTimer -= dt;
+
+    /* -------- maintain hover height over terrain -------- */
+    const gx = supinePivot.position.x;
+    const gz = supinePivot.position.z;
+    supinePivot.position.y = groundHeight(gx, gz) + HOVER;
+
+    renderer.render(scene, camera);
+});
+
+/* --------------------------------------------------
+   resize
+-------------------------------------------------- */
+window.addEventListener("resize", ()=>{
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>

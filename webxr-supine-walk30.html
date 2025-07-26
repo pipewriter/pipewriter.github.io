@@ -1,0 +1,120 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Supine Walking Simulator</title>
+<style>body{margin:0;overflow:hidden}</style>
+</head>
+<body>
+<script type="module">
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.162/build/three.module.js";
+import { VRButton } from "https://cdn.jsdelivr.net/npm/three@0.162/examples/jsm/webxr/VRButton.js";
+import { ImprovedNoise } from "https://cdn.jsdelivr.net/npm/three@0.162/examples/jsm/math/ImprovedNoise.js";
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x88ccee);
+
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, .1, 1000);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.xr.enabled = true;
+document.body.appendChild(renderer.domElement);
+document.body.appendChild(VRButton.createButton(renderer));
+
+const supinePivot = new THREE.Object3D();
+supinePivot.add(camera);
+scene.add(supinePivot);
+supinePivot.rotation.x = -Math.PI / 2; // lie on back
+supinePivot.position.y = 1.6;          // hover above the ground
+
+/* ----------  Perlin noise textured floor  ---------- */
+const texSize = 512;
+const data = new Uint8Array(texSize * texSize * 3);
+const noise = new ImprovedNoise();
+const scale = 0.05;
+let ptr = 0;
+
+for (let y = 0; y < texSize; y++) {
+  for (let x = 0; x < texSize; x++) {
+    const n = (noise.noise(x * scale, y * scale, 0) + 1) / 2; // 0‥1
+    let r, g, b;
+    if (n < 0.3)      { r = 0;   g = 0;   b = 200; }   // water
+    else if (n < 0.45){ r = 210; g = 180; b = 140; }   // beach
+    else if (n < 0.7) { r = 40;  g = 180; b = 40;  }   // grass
+    else              { r = 128; g = 128; b = 128; }   // mountain
+    data[ptr++] = r; data[ptr++] = g; data[ptr++] = b;
+  }
+}
+const texture = new THREE.DataTexture(data, texSize, texSize, THREE.RGBFormat);
+texture.needsUpdate = true;
+texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+
+const floor = new THREE.Mesh(
+  new THREE.PlaneGeometry(1000, 1000),
+  new THREE.MeshStandardMaterial({ map: texture })
+);
+floor.rotation.x = -Math.PI / 2;
+scene.add(floor);
+/* --------------------------------------------------- */
+
+const light = new THREE.HemisphereLight(0xffffff, 0x444444);
+light.position.set(0, 200, 0);
+scene.add(light);
+
+/* Random scenery */
+const colors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
+for (let i = 0; i < 200; i++) {
+  const geo = Math.random() < .5 ? new THREE.BoxGeometry(2, 2, 2) : new THREE.SphereGeometry(1, 16, 16);
+  const mat = new THREE.MeshStandardMaterial({ color: colors[Math.floor(Math.random() * colors.length)] });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(200 * (Math.random() - .5), 1 + 5 * Math.random(), 200 * (Math.random() - .5));
+  scene.add(mesh);
+}
+
+let prev = 0, snap = 0;
+const SNAP_INTERVAL = .3, SNAP_ANGLE = Math.PI / 4;
+
+renderer.setAnimationLoop((t, frame) => {
+  if (frame) {
+    const session = renderer.xr.getSession();
+    const dt = (t - prev) / 1000;
+    prev = t;
+
+    for (const src of session.inputSources) {
+      if (!src.gamepad || !src.handedness) continue;
+      const gp = src.gamepad, a = gp.axes;
+
+      /* ----------  Right hand = locomotion  ---------- */
+      if (src.handedness === "right") {
+        const moveX = a[2] || 0, moveY = a[3] || 0, speed = 3;
+        const right   = new THREE.Vector3(1, 0, 0).applyQuaternion(supinePivot.quaternion);
+        const forward = new THREE.Vector3(0, 1, 0).applyQuaternion(supinePivot.quaternion); // use local +Y
+        const moveVec = forward.multiplyScalar(-moveY).add(right.multiplyScalar(moveX));
+        supinePivot.position.add(moveVec.multiplyScalar(speed * dt));
+      }
+
+      /* ----------  Left hand = snap turn  ---------- */
+      if (src.handedness === "left") {
+        const lx = a[2] || 0;
+        if (Math.abs(lx) > .5 && snap <= 0) {
+          supinePivot.rotation.z -= Math.sign(lx) * SNAP_ANGLE; // rotate around player's up axis
+          snap = SNAP_INTERVAL;
+        }
+      }
+    }
+    if (snap > 0) snap -= dt;
+  }
+  renderer.render(scene, camera);
+});
+
+window.addEventListener("resize", () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>
