@@ -1,0 +1,25 @@
+
+<!doctype html><html><head><meta charset="utf-8"><title>WFC-WebXR</title><style>body{margin:0;overflow:hidden;background:#000}</style><script src="https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.min.js"></script><script type="module">
+import {VRButton}from"https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/webxr/VRButton.js";
+const SIZE=60,HSTATES=12,OSTATES=5,EYE=1.6,SNAP=Math.PI/4;
+function wfc(n,s){const g=Array.from({length:n},()=>Array.from({length:n},()=>Array.from({length:s},(_,i)=>i))),nbs=(x,y)=>[[x-1,y],[x+1,y],[x,y-1],[x,y+1]].filter(([a,b])=>a>=0&&a<n&&b>=0&&b<n);for(;;){let mn=s+1,choices=[];for(let y=0;y<n;y++)for(let x=0;x<n;x++){let c=g[y][x];c.length>1&&c.length<mn?(mn=c.length,choices=[[x,y]]):c.length===mn&&choices.push([x,y])}if(!choices.length)break;let [cx,cy]=choices[Math.random()*choices.length|0],tile=g[cy][cx][Math.random()*g[cy][cx].length|0];g[cy][cx]=[tile];let stack=[[cx,cy]];while(stack.length){let[x,y]=stack.pop(),v=g[y][x][0];for(let[a,b]of nbs(x,y)){let cell=g[b][a];if(cell.length>1){let l=cell.length;g[b][a]=cell.filter(t=>t!==v);if(!g[b][a].length)return null;if(g[b][a].length<l)stack.push([a,b])}}}}return g.map(r=>r.map(c=>c[0]))}
+let heightGrid=null,objGrid=null;while(!heightGrid)heightGrid=wfc(SIZE,HSTATES);while(!objGrid)objGrid=wfc(SIZE,OSTATES);
+const scene=new THREE.Scene();
+const cam=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,.1,1000);
+const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setSize(innerWidth,innerHeight);renderer.shadowMap.enabled=false;renderer.xr.enabled=true;document.body.appendChild(renderer.domElement);document.body.appendChild(VRButton.createButton(renderer));
+const light=new THREE.DirectionalLight(0xffffff,1);light.position.set(1,2,3);scene.add(light);scene.add(new THREE.AmbientLight(0x404040));
+const player=new THREE.Group();player.position.set(SIZE/2,EYE,SIZE/2);player.add(cam);scene.add(player);
+const gBox=new THREE.BoxGeometry(1,1,1),matTerrain=new THREE.MeshLambertMaterial({vertexColors:true});
+const inst=new THREE.InstancedMesh(gBox,matTerrain,SIZE*SIZE);inst.instanceMatrix.setUsage(35048); // DynamicDraw
+const colA=new THREE.Color(),colB=new THREE.Color(),colC=new THREE.Color();
+for(let z=0,i=0;z<SIZE;z++)for(let x=0;x<SIZE;x++,i++){let h=heightGrid[z][x]+1;let m=new THREE.Matrix4().compose(new THREE.Vector3(x,h*.5,z),new THREE.Quaternion(),new THREE.Vector3(1,h,1));inst.setMatrixAt(i,m);let clr=new THREE.Color().setHSL((HSTATES-h)/HSTATES,.6,.5);inst.setColorAt(i,clr)}
+scene.add(inst);
+function makePrimitive(type,color){let geo,mat=new THREE.MeshLambertMaterial({color});switch(type){case 1:geo=new THREE.SphereGeometry(.35,9,7);break;case 2:geo=new THREE.ConeGeometry(.35,.7,6);break;case 3:geo=new THREE.CylinderGeometry(.3,.3,.7,8);break;case 4:geo=new THREE.BoxGeometry(.6,.6,.6);break}return new THREE.Mesh(geo,mat)}
+for(let z=0;z<SIZE;z++)for(let x=0;x<SIZE;x++){let o=objGrid[z][x];if(o===0||Math.random()>.3)continue;let mesh=makePrimitive(o,0xffffff*Math.random());mesh.position.set(x,heightGrid[z][x]+.5,z);scene.add(mesh)}
+window.addEventListener("resize",()=>{cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+const ctrls=[];
+for(let i=0;i<2;i++){let c=renderer.xr.getController(i);c.addEventListener("connected",e=>{c.userData.gp=e.data.gamepad;c.userData.hand=e.data.handedness});c.addEventListener("disconnected",()=>delete c.userData.gp);player.add(c);ctrls.push(c)}
+function movePlayer(dt){let yaw=player.rotation.y;for(let c of ctrls){let gp=c.userData.gp;if(!gp)continue;let ax=gp.axes;let isLeft=c.userData.hand==="left";if(isLeft){if(Math.abs(ax[2])>.8&&!c.userData.snap){player.rotation.y+=ax[2]>0?-SNAP:SNAP;c.userData.snap=true}else if(Math.abs(ax[2])<.2)c.userData.snap=false}else{let sx=ax[2],sz=ax[3];let speed=dt*3;if(Math.hypot(sx,sz)>.1){let dir=new THREE.Vector3(sx,0,sz);dir.applyAxisAngle(new THREE.Vector3(0,1,0),yaw);player.position.addScaledVector(dir,-speed)}}}}
+function stickToGround(){let x=Math.round(player.position.x),z=Math.round(player.position.z);if(x>=0&&x<SIZE&&z>=0&&z<SIZE){player.position.y=heightGrid[z][x]+EYE}}
+let prev=0;renderer.setAnimationLoop(t=>{let dt=(t-prev)/1000;prev=t;movePlayer(dt);stickToGround();renderer.render(scene,cam)});
+</script></head><body></body></html>
