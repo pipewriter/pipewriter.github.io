@@ -1,0 +1,477 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Parker Diard - Most Salient Lines</title>
+
+    <style>
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            background: #3e2f2b;
+            color: #e8e0d5;
+            font-family: monospace;
+        }
+
+        /* Typography */
+        body {
+            font-size: 16px;
+        }
+
+        @media (max-width: 639px) {
+            body {
+                font-size: 18px;
+            }
+
+            pre {
+                font-size: 1rem;
+            }
+        }
+
+        h1 {
+            margin: 0;
+            padding: 1rem 1rem 0.5rem;
+            font-size: 1.8rem;
+        }
+
+        /* Layout */
+        #wrapper {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            padding: 1rem;
+        }
+
+        @media (min-width: 640px) {
+            #wrapper {
+                flex-direction: row;
+                flex-wrap: wrap;
+            }
+
+            pre {
+                flex: 1 1 calc(50% - 0.5rem);
+            }
+        }
+
+        @media (min-width: 1024px) {
+            pre {
+                flex: 1 1 calc(25% - 0.5rem);
+            }
+        }
+
+        /* Code blocks */
+        pre {
+            margin: 0;
+            padding: 0.75rem;
+            border-radius: 4px;
+            cursor: pointer;
+            position: relative;
+            white-space: pre-wrap;
+            line-height: 1.4;
+        }
+
+        pre::after {
+            content: attr(data-lang);
+            position: absolute;
+            top: 4px;
+            right: 6px;
+            font-size: 0.65rem;
+            opacity: 0.7;
+        }
+
+        /* GitHub snippet link */
+        .code-link {
+            position: absolute;
+            top: 4px;
+            left: 6px;
+            font-size: 0.75rem;
+            text-decoration: none;
+            color: #e8e0d5;
+            opacity: 0.8;
+        }
+
+        .code-link:hover {
+            opacity: 1;
+        }
+
+        /* Language colours */
+        .java  { background: #5e483b; }
+        .js    { background: #55623b; }
+        .cpp   { background: #3b4b5e; }
+        .py    { background: #4b5e3b; }
+        .go    { background: #3b5e5d; }
+        .rs    { background: #5e3b5e; }
+        .ts    { background: #3b5e58; }
+        .swift { background: #5e573b; }
+        .rb    { background: #5e3b3b; }
+
+        /* Detail overlay */
+        #detail {
+            position: fixed;
+            inset: 0;
+            background: rgba(62, 47, 43, 0.96);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+            z-index: 10;
+            text-align: center;
+        }
+
+        #detail img {
+            max-width: 90vw;
+            max-height: 50vh;
+            border: 4px solid #8b5a2b;
+            border-radius: 6px;
+            margin-bottom: 1rem;
+        }
+
+        #detail p {
+            margin: 0 0 0.75rem;
+        }
+
+        #detail a {
+            display: inline-block;
+            margin: 0.25rem 0.5rem;
+            color: #8bd4ff;
+            text-decoration: none;
+            font-size: 1rem;
+        }
+
+        #detail a:hover {
+            text-decoration: underline;
+        }
+
+        #detail button {
+            background: #8b5a2b;
+            color: #e8e0d5;
+            border: none;
+            padding: 0.75rem 1.25rem;
+            font-size: 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 1rem;
+        }
+
+        /* Face thumbnail */
+        #face {
+            position: fixed;
+            bottom: 1rem;
+            right: 1rem;
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            border: 3px solid #8b5a2b;
+            object-fit: cover;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Parker Diard - Most Salient Lines</h1>
+
+    <div id="wrapper">
+        <!-- Terraform Mender -->
+        <pre class="java"
+             data-proj="p1"
+             data-img="https://picsum.photos/600/350?random=1"
+             data-code="https://github.com/you/terraform-mender/blob/main/src/ServerManager.java#L42-L55"
+             data-lang="Java">
+<a href="https://github.com/you/terraform-mender/blob/main/src/ServerManager.java#L42-L55"
+   target="_blank" rel="noopener" class="code-link">↗</a>
+if (server.isAlive()) {
+    log.info("Server healthy, scheduling reboot...");
+    scheduleRebootInstantly();
+    reboot();
+}
+        </pre>
+
+        <pre class="java"
+             data-proj="p1"
+             data-img="https://picsum.photos/600/350?random=2"
+             data-code="https://github.com/you/terraform-mender/blob/main/src/InfrastructureAuditor.java#L10-L25"
+             data-lang="Java">
+<a href="https://github.com/you/terraform-mender/blob/main/src/InfrastructureAuditor.java#L10-L25"
+   target="_blank" rel="noopener" class="code-link">↗</a>
+try (Resource r = new Resource()) {
+    r.validate();
+    r.repair();
+    metrics.incrementSuccess();
+} catch (Exception ex) {
+    alert(ex.getMessage());
+}
+        </pre>
+
+        <!-- Reactive Canvas -->
+        <pre class="js"
+             data-proj="p2"
+             data-img="https://picsum.photos/600/350?random=3"
+             data-code="https://github.com/you/reactive-canvas/blob/main/src/loop.js#L5-L20"
+             data-lang="JS">
+<a href="https://github.com/you/reactive-canvas/blob/main/src/loop.js#L5-L20"
+   target="_blank" rel="noopener" class="code-link">↗</a>
+const FPS = 60;
+let frame = 0;
+setInterval(() => {
+    draw(frame++);
+    stats.update();
+}, 1000 / FPS);
+        </pre>
+
+        <pre class="js"
+             data-proj="p2"
+             data-img="https://picsum.photos/600/350?random=4"
+             data-code="https://github.com/you/reactive-canvas/blob/main/src/utils/resize.js#L1-L12"
+             data-lang="JS">
+<a href="https://github.com/you/reactive-canvas/blob/main/src/utils/resize.js#L1-L12"
+   target="_blank" rel="noopener" class="code-link">↗</a>
+export function fitCanvas() {
+    canvas.width  = window.innerWidth;
+    canvas.height = window.innerHeight;
+    context.scale(devicePixelRatio, devicePixelRatio);
+}
+window.addEventListener('resize', fitCanvas, true);
+        </pre>
+
+        <!-- Path Tracer -->
+        <pre class="cpp"
+             data-proj="p3"
+             data-img="https://picsum.photos/600/350?random=5"
+             data-code="https://github.com/you/path-tracer/blob/main/src/tracer.cpp#L75-L95"
+             data-lang="C++">
+<a href="https://github.com/you/path-tracer/blob/main/src/tracer.cpp#L75-L95"
+   target="_blank" rel="noopener" class="code-link">↗</a>
+for (auto& ray : rays) {
+    Color contribution = trace(ray, 0);
+    framebuffer[pixel++] += contribution;
+}
+pool.wait_idle();
+        </pre>
+
+        <pre class="cpp"
+             data-proj="p3"
+             data-img="https://picsum.photos/600/350?random=6"
+             data-code="https://github.com/you/path-tracer/blob/main/src/thread_pool.h#L2-L18"
+             data-lang="C++">
+<a href="https://github.com/you/path-tracer/blob/main/src/thread_pool.h#L2-L18"
+   target="_blank" rel="noopener" class="code-link">↗</a>
+std::thread_pool pool(8);
+pool.enqueue([&] { build_bvh(); });
+pool.enqueue([&] { load_textures(); });
+pool.wait_idle();
+        </pre>
+
+        <!-- Consensus Core -->
+        <pre class="java"
+             data-proj="p4"
+             data-img="https://picsum.photos/600/350?random=7"
+             data-code="https://github.com/you/consensus-core/blob/main/src/Comparator.java#L3-L14"
+             data-lang="Java">
+<a href="https://github.com/you/consensus-core/blob/main/src/Comparator.java#L3-L14"
+   target="_blank" rel="noopener" class="code-link">↗</a>
+@Override
+public int compare(Node a, Node b) {
+    return Integer.compare(a.id, b.id);
+}
+        </pre>
+
+        <pre class="java"
+             data-proj="p4"
+             data-img="https://picsum.photos/600/350?random=8"
+             data-code="https://github.com/you/consensus-core/blob/main/src/StateMachine.java#L100-L118"
+             data-lang="Java">
+<a href="https://github.com/you/consensus-core/blob/main/src/StateMachine.java#L100-L118"
+   target="_blank" rel="noopener" class="code-link">↗</a>
+state = FOLLOWER;
+electionTimer.reset(randomTimeout());
+log.debug("Transitioned to FOLLOWER at term {}", currentTerm);
+        </pre>
+
+        <!-- Additional Languages -->
+
+        <pre class="py"
+             data-proj="p2"
+             data-img="https://picsum.photos/600/350?random=9"
+             data-code="https://github.com/you/reactive-canvas/blob/main/tools/generate.py#L1-L15"
+             data-lang="Python">
+<a href="https://github.com/you/reactive-canvas/blob/main/tools/generate.py#L1-L15"
+   target="_blank" rel="noopener" class="code-link">↗</a>
+def lerp(a, b, t):
+    return a + (b - a) * t
+
+values = [lerp(0, 1, i / 10) for i in range(11)]
+print(values)
+        </pre>
+
+        <pre class="go"
+             data-proj="p3"
+             data-img="https://picsum.photos/600/350?random=10"
+             data-code="https://github.com/you/path-tracer/blob/main/cmd/server/main.go#L20-L35"
+             data-lang="Go">
+<a href="https://github.com/you/path-tracer/blob/main/cmd/server/main.go#L20-L35"
+   target="_blank" rel="noopener" class="code-link">↗</a>
+func serve(addr string) {
+    http.Handle("/", http.FileServer(http.Dir("static")))
+    log.Printf("serving on %s...", addr)
+    log.Fatal(http.ListenAndServe(addr, nil))
+}
+        </pre>
+
+        <pre class="rs"
+             data-proj="p4"
+             data-img="https://picsum.photos/600/350?random=11"
+             data-code="https://github.com/you/consensus-core/blob/main/src/lib.rs#L55-L70"
+             data-lang="Rust">
+<a href="https://github.com/you/consensus-core/blob/main/src/lib.rs#L55-L70"
+   target="_blank" rel="noopener" class="code-link">↗</a>
+pub fn heartbeat(&mut self) {
+    if self.role == Role::Leader {
+        self.peers.broadcast(Message::Heartbeat(self.term));
+    }
+}
+        </pre>
+
+        <pre class="ts"
+             data-proj="p2"
+             data-img="https://picsum.photos/600/350?random=12"
+             data-code="https://github.com/you/reactive-canvas/blob/main/src/types.ts#L1-L10"
+             data-lang="TS">
+<a href="https://github.com/you/reactive-canvas/blob/main/src/types.ts#L1-L10"
+   target="_blank" rel="noopener" class="code-link">↗</a>
+export interface Vec2 {
+    x: number;
+    y: number;
+}
+
+export type Color = [number, number, number, number];
+        </pre>
+
+        <pre class="swift"
+             data-proj="p1"
+             data-img="https://picsum.photos/600/350?random=13"
+             data-code="https://github.com/you/terraform-mender/blob/main/iOS/Controller.swift#L40-L55"
+             data-lang="Swift">
+<a href="https://github.com/you/terraform-mender/blob/main/iOS/Controller.swift#L40-L55"
+   target="_blank" rel="noopener" class="code-link">↗</a>
+class Controller: ObservableObject {
+    @Published var isReady = false
+    func start() {
+        Task {
+            await orchestrator.bootstrap()
+            isReady = true
+        }
+    }
+}
+        </pre>
+
+        <pre class="rb"
+             data-proj="p3"
+             data-img="https://picsum.photos/600/350?random=14"
+             data-code="https://github.com/you/path-tracer/blob/main/tools/bench.rb#L2-L14"
+             data-lang="Ruby">
+<a href="https://github.com/you/path-tracer/blob/main/tools/bench.rb#L2-L14"
+   target="_blank" rel="noopener" class="code-link">↗</a>
+require 'benchmark'
+
+Benchmark.bm do |x|
+  x.report("trace") { 100.times { render_scene } }
+end
+        </pre>
+
+        <pre class="java"
+             data-proj="p1"
+             data-img="https://picsum.photos/600/350?random=15"
+             data-code="https://github.com/you/terraform-mender/blob/main/src/Scheduler.java#L60-L80"
+             data-lang="Java">
+<a href="https://github.com/you/terraform-mender/blob/main/src/Scheduler.java#L60-L80"
+   target="_blank" rel="noopener" class="code-link">↗</a>
+scheduler.scheduleAtFixedRate(this::audit, 0, 5, TimeUnit.MINUTES);
+scheduler.scheduleWithFixedDelay(this::heal, 10, 10, TimeUnit.SECONDS);
+        </pre>
+
+        <pre class="cpp"
+             data-proj="p3"
+             data-img="https://picsum.photos/600/350?random=16"
+             data-code="https://github.com/you/path-tracer/blob/main/src/materials.cpp#L120-L140"
+             data-lang="C++">
+<a href="https://github.com/you/path-tracer/blob/main/src/materials.cpp#L120-L140"
+   target="_blank" rel="noopener" class="code-link">↗</a>
+if (hit.material->emissive()) {
+    return hit.material->emission();
+}
+return hit.material->brdf() * trace(next_ray, depth + 1);
+        </pre>
+    </div>
+
+    <div id="detail">
+        <img id="detailImg" alt="detail" />
+        <p id="detailTxt"></p>
+        <div>
+            <a id="detailProj" target="_blank" rel="noopener">Project ↗</a>
+            <a id="detailSnip" target="_blank" rel="noopener">Snippet ↗</a>
+        </div>
+        <button id="closeDetail">close</button>
+    </div>
+
+    <img id="face"
+         src="https://picsum.photos/128?random=99"
+         alt="face" />
+
+    <script>
+        /* -------- Project Meta -------- */
+        const info = {
+            p1: {
+                title: "Terraform Mender",
+                desc: "Self-healing infra orchestrator.",
+                link: "https://github.com/you/terraform-mender"
+            },
+            p2: {
+                title: "Reactive Canvas",
+                desc: "60fps data-driven art.",
+                link: "https://github.com/you/reactive-canvas"
+            },
+            p3: {
+                title: "Path Tracer",
+                desc: "Real-time global illumination in C++17.",
+                link: "https://github.com/you/path-tracer"
+            },
+            p4: {
+                title: "Consensus Core",
+                desc: "Raft-like lightweight consensus.",
+                link: "https://github.com/you/consensus-core"
+            }
+        };
+
+        /* -------- Elements -------- */
+        const detail        = document.getElementById("detail");
+        const dImg          = document.getElementById("detailImg");
+        const dTxt          = document.getElementById("detailTxt");
+        const projLink      = document.getElementById("detailProj");
+        const snippetLink   = document.getElementById("detailSnip");
+        const closeBtn      = document.getElementById("closeDetail");
+
+        /* -------- Handlers -------- */
+        document.querySelectorAll("pre").forEach(pre => {
+            // prevent pre click if direct link clicked
+            pre.addEventListener("click", (e) => {
+                if (e.target.classList.contains("code-link")) return;
+
+                const meta = info[pre.dataset.proj];
+                if (!meta) return;
+
+                dImg.src        = pre.dataset.img;
+                dTxt.textContent = `${meta.title} — ${meta.desc}`;
+                projLink.href    = meta.link;
+                snippetLink.href = pre.dataset.code;
+                detail.style.display = "flex";
+            });
+        });
+
+        closeBtn.onclick = () => detail.style.display = "none";
+    </script>
+</body>
+</html>
