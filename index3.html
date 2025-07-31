@@ -1,0 +1,212 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Salient Code | Broken Grid Portfolio</title>
+<style>
+body{margin:0;font-family:'Consolas',monospace;background:#17171a;color:#eee;overflow-x:hidden;min-height:100vh;position:relative;}
+#face-sticky{position:fixed;top:2vw;left:calc(100vw - 110px);z-index:10;width:80px;height:80px;border-radius:50%;box-shadow:0 1px 10px #0004;background:#23223a;display:flex;justify-content:center;align-items:center;overflow:hidden;}
+#face-sticky img{width:100%;height:100%;object-fit:cover;}
+header{display:flex;flex-direction:row;align-items:center;gap:2.5vw;margin:0 0 3vw 2vw;}
+h1{font-size:2.7rem;font-weight:900;letter-spacing:-2px;line-height:1.1;}
+.sub{font-size:1rem;color:#aeaeae;font-weight:500;}
+.broken-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:2vw 0;position:relative;}
+.codeblock{grid-column:span 4;padding:2vw 2vw 2vw 2vw;background:#20204a;border-radius:.8vw;position:relative;margin-bottom:2vw;box-shadow:2px 5px 0 0 #151538;transition:box-shadow .18s;}
+.codeblock.js{background:#191d27;border-left:6px solid #ffe569;}
+.codeblock.cpp{background:#21243b;border-left:6px solid #80dfff;}
+.codeblock.java{background:#262020;border-left:6px solid #fc5185;}
+.codeblock.selected,.codeblock:hover{box-shadow:0 10px 30px #0a0323ba;z-index:10;}
+.language-tag{position:absolute;top:1vw;right:1vw;font-size:.72rem;padding:.2em .55em;background:rgba(30,30,30,.92);border-radius:.4em;opacity:0.93;text-transform:uppercase;font-family:sans-serif;letter-spacing:1px;}
+.code-visit{display:block;font-size:0.9rem;color:#64ffda;text-decoration:none;margin-top:1.1vw;}
+pre{margin: 0;font-size:1.08rem;line-height:1.35;}
+.codeblock .project-name{font-size:1.25rem;font-weight:600;margin-bottom:0.45vw;opacity:0.82;letter-spacing:.06em;}
+.project-details{position:fixed;top:6vw;right:4vw;width:350px;max-width:82vw;background:#22223cdd;padding:1.7vw 1.7vw 1.2vw 1.7vw;border-radius:1.3vw;z-index:11;box-shadow:4px 15px 40px #1010287f;display:none;flex-direction:column;align-items:flex-start;min-height:210px;}
+.project-details.active{display:flex;}
+.project-details img{width:100%;max-height:168px;object-fit:cover;margin-bottom:1vw;border-radius:.8vw;box-shadow:0 1px 10px #0003;}
+.p-desc{font-size:1rem;margin-bottom:.65vw;color:#c0c1c1;}
+.p-links{display:flex;flex-wrap:wrap;gap:.65vw;}
+.p-link{background:#121227;color:#7de3f6;text-decoration:none;padding:.4em .85em;border-radius:1em;font-size:.93em;margin-right:.6vw;margin-top:.2vw;}
+.broken-grid .codeblock:nth-child(1){grid-column:2/5;}
+.broken-grid .codeblock:nth-child(2){grid-column:9/13;}
+.broken-grid .codeblock:nth-child(3){grid-column:4/8;}
+.broken-grid .codeblock:nth-child(4){grid-column:6/9;}
+.broken-grid .codeblock:nth-child(5){grid-column:3/7;}
+.broken-grid .codeblock:nth-child(6){grid-column:1/4;}
+.broken-grid .codeblock:nth-child(7){grid-column:8/12;}
+.broken-grid .codeblock:nth-child(8){grid-column:5/9;}
+@media(max-width:1050px){
+  .project-details{position:fixed;top:auto;bottom:3vw;right:0;left:0;margin:auto;width:93vw;}
+  #face-sticky{left:12px;top:10px;}
+  header{flex-direction:column;gap:0.7vw;}
+  .broken-grid{grid-template-columns:repeat(4,1fr);}
+  .codeblock{padding:.9vw;}
+}
+@media(max-width:600px){
+  .broken-grid{grid-template-columns:1fr;}
+  .codeblock{grid-column:1/-1;}
+  .project-details{top:unset;bottom:.5vw;right:0;left:0;padding:2vw 2vw 1vw 2vw;width:98vw;}
+}
+</style>
+</head>
+<body>
+<div id="face-sticky"><img src="https://images.unsplash.com/photo-1511367461989-f85a21fda167?auto=format&fit=facearea&w=300&q=80" alt="author face"></div>
+<header>
+  <h1>Most Salient<br>Lines of Code</h1>
+  <div class="sub">A software engineer's portfolio by code fragment,<br>in a beautifully Broken Grid. (hover or tap - see the story)</div>
+</header>
+<div class="broken-grid">
+<!-- Project 3 -->
+<div class="codeblock java" data-proj="project3">
+  <div class="project-name">VR City Builder</div>
+  <span class="language-tag">Java</span>
+  <pre>cityGraph.connect(buildings.get("A01"), buildings.get("PowerPlant"))
+.render(world.getViewport());
+</pre>
+</div>
+<!-- Project 2 -->
+<div class="codeblock cpp" data-proj="project2">
+  <div class="project-name">Interactive Terrain Synth</div>
+  <span class="language-tag">C++</span>
+  <pre>for(auto& v : terrain.vertices)
+    v.z = Perlin(v.x, v.y, t);
+</pre>
+</div>
+<!-- Project 1 -->
+<div class="codeblock js" data-proj="project1">
+  <div class="project-name">Geometric Art Generator</div>
+  <span class="language-tag">JS</span>
+  <pre>ctx.globalCompositeOperation = "xor";
+drawPolygon(vertices, colors[i%colors.length]);
+</pre>
+</div>
+<!-- Project 4 -->
+<div class="codeblock js" data-proj="project4">
+  <div class="project-name">Realtime Web Collab</div>
+  <span class="language-tag">JS</span>
+  <pre>socket.on("cursor-move", data =&gt; {
+  cursors[data.id].moveTo(data.x, data.y);
+});
+</pre>
+</div>
+<!-- Project 2 (again) -->
+<div class="codeblock cpp" data-proj="project2">
+  <div class="project-name">Interactive Terrain Synth</div>
+  <span class="language-tag">C++</span>
+  <pre>if(heightmap[x][y] &gt; .8) paintWater(x, y);</pre>
+</div>
+<!-- Project 3 -->
+<div class="codeblock java" data-proj="project3">
+  <div class="project-name">VR City Builder</div>
+  <span class="language-tag">Java</span>
+  <pre>@Override
+public void onUserMove(UserEvent e) {
+  updatePath(e.getPosition());
+}</pre>
+</div>
+<!-- Project 1 -->
+<div class="codeblock js" data-proj="project1">
+  <div class="project-name">Geometric Art Generator</div>
+  <span class="language-tag">JS</span>
+  <pre>if(seedShape=="star") morph(inflate(baseShape, t*0.5));</pre>
+</div>
+<!-- Project 4 -->
+<div class="codeblock js" data-proj="project4">
+  <div class="project-name">Realtime Web Collab</div>
+  <span class="language-tag">JS</span>
+  <pre>const state=JSON.parse(localStorage.doc||"{}");
+state.edits.push(edit);</pre>
+</div>
+</div>
+<!-- Project detail overlays (hidden, revealed on hover) -->
+<div id="proj-overlay-project1" class="project-details">
+<img src="https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=640&q=80" alt="project1 img">
+<div class="p-desc">
+Procedurally generates geometric digital art in the browser, blending math, randomness, and user input — saved 10,000+ images to the “Artifex” collection.
+</div>
+<div class="p-links">
+  <a href="https://github.com/sampleuser/artifex" class="p-link" target="_blank">GitHub</a>
+  <a href="artifex.html" class="p-link">Project Page</a>
+</div>
+</div>
+<div id="proj-overlay-project2" class="project-details">
+<img src="https://images.unsplash.com/photo-1464983953574-0892a716854b?auto=format&fit=crop&w=640&q=80" alt="project2 img">
+<div class="p-desc">
+Synthesizes and simulates real-time 3D terrains with generative noise, erosion and paint tools; featured in procedural terrain workshops and demoed live at SIGGRAPH.
+</div>
+<div class="p-links">
+  <a href="https://github.com/sampleuser/terrasynth" class="p-link" target="_blank">GitHub</a>
+  <a href="terrasynth.html" class="p-link">Project Page</a>
+</div>
+</div>
+<div id="proj-overlay-project3" class="project-details">
+<img src="https://images.unsplash.com/photo-1465101046530-73398c7f28ca?auto=format&fit=crop&w=640&q=80" alt="project3 img">
+<div class="p-desc">
+Block-based procedural city builder for VR — constructed an efficient city-graph representation, with smart pathfinding and dynamic environment reactivity for immersive urban design.
+</div>
+<div class="p-links">
+  <a href="https://github.com/sampleuser/vr-citybuilder" class="p-link" target="_blank">GitHub</a>
+  <a href="vr-citybuilder.html" class="p-link">Project Page</a>
+</div>
+</div>
+<div id="proj-overlay-project4" class="project-details">
+<img src="https://images.unsplash.com/photo-1503676382389-4809596d5290?auto=format&fit=crop&w=640&q=80" alt="project4 img">
+<div class="p-desc">
+Browser-based collaborative text/code editor syncing state using CRDT algorithms and WebSockets; forms the engine of “TeamDoc,” now used by open-source research groups.
+</div>
+<div class="p-links">
+  <a href="https://github.com/sampleuser/teamdoc" class="p-link" target="_blank">GitHub</a>
+  <a href="teamdoc.html" class="p-link">Project Page</a>
+</div>
+</div>
+<script>
+const projectImgs={
+  "project1":"https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=640&q=80",
+  "project2":"https://images.unsplash.com/photo-1464983953574-0892a716854b?auto=format&fit=crop&w=640&q=80",
+  "project3":"https://images.unsplash.com/photo-1465101046530-73398c7f28ca?auto=format&fit=crop&w=640&q=80",
+  "project4":"https://images.unsplash.com/photo-1503676382389-4809596d5290?auto=format&fit=crop&w=640&q=80"
+};
+// Preload images so overlays are instant
+for(const url of Object.values(projectImgs)){let img=new window.Image();img.src=url;}
+
+function hideAllOverlays(){document.querySelectorAll('.project-details').forEach(o=>o.classList.remove('active'))}
+function showOverlay(proj){
+  hideAllOverlays();
+  let id = "#proj-overlay-"+proj;
+  let el = document.querySelector(id);
+  if(el) el.classList.add('active');
+}
+let timer = null;
+const codeblocks = document.querySelectorAll('.codeblock');
+codeblocks.forEach(block=>{
+  let proj = block.getAttribute('data-proj');
+  block.addEventListener('mouseover',()=>{
+    block.classList.add('selected');
+    showOverlay(proj);
+  });
+  block.addEventListener('touchstart',e=>{
+    block.classList.add('selected');
+    showOverlay(proj);
+    e.stopPropagation();
+ },{passive:true});
+  block.addEventListener('mouseleave',()=>{
+    block.classList.remove('selected');
+    hideAllOverlays();
+  });
+});
+document.body.addEventListener('touchstart',e=>{
+  if(!e.target.classList.contains('codeblock'))
+    hideAllOverlays();
+},{passive:true});
+
+// Keep overlay visible if mouse is over it
+document.querySelectorAll('.project-details').forEach(overlay=>{
+  overlay.addEventListener('mouseenter',()=>{overlay.classList.add('active')});
+  overlay.addEventListener('mouseleave',()=>{overlay.classList.remove('active')});
+});
+
+</script>
+</body>
+</html>
+```
