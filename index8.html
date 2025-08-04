@@ -1,0 +1,323 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Parker Diard – Portfolio</title>
+<style>
+:root{
+  --bio1:#e6efe0;--bio2:#9ed9a0;--bio3:#84a98c;--bio4:#52796f;--bio5:#354f52;--bio6:#a3b18a;
+  --java:#f7df1e;--js:#fee26c;--cpp:#7e99c6;--accent:#00d9ff;--card-bg:#1b1d2b;--text:#f3f6ff
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:'Segoe UI',sans-serif;background:linear-gradient(120deg,var(--bio1) 60%,var(--bio2) 100%);
+  min-height:100vh;color:var(--bio5);display:flex;flex-direction:column
+}
+/* -----------------  HEADER  ----------------- */
+#header{
+  position:sticky;top:0;z-index:100;display:flex;align-items:center;gap:24px;
+  background:linear-gradient(90deg,var(--bio4) 70%,var(--bio3) 100%);color:#fff;padding:20px 26px;
+  box-shadow:0 3px 18px rgba(159,224,109,.19);flex-wrap:wrap
+}
+#avatar{width:68px;height:68px;border-radius:50%;border:4px solid var(--bio2);
+  background:#fff;object-fit:cover;box-shadow:0 3px 10px rgba(76,133,70,.14)}
+#meinfo{display:flex;flex-direction:column;gap:6px;flex:1}
+#nameline{display:flex;align-items:center;gap:20px;flex-wrap:wrap}
+#nameline h1{font-size:1.6em;font-weight:700;white-space:nowrap}
+#meinfo span{opacity:.88;font-size:.98em}
+
+/* -----------------  SKILL  BAR  ----------------- */
+#skillBar{display:flex;gap:.5rem;flex-wrap:wrap}
+.filter-btn{
+  display:flex;align-items:center;gap:.45rem;background:linear-gradient(135deg,#2e3043 0%,#171822 100%);
+  border:2px solid transparent;border-radius:2rem;color:var(--text);padding:.4rem .9rem .4rem .6rem;
+  cursor:pointer;font-size:.78rem;transition:background .25s
+}
+.filter-btn:hover{background:#2c2e40}
+.filter-btn.active{box-shadow:0 0 0 2px var(--accent) inset}
+.filter-btn img{width:20px;height:20px;border-radius:50%;object-fit:cover;background:#d6d6d6}
+.stars{font-size:.72rem;letter-spacing:-.05em;user-select:none;color:#ffda65}
+
+/* -----------------  LAYOUT  ----------------- */
+main{display:flex;flex:1}
+#codepane{
+  flex:1 1 40vw;max-width:48vw;min-width:300px;display:flex;flex-direction:column;
+  padding:36px 30px 36px 60px;gap:22px
+}
+.codeblock{
+  padding:1.3em 1em 1.3em 1.6em;border-radius:16px;font-family:'Fira Mono',monospace;
+  font-size:1em;line-height:1.42em;overflow-x:auto;position:relative;cursor:pointer;
+  background:var(--bio6);box-shadow:0 3px 18px rgba(159,224,109,.19);border-left:6px solid var(--bio2);
+  transition:transform .13s,box-shadow .14s
+}
+.codeblock.hidden{display:none}
+.codeblock.active,.codeblock:hover{
+  transform:scale(1.03) translateX(6px);box-shadow:0 7px 30px rgba(82,121,111,.11);z-index:4
+}
+.codeblock[data-lang='Java']      {border-left-color:var(--java);background:rgba(247,223,30,.18)}
+.codeblock[data-lang='JavaScript']{border-left-color:var(--js);background:rgba(254,226,108,.16)}
+.codeblock[data-lang='C++']       {border-left-color:var(--cpp);background:rgba(126,153,198,.12)}
+.codeblock .lang{
+  position:absolute;top:10px;right:18px;font-size:.97em;font-weight:600;color:#fff;
+  background:#465d53b0;padding:0.1em 0.65em;border-radius:7px 13px 13px 7px
+}
+.codeblock .lnum{opacity:.37;user-select:none;font-size:.9em}
+.codeblock .comment{color:#406039;opacity:.62}
+
+/* -----------------  PROJECT  PANEL  ----------------- */
+#projectpane{
+  flex:0 0 39vw;min-width:300px;max-width:47vw;padding:38px;
+  position:sticky;top:100px;height:min(77vh,640px);display:flex;flex-direction:column;
+  align-items:center;justify-content:center;background:linear-gradient(109deg,var(--bio3) 61%,rgba(173,232,188,.34) 100%);
+  box-shadow:0 3px 18px rgba(159,224,109,.19);border-radius:41px 37px 19px 41px;border:3px dashed var(--bio4)
+}
+#projectimg{width:410px;max-width:90vw;max-height:240px;border-radius:29px;object-fit:cover;
+  box-shadow:0 10px 38px rgba(126,153,100,.13);background:var(--bio2);margin-bottom:22px;
+  opacity:0;transition:opacity .18s}
+#projectimg.show{opacity:1}
+#projecttitle{font-size:2em;font-weight:700;margin-bottom:7px;text-align:center}
+#projectdesc{
+  font-size:1.1em;opacity:.77;margin-bottom:9px;max-width:420px;
+  background:rgba(255,254,240,.78);border-radius:12px;padding:8px 17px;
+  box-shadow:0 2px 17px rgba(175,224,143,.13)
+}
+#projectlinks a{
+  background:var(--bio5);color:var(--bio1);font-weight:600;text-decoration:none;font-size:1.03em;
+  padding:7px 17px;border-radius:18px 11px 17px 14px;margin-right:14px;transition:background .13s,color .13s
+}
+#projectlinks a:hover{background:var(--bio4);color:#fff}
+
+/* -----------------  MEDIA  ----------------- */
+@media(max-width:1100px){main{flex-direction:column}
+  #codepane,#projectpane{max-width:100vw;width:100vw;min-width:0}}
+@media(max-width:750px){
+  #header{flex-direction:column;gap:12px;padding:18px}
+  #codepane,#projectpane{padding:22px 8vw}
+  #projectimg{width:94vw;max-width:94vw}
+}
+</style>
+</head>
+<body>
+  <div id="header">
+    <a href="https://www.linkedin.com/in/parkerdiard" target="_blank" rel="noopener">
+      <img id="avatar" src="profile_pic.jpg" alt="Avatar">
+    </a>
+    <div id="meinfo">
+      <div id="nameline">
+        <h1>Parker Diard</h1>
+        <div id="skillBar"></div>
+      </div>
+      <span>Graphics-minded Software Engineer · Mountain View, CA 🌱</span>
+    </div>
+  </div>
+
+<main>
+  <section id="codepane"></section>
+  <section id="projectpane">
+    <img id="projectimg" src="" alt="Project Image">
+    <div id="projecttitle"></div>
+    <div id="projectdesc"></div>
+    <div id="projectlinks"></div>
+  </section>
+</main>
+
+<script>
+/* -----------------  SKILLS  ----------------- */
+const skillMeta={
+  Java:{r:5,img:"https://raw.githubusercontent.com/devicons/devicon/master/icons/java/java-original.svg"},
+  JavaScript:{r:5,img:"https://raw.githubusercontent.com/devicons/devicon/master/icons/javascript/javascript-original.svg"},
+  OpenGL:{r:4,img:"https://raw.githubusercontent.com/devicons/devicon/master/icons/opengl/opengl-original.svg"},
+  "C++":{r:3,img:"https://raw.githubusercontent.com/devicons/devicon/master/icons/cplusplus/cplusplus-original.svg"},
+  GLSL:{r:4,img:"logos/glsl.png"},WebXR:{r:4,img:"logos/webxr.png"},ThreeJS:{r:3,img:"logos/threejs-original.svg"},
+  Supabase:{r:2,img:"https://seeklogo.com/images/S/supabase-logo-DCC676FFE2-seeklogo.com.png"},
+  WebGL:{r:4,img:"logos/webgl.png"}
+};
+const starHTML=r=>`<span class="stars">${"★".repeat(r)}${"☆".repeat(5-r)}</span>`;
+const skillBar=document.getElementById("skillBar");
+Object.entries(skillMeta).forEach(([k,v])=>{
+  const b=document.createElement("button");
+  b.className="filter-btn";b.dataset.skill=k;
+  b.innerHTML=`<img src="${v.img}" alt>${k} ${starHTML(v.r)}`;
+  skillBar.appendChild(b)
+});
+
+/* -----------------  PROJECTS  ----------------- */
+const projectData=[
+  {title:"Procedural Mind Palace",
+    desc:"A 3-D generative memory palace that embeds any media in unique, recallable rooms. Steam release.",
+    links:[{href:"https://github.com/pipewriter/mind-palace",label:"GitHub"},
+           {href:"https://store.steampowered.com/app/2367280/A_Shared_Memory/",label:"Steam"}],
+    img:"images/ps.png",code:"https://github.com/pipewriter/mind-palace"},
+  {title:"Shared VR Image Viewer",
+    desc:"Browse images in a lava-lamp space with friends—supports supine VR viewing.",
+    links:[{href:"https://github.com/pipewriter/webxr-get-rooms-shared",label:"GitHub"},
+           {href:"https://pipewriter.github.io/webxr-get-rooms-shared.html?rooms=rooms.json&room=expression2",label:"Live Demo"}],
+    img:"images/attentionfocus.png",code:"https://github.com/pipewriter/webxr-get-rooms-shared"},
+  {title:"React-Native Supabase Take-home",
+    desc:"Interview project showcasing Auth & CRUD with Supabase and React-Native.",
+    links:[{href:"https://github.com/pipewriter/react-native-supabase",label:"GitHub"}],
+    img:"images/reactsupabase.jpg",code:"https://github.com/pipewriter/react-native-supabase"},
+  {title:"Rogue World Java MMO",
+    desc:"Procedurally generated MMO reminiscent of RuneScape with exhaustible resources.",
+    links:[{href:"https://github.com/pipewriter/rogue-world",label:"GitHub"},
+           {href:"https://www.youtube.com/watch?v=1v4U8AQpIE8",label:"Video"}],
+    img:"images/rw6.png",code:"https://github.com/pipewriter/rogue-world"},
+  {title:"NovelBase Zettelkasten Tool",
+    desc:"A Zettelkasten system where each link gains a unique, memorable identifier.",
+    links:[{href:"https://github.com/pipewriter/novelbase",label:"GitHub"},
+           {href:"https://novelbase.itch.io/novelbase",label:"Itch.io"}],
+    img:"images/novelbase.gif",code:"https://github.com/pipewriter/novelbase"},
+  {title:"Triangle WebGL",
+    desc:"A day project while learning WebGL—renders colourful spinning triangles.",
+    links:[{href:"https://github.com/pipewriter/TriangleWebGL",label:"GitHub"},
+           {href:"https://pipewriter.github.io/TriangleWebGL",label:"Live"}],
+    img:"images/triangles.png",code:"https://github.com/pipewriter/TriangleWebGL"}
+];
+
+/* -----------------  CODE  SNIPPETS  ----------------- */
+const codeData=[
+  {project:0,lang:"C++",start:382,skills:["C++"],link:"https://github.com/pipewriter/mind-palace/blob/main/src/renderer.cpp",
+code:`glUseProgram(quadProg);
+glm::mat4 qModel = glm::translate(glm::mat4(1.0f), camPos + camDir()*5.0f);
+qModel = glm::rotate(qModel, glm::radians(yaw+90.f), glm::vec3(0,1,0));
+qModel = glm::scale(qModel, glm::vec3(2.f));
+glm::mat4 qMVP = projection * view * qModel;`},
+  {project:0,lang:"Java",start:4,skills:["Java"],link:"https://github.com/pipewriter/mind-palace/blob/main/src/GameRegistry.java",
+code:`private static Class<GameObject>[] classesLookupTable = new Class[]{
+    // REGISTERED CLASSES GO HERE
+    Pasty.class, ShinyBauble.class, TextNodule.class, TextNodule2.class, RecordNodule.class, IdeaBeacon.class,
+    ThreeDumb.class, LudeonNodule.class, Shader.class, PortalNodule.class, LinkNodule.class, ChestNodule.class,
+    KeyNodule.class, FileNodule.class, BurningBush.class, ParkerQuizItem.class, TenPortals.class, ObeliskNodule.class,
+    ProtoVideo.class, CompressorNodule.class, ControllerNodule.class,
+    FunnelNodule.class, PhantomNodule.class, PromiseNodule.class, FolderNodule.class,
+    FunnelNodule2.class, PumpJack.class, FollowPath.class, Searcher.class,
+    MultipleChoice.class, Conveyor.class, TtsMachine.class, PressurePlate.class, Crux.class
+};`},
+  {project:0,lang:"Java",start:19265,skills:["Java"],link:"https://github.com/pipewriter/mind-palace/blob/main/src/BufferWriter.java",
+code:`public void putDoubleArr(double[] ia){
+    putInt(ia.length);
+    int doubleArrayRemainder = ia.length;
+    int sofar = 0;
+    while(doubleArrayRemainder > 0){
+        var ib = current.asDoubleBuffer();
+        int writeamtDoubles = Math.min(doubleArrayRemainder, (max-current.position())/8);
+        int writeamtBytes = writeamtDoubles*8;
+        ib.put(ia, sofar, writeamtDoubles);
+        current.position(current.position() + writeamtBytes);
+        doubleArrayRemainder -= writeamtDoubles;
+        sofar += writeamtDoubles;
+        if(doubleArrayRemainder > 0) doit();
+    }
+}`},
+  {project:0,lang:"Java",start:3,skills:["Java"],link:"https://github.com/pipewriter/mind-palace/blob/main/src/EventProcessor.java",
+code:`if(event.type == LEAF_EMERGENCE) {
+  palace.growRoom(seed); // nurture memory space
+}`},
+  {project:1,lang:"JavaScript",start:2,skills:["JavaScript","WebXR","ThreeJS"],
+   link:"https://github.com/pipewriter/webxr-get-rooms-shared/blob/main/main.js",
+code:`const room = createLavaLamp(images);
+syncVR(room);`},
+  {project:2,lang:"JavaScript",start:8,skills:["JavaScript","Supabase"],
+   link:"https://github.com/pipewriter/react-native-supabase/blob/main/App.js",
+code:`const { data,error } = await supabase.from('todos').select('*');`},
+  {project:3,lang:"Java",start:45,skills:["Java"],link:"https://github.com/pipewriter/rogue-world/blob/main/src/World.java",
+code:`world.generateProcedurally(seed, biomeMap);`},
+  {project:4,lang:"Java",start:20,skills:["Java"],link:"https://github.com/pipewriter/novelbase/blob/main/src/Linker.java",
+code:`knowledge.link(noteA,noteB);
+memory.render(graph);`},
+  {project:5,lang:"C++",start:1,skills:["C++","OpenGL","WebGL"],
+   link:"https://github.com/pipewriter/TriangleWebGL/blob/main/triangle.cpp",
+code:`glBegin(GL_TRIANGLES);
+/* … */
+glEnd();`}
+];
+
+/* -----------------  CACHE IMAGES  ----------------- */
+const imgCache=[];projectData.forEach(p=>{const i=new Image();i.src=p.img;imgCache.push(i)});
+
+/* -----------------  DOM  ----------------- */
+const codePane=document.getElementById("codepane"),
+      pjImg=document.getElementById("projectimg"),
+      pjTitle=document.getElementById("projecttitle"),
+      pjDesc=document.getElementById("projectdesc"),
+      pjLinks=document.getElementById("projectlinks");
+
+/* -----------------  UTIL  ----------------- */
+const esc=s=>s.replace(/[&<>]/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[ch]));
+const codeHTML=(snippet,start)=>snippet.split("\n")
+  .map((l,i)=>`<span class="lnum">${start+i}</span> ${esc(l).replace(/  /g,'&nbsp;&nbsp;')}`)
+  .join("<br>");
+
+/* -----------------  RENDER  CODES  ----------------- */
+function renderCode(){
+  codePane.innerHTML="";
+  codeData.forEach((d,i)=>{
+    const div=document.createElement("div");
+    div.className="codeblock";div.tabIndex=0;
+    Object.assign(div.dataset,{project:d.project,lang:d.lang,idx:i,skill:d.skills.join(",")});
+    div.innerHTML=`<span class="lang">${d.lang}</span><code>${codeHTML(d.code,d.start)}</code>`;
+    codePane.appendChild(div)
+  })
+}
+
+/* -----------------  PROJECT  PANEL  ----------------- */
+let currentProj=-1;
+function setProject(n){
+  if(n===currentProj||!projectData[n])return;currentProj=n;const p=projectData[n];
+  pjImg.classList.remove("show");pjImg.alt=p.title;pjImg.src=p.img;
+  if(imgCache[n].complete)pjImg.classList.add("show");else pjImg.onload=()=>pjImg.classList.add("show");
+  pjTitle.textContent=p.title;pjDesc.textContent=p.desc;
+  pjLinks.innerHTML=p.links.map(l=>`<a href="${l.href}" target="_blank" rel="noopener">${l.label}</a>`).join("")
+}
+
+/* -----------------  FILTERING  ----------------- */
+let selectedSkill=null,tempSkill=null;
+function applyFilter(skill){
+  const blocks=[...document.querySelectorAll(".codeblock")];
+  blocks.forEach(b=>{
+    const skills=b.dataset.skill.split(",");
+    const vis=!skill||skills.includes(skill);
+    b.classList.toggle("hidden",!vis)
+  });
+  const first=blocks.find(b=>!b.classList.contains("hidden"));
+  if(first)highlight(first)
+}
+
+/* -----------------  HIGHLIGHT  ----------------- */
+let activeBlock=null;
+function highlight(el){
+  if(activeBlock)activeBlock.classList.remove("active");
+  activeBlock=el;activeBlock.classList.add("active");
+  setProject(+el.dataset.project)
+}
+
+/* -----------------  EVENTS  ----------------- */
+function attachEvents(){
+  document.querySelectorAll(".codeblock").forEach(b=>{
+    ["mouseenter","focus"].forEach(e=>b.addEventListener(e,()=>highlight(b)));
+    b.addEventListener("click",()=>window.open(codeData[+b.dataset.idx].link,"_blank"))
+  });
+
+  skillBar.addEventListener("click",e=>{
+    const btn=e.target.closest(".filter-btn");if(!btn)return;
+    document.querySelectorAll(".filter-btn").forEach(b=>b.classList.remove("active"));
+    if(selectedSkill===btn.dataset.skill){selectedSkill=null;applyFilter(null)}
+    else{selectedSkill=btn.dataset.skill;btn.classList.add("active");applyFilter(selectedSkill)}
+  });
+  skillBar.addEventListener("mouseover",e=>{
+    const btn=e.target.closest(".filter-btn");if(!btn)return;
+    tempSkill=btn.dataset.skill;applyFilter(tempSkill)
+  });
+  skillBar.addEventListener("mouseout",e=>{
+    if(!e.relatedTarget||!skillBar.contains(e.relatedTarget)){tempSkill=null;applyFilter(selectedSkill)}
+  })
+}
+
+/* -----------------  INIT  ----------------- */
+renderCode();attachEvents();
+setTimeout(()=>{const first=document.querySelector(".codeblock");if(first)highlight(first)},20);
+</script>
+</body>
+</html>

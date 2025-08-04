@@ -242,6 +242,18 @@ const projectData=[
 
 /* ----------  CODE  DATA  ---------- */
 const codeData=[
+
+  {
+    project:0,
+    lang:"C++",
+    startLine:382,
+    skills:["C++"],
+    code:`glUseProgram(quadProg);
+        glm::mat4 qModel = glm::translate(glm::mat4(1.0f), camPos + camDir()*5.0f);
+        qModel = glm::rotate(qModel, glm::radians(yaw+90.f), glm::vec3(0,1,0));
+        qModel = glm::scale(qModel, glm::vec3(2.f));
+        glm::mat4 qMVP = projection * view * qModel;`
+  },
   {
     project:0,
     lang:"Java",
