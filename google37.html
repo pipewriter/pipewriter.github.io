@@ -1,0 +1,292 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Parker-Google</title>
+<style>
+ :root{
+   --earth-bg:#ede5d8;
+   --earth-brown:#4b3621;
+   --earth-lite:#cbb89d;
+ }
+ *{box-sizing:border-box;font-family:serif;margin:0;padding:0;}
+ body{
+   background:var(--earth-bg) center/cover no-repeat fixed;
+   color:var(--earth-brown);
+   padding:1rem;
+ }
+ h1{margin-bottom:.5rem;font-size:1.4rem;}
+ textarea{
+   width:100%;height:8rem;
+   border:2px solid var(--earth-brown);
+   background:var(--earth-lite);
+   padding:.5rem;color:var(--earth-brown);
+   resize:vertical;
+ }
+ input,button,select{
+   border:2px solid var(--earth-brown);
+   background:var(--earth-lite);
+   padding:.3rem;
+   color:var(--earth-brown);
+ }
+ #pieces span{
+   display:inline-block;
+   margin:.2rem;
+   padding:.3rem .5rem;
+   background:var(--earth-bg);
+   border:1px solid var(--earth-brown);
+   cursor:pointer;
+ }
+ #pieces span:hover{background:var(--earth-lite);}
+ #pieces span .del{
+   margin-left:.4rem;
+   font-weight:bold;
+   cursor:pointer;
+ }
+ #debug,#log{
+   width:100%;min-height:4rem;
+   border:2px dashed var(--earth-brown);
+   background:#f7f4ee;
+   padding:.5rem;
+   white-space:pre-wrap;
+   overflow-y:auto;
+   margin-top:.5rem;
+ }
+ .row{display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.5rem;}
+ .col{flex:1 1 12rem;display:flex;flex-direction:column;gap:.3rem;}
+</style>
+</head>
+<body>
+<h1>Parker-Google</h1>
+
+<div class="row">
+ <div class="col">
+  Workspace&nbsp;(<i>?ws=…</i>)
+  <input id="wsBox" placeholder="workspace">
+ </div>
+ <div class="col">
+  API&nbsp;Key
+  <input id="keyBox" type="password" placeholder="sk-..." >
+ </div>
+ <div class="col">
+  Model
+  <input id="modelBox" placeholder="e.g. o3-pro">
+ </div>
+ <div class="col">
+  Quantity
+  <input id="qtyBox" type="number" min="1" value="1">
+ </div>
+ <div class="col">
+  Background&nbsp;Image
+  <input id="bgInput" type="file" accept="image/*">
+ </div>
+</div>
+
+Prompt
+<textarea id="prompt"></textarea>
+
+<div id="pieces"></div>
+
+<div class="row">
+ <button id="sendBtn">Submit</button>
+ <button id="clearResp">Clear Log</button>
+</div>
+
+Debug&nbsp;Prompt&nbsp;(read-only)
+<div id="debug"></div>
+
+Responses
+<div id="log"></div>
+
+<script>
+/* ---------- IndexedDB helpers ---------- */
+const DB_NAME='parkerGoogle',STORE='data';
+let db;
+function dbInit(){
+  return new Promise((res,rej)=>{
+    const open=indexedDB.open(DB_NAME,1);
+    open.onupgradeneeded=e=>{
+      e.target.result.createObjectStore(STORE,{keyPath:'id'});
+    };
+    open.onerror=()=>rej(open.error);
+    open.onsuccess=()=>{db=open.result;res();}
+  });
+}
+function dbPut(id,value){return new Promise(r=>{
+  const tx=db.transaction(STORE,'readwrite');
+  tx.objectStore(STORE).put({id,value}).transaction.oncomplete=()=>r();
+});}
+function dbDel(id){return new Promise(r=>{
+  const tx=db.transaction(STORE,'readwrite');
+  tx.objectStore(STORE).delete(id).transaction.oncomplete=()=>r();
+});}
+function dbAll(prefix){return new Promise(r=>{
+  const out=[];
+  const tx=db.transaction(STORE,'readonly');
+  tx.objectStore(STORE).openCursor().onsuccess=e=>{
+    const cur=e.target.result;
+    if(cur){if(cur.key.startsWith(prefix))out.push({id:cur.key,val:cur.value.value});cur.continue();}
+    else r(out);
+  };
+});}
+/* ---------- util ---------- */
+const $=q=>document.querySelector(q);
+const wsParam=new URLSearchParams(location.search).get('ws')||'default';
+$('#wsBox').value=wsParam;
+$('#wsBox').addEventListener('change',e=>{
+  const v=e.target.value.trim()||'default';
+  location.search='?ws='+encodeURIComponent(v);
+});
+function namespaced(key){return wsParam+':'+key;}
+function genId(){return Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8);}
+/* ---------- init after db ---------- */
+dbInit().then(async()=>{
+  // settings (global, not namespaced)
+  const key=await getSetting('apiKey');if(key)$('#keyBox').value=key;
+  const model=await getSetting('model');if(model)$('#modelBox').value=model;
+  const qty=await getSetting('qty');if(qty)$('#qtyBox').value=qty;
+  // background
+  const bg=await getData(namespaced('bg'));
+  if(bg)document.body.style.backgroundImage=`url(${bg})`;
+  // pieces
+  loadPieces();
+  // responses
+  loadLog();
+});
+async function getSetting(k){const o=await getData('global:'+k);return o;}
+function setSetting(k,v){return dbPut('global:'+k,v);}
+function getData(id){return new Promise(r=>{
+  const tx=db.transaction(STORE,'readonly');
+  tx.objectStore(STORE).get(id).onsuccess=e=>r(e.target.result?.value);
+});}
+/* ---------- save settings on input ---------- */
+$('#keyBox').addEventListener('change',e=>setSetting('apiKey',e.target.value.trim()));
+$('#modelBox').addEventListener('change',e=>setSetting('model',e.target.value.trim()));
+$('#qtyBox').addEventListener('change',e=>setSetting('qty',e.target.value.trim()));
+/* ---------- background upload ---------- */
+$('#bgInput').addEventListener('change',async e=>{
+  const file=e.target.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=async evt=>{
+    const dataUrl=evt.target.result;
+    document.body.style.backgroundImage=`url(${dataUrl})`;
+    await dbPut(namespaced('bg'),dataUrl);
+  };
+  reader.readAsDataURL(file);
+});
+/* ---------- pieces handling ---------- */
+async function loadPieces(){
+  $('#pieces').innerHTML='';
+  const list=await dbAll(namespaced('piece:'));
+  list.forEach(({id,val})=>{
+    const span=document.createElement('span');
+    span.textContent=val;
+    const del=document.createElement('span');
+    del.textContent='×';del.className='del';
+    span.appendChild(del);
+    span.addEventListener('click',e=>{
+      if(e.target.classList.contains('del'))return; // don't on X
+      insertToken(id.split(':').pop());
+    });
+    del.addEventListener('click',async()=>{
+      await dbDel(id);loadPieces();
+    });
+    $('#pieces').appendChild(span);
+  });
+}
+function insertToken(pieceId){
+  const ta=$('#prompt');
+  const start=ta.selectionStart;
+  const text=ta.value;
+  const token='{{'+pieceId+'}}';
+  ta.value=text.slice(0,start)+token+text.slice(start);
+  ta.focus();
+  ta.selectionStart=ta.selectionEnd=start+token.length;
+  updateDebug();
+}
+/* ---------- extract on right-click ---------- */
+$('#prompt').addEventListener('contextmenu',async e=>{
+  const ta=e.target;
+  const sel=ta.value.substring(ta.selectionStart,ta.selectionEnd).trim();
+  if(sel){
+    e.preventDefault();
+    if(confirm('Extract "'+sel.substring(0,60)+'"?')){
+      const id=genId();
+      await dbPut(namespaced('piece:'+id),sel);
+      loadPieces();
+    }
+  }
+});
+/* ---------- debug prompt ---------- */
+function updateDebug(){
+  const taVal=$('#prompt').value;
+  resolveTokens(taVal).then(resolved=>{$('#debug').textContent=resolved;});
+}
+$('#prompt').addEventListener('input',updateDebug);
+async function resolveTokens(text){
+  const re=/\{\{([^\}]+)\}\}/g;
+  let m;let out=text;
+  while((m=re.exec(text))){
+    const pid=m[1];
+    const piece=await getData(namespaced('piece:'+pid));
+    if(piece)out=out.replace('{{'+pid+'}}',piece);
+  }
+  return out;
+}
+/* ---------- call API ---------- */
+async function callOpenAI(apiKey,inputText,model){
+  const resp=await fetch('https://api.openai.com/v1/responses',{
+    method:'POST',
+    headers:{
+      'Content-Type':'application/json',
+      'Authorization':'Bearer '+apiKey
+    },
+    body:JSON.stringify({model,input:inputText})
+  });
+  return resp.json();
+}
+/* ---------- send ---------- */
+$('#sendBtn').addEventListener('click',async()=>{
+  const apiKey=$('#keyBox').value.trim();
+  if(!apiKey){alert('API key missing');return;}
+  const model=$('#modelBox').value.trim();
+  const qty=parseInt($('#qtyBox').value)||1;
+  const promptRaw=$('#prompt').value;
+  const resolved=await resolveTokens(promptRaw);
+  // launch qty requests
+  for(let i=0;i<qty;i++){
+    (async()=>{
+      const data=await callOpenAI(apiKey,resolved,model);
+      const message=data.output?.find(o=>o.type==='message');
+      const textObj=message?.content?.find(c=>c.type==='output_text');
+      const txt=textObj?.text||JSON.stringify(data);
+      addLog(txt);
+    })();
+  }
+});
+/* ---------- log ---------- */
+async function addLog(txt){
+  const id=genId();
+  await dbPut(namespaced('resp:'+id),txt);
+  appendLog(id,txt);
+}
+function appendLog(id,txt){
+  const div=document.createElement('div');
+  div.textContent=txt;
+  $('#log').prepend(div);
+}
+async function loadLog(){
+  $('#log').innerHTML='';
+  const logs=await dbAll(namespaced('resp:'));
+  logs.sort((a,b)=>b.id.localeCompare(a.id)); // newest first
+  logs.forEach(({id,val})=>appendLog(id,val));
+}
+$('#clearResp').addEventListener('click',async()=>{
+  const logs=await dbAll(namespaced('resp:'));
+  for(const {id} of logs)await dbDel(id);
+  loadLog();
+});
+</script>
+</body>
+</html>
