@@ -1,0 +1,104 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Parker-Google</title>
+<style>
+ :root{
+   --earth: #4b2e2b;
+   --soil: #7b5e57;
+   --sand: #f2eadb;
+ }
+ *{box-sizing:border-box;font-family:Georgia,serif;color:var(--earth);}
+ body,html{margin:0;padding:0;height:100%;width:100%;background:var(--sand);display:flex;flex-direction:column;}
+ header{padding:8px 12px;background:var(--earth);color:var(--sand);display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
+ header label{font-size:12px;color:var(--sand);}
+ header input{padding:4px 6px;border:none;border-radius:3px;background:var(--sand);color:var(--earth);}
+ header input[type=file]{background:none;color:var(--sand);}
+ #container{flex:1;display:flex;flex-direction:row;padding:12px;gap:12px;overflow:hidden;}
+ #leftPane{flex:2;display:flex;flex-direction:column;gap:8px;overflow:hidden;}
+ #rightPane{flex:1;display:flex;flex-direction:column;gap:8px;overflow:hidden;}
+ textarea{flex:1;resize:none;padding:8px;border:1px solid var(--soil);background:rgba(255,255,255,.5);}
+ pre{flex:1;padding:8px;border:1px solid var(--soil);background:rgba(255,255,255,.4);overflow:auto;white-space:pre-wrap;}
+ button{padding:6px 10px;border:none;background:var(--earth);color:var(--sand);cursor:pointer;border-radius:3px;}
+ ul{list-style:none;padding:0;margin:0;overflow:auto;flex:1;border:1px solid var(--soil);background:rgba(255,255,255,.4);}
+ li{padding:6px;border-bottom:1px solid var(--soil);cursor:pointer;}
+ li:hover{background:var(--soil);color:var(--sand);}
+ .del{float:right;cursor:pointer;}
+</style>
+</head>
+<body>
+<header>
+  <label>Workspace:</label><input id="nsInput" size="8">
+  <label>API&nbsp;Key:</label><input id="keyInput" size="20" type="password">
+  <label>Model:</label><input id="modelInput" size="8">
+  <label>Qty:</label><input id="qtyInput" size="3" type="number" min="1">
+  <input type="file" id="bgUpload" accept="image/*">
+  <button id="clearLogBtn">Clear&nbsp;Log</button>
+</header>
+
+<div id="container">
+  <div id="leftPane">
+    <textarea id="promptArea" placeholder="Write your prompt here..."></textarea>
+    <button id="sendBtn">Send</button>
+    <pre id="truePrompt" readonly></pre>
+  </div>
+  <div id="rightPane">
+    <ul id="snippetList"></ul>
+    <pre id="logArea"></pre>
+  </div>
+</div>
+
+<script>
+// ---------- IndexedDB helpers ----------
+const dbName='parkerGoogleDB';let db;
+function openDB(){return new Promise((res,rej)=>{const req=indexedDB.open(dbName,1);req.onupgradeneeded=e=>{db=e.target.result;db.createObjectStore('settings',{keyPath:'key'});db.createObjectStore('workspaces',{keyPath:'ns'});};req.onsuccess=e=>{db=e.target.result;res();};req.onerror=rej;});}
+function get(store,key){return new Promise(r=>{const tx=db.transaction(store,'readonly').objectStore(store).get(key);tx.onsuccess=e=>r(e.target.result);tx.onerror=_=>r(null);});}
+function put(store,val){return new Promise(r=>{const tx=db.transaction(store,'readwrite').objectStore(store).put(val);tx.onsuccess=_=>r();});}
+// ---------- Globals ----------
+let ns='default',workspace={snippets:[],log:[],background:null};
+const qs=input=>document.querySelector(input);
+const promptArea=qs('#promptArea'),truePrompt=qs('#truePrompt'),snippetList=qs('#snippetList'),logArea=qs('#logArea');
+// ---------- URL param handling ----------
+function initNS(){const url=new URL(location);ns=url.searchParams.get('ns')||'default';qs('#nsInput').value=ns;}
+// ---------- Workspace render ----------
+function renderSnippets(){snippetList.innerHTML='';workspace.snippets.forEach((s,i)=>{const li=document.createElement('li');li.textContent=s;li.dataset.id=i;const x=document.createElement('span');x.textContent='✖';x.className='del';x.onclick=e=>{e.stopPropagation();workspace.snippets.splice(i,1);saveWorkspace();renderSnippets();updateTruePrompt();};li.appendChild(x);li.onclick=_=>insertAtCursor(`{{S${i}}}`);snippetList.appendChild(li);});}
+function renderLog(){logArea.textContent=workspace.log.join('\n\n');}
+function applyBackground(){if(workspace.background){document.body.style.background=`url(${workspace.background}) center/cover no-repeat`;}}
+function saveWorkspace(){put('workspaces',{ns,...workspace});}
+function updateTruePrompt(){let text=promptArea.value;workspace.snippets.forEach((s,i)=>{text=text.replaceAll(`{{S${i}}}`,s);});truePrompt.textContent=text;}
+// ---------- Settings ----------
+async function loadSettings(){const k=await get('settings','apiKey');if(k)qs('#keyInput').value=k.value;const m=await get('settings','model');if(m)qs('#modelInput').value=m.value;const q=await get('settings','qty');if(q)qs('#qtyInput').value=q.value;}
+function saveSetting(key,value){put('settings',{key,value});}
+// ---------- Workspace load ----------
+async function loadWorkspace(){const w=await get('workspaces',ns);if(w){workspace=w;}else{workspace={snippets:[],log:[],background:null};saveWorkspace();}renderSnippets();renderLog();applyBackground();updateTruePrompt();}
+// ---------- Event Listeners ----------
+promptArea.addEventListener('input',updateTruePrompt);
+promptArea.addEventListener('contextmenu',e=>{if(promptArea.selectionStart!==promptArea.selectionEnd){e.preventDefault();const sel=promptArea.value.substring(promptArea.selectionStart,promptArea.selectionEnd);workspace.snippets.push(sel);saveWorkspace();renderSnippets();updateTruePrompt();}});
+function insertAtCursor(text){const s=promptArea.selectionStart;const e=promptArea.selectionEnd;promptArea.setRangeText(text,s,e,'end');promptArea.focus();updateTruePrompt();}
+qs('#bgUpload').addEventListener('change',e=>{const file=e.target.files[0];if(file){const r=new FileReader();r.onload=ev=>{workspace.background=ev.target.result;applyBackground();saveWorkspace();};r.readAsDataURL(file);}});
+qs('#clearLogBtn').onclick=_=>{if(confirm('Clear log?')){workspace.log=[];saveWorkspace();renderLog();}};
+qs('#sendBtn').onclick=async()=>{const apiKey=qs('#keyInput').value.trim();const model=qs('#modelInput').value.trim();let qty=parseInt(qs('#qtyInput').value)||1;saveSetting('apiKey',apiKey);saveSetting('model',model);saveSetting('qty',qty);const inputText=truePrompt.textContent;if(!apiKey||!model||!inputText)return;while(qty--){callOpenAI(apiKey,model,inputText);}};
+// ---------- Navigation change ----------
+qs('#nsInput').addEventListener('change',e=>{location.search='?ns='+encodeURIComponent(e.target.value.trim()||'default');});
+// ---------- API ----------
+async function callOpenAI(apiKey,model,inputText){
+  try{
+    const resp=await fetch('https://api.openai.com/v1/responses',{
+      method:'POST',
+      headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiKey}`},
+      body:JSON.stringify({model,input:inputText})
+    });
+    const data=await resp.json();console.log(data);
+    const message=data.output?.find(o=>o.type==='message');
+    const textObj=message?.content?.find(c=>c.type==='output_text');
+    const out=textObj?.text||JSON.stringify(data);
+    workspace.log.push(out);saveWorkspace();renderLog();
+  }catch(err){console.error(err);}
+}
+// ---------- Init ----------
+(async()=>{await openDB();initNS();await loadSettings();await loadWorkspace();})();
+</script>
+</body>
+</html>
