@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>bubbleprop</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<style>
+  :root{
+    --bubble-border:#ffffffcc;
+    --bubble-shadow:rgba(0,0,0,.25);
+    --main-grad: radial-gradient(120% 120% at 50% 35%, rgba(255,255,255,.85), rgba(255,255,255,.7) 55%, rgba(255,255,255,.6));
+    --bg-fallback: radial-gradient(circle at 20% 20%, #0f2027, #203a43, #2c5364);
+  }
+  html, body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    background: var(--bg-fallback) fixed no-repeat center/cover;
+    font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+    color: #111;
+  }
+  #app {
+    position: relative;
+    width: 100vw; height: 100vh;
+    overflow: hidden;
+    background: var(--bg-fallback) fixed no-repeat center/cover;
+    transition: background-image .25s ease;
+  }
+  /* Toolbar */
+  .toolbar {
+    position: absolute;
+    top: 10px; right: 10px;
+    display: flex; gap: 8px; z-index: 10000;
+    backdrop-filter: blur(6px);
+    background: rgba(255,255,255,.25);
+    border: 1px solid rgba(255,255,255,.35);
+    border-radius: 12px;
+    padding: 6px 8px;
+    box-shadow: 0 6px 16px rgba(0,0,0,.2);
+  }
+  .toolbar button {
+    appearance: none;
+    border: 0;
+    padding: 8px 12px;
+    border-radius: 10px;
+    background: rgba(255,255,255,.8);
+    color: #111;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: .2px;
+    transition: transform .08s ease, background .2s ease;
+  }
+  .toolbar button:hover { background: white; transform: translateY(-1px) }
+  .toolbar button:active { transform: translateY(0) scale(.98) }
+
+  /* Bubbles */
+  .bubble {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid var(--bubble-border);
+    border-radius: 50%;
+    box-shadow: 0 10px 30px var(--bubble-shadow), inset 0 0 0 1px rgba(255,255,255,.2);
+    background: radial-gradient(180px 180px at 50% 35%, rgba(255,255,255,.9), rgba(255,255,255,.75));
+    background-size: cover; background-position: center;
+    overflow: hidden;
+    user-select: none; /* container only; content re-enables */
+    transition: left .2s ease, top .2s ease, width .2s ease, height .2s ease, box-shadow .2s ease;
+    will-change: left, top, width, height;
+    touch-action: none;
+  }
+  .bubble:focus-within { box-shadow: 0 10px 40px rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,.25); }
+  .bubble .ring {
+    position: absolute; inset: 0;
+    border-radius: 50%;
+    box-shadow: inset 0 0 60px rgba(255,255,255,.4);
+    pointer-events: none;
+  }
+  .bubble .close {
+    position: absolute; top: 6px; right: 6px;
+    width: 24px; height: 24px;
+    background: rgba(255,255,255,.85);
+    border: 1px solid rgba(0,0,0,.12);
+    color: #222;
+    border-radius: 50%;
+    display: grid; place-items: center;
+    font-size: 14px; font-weight: 700;
+    line-height: 1; cursor: pointer;
+    user-select: none;
+  }
+  .bubble .close:hover { background: white }
+  .bubble .content {
+    position: relative;
+    width: 78%; height: 78%;
+    border-radius: 50%;
+    display: block;
+    overflow: auto;
+    padding: 6px;
+    text-align: center;
+    color: #0c1821;
+    background: radial-gradient(120% 120% at 50% 20%, rgba(255,255,255,.7), rgba(255,255,255,.2));
+    -webkit-user-select: text; user-select: text;
+    caret-color: #0c1821;
+  }
+  .bubble .hint {
+    position: absolute;
+    bottom: 6px; left: 0; right: 0;
+    color: rgba(0,0,0,.35);
+    font-size: 11px;
+    user-select: none;
+    pointer-events: none;
+  }
+
+  /* Main center bubble */
+  .bubble.main {
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    width: min(60vh, 60vw);
+    height: min(60vh, 60vw);
+    background: var(--main-grad);
+    border-width: 3px;
+    z-index: 500;
+  }
+  .bubble.main .content {
+    width: 86%; height: 86%;
+    font-size: clamp(14px, 1.8vw, 18px);
+  }
+  .bubble.main .close { display: none }
+
+  /* Visual ring guides from the center bubble (purely aesthetic) */
+  .rings {
+    position: absolute; inset: 0; pointer-events: none;
+  }
+  .rings::before, .rings::after {
+    content: "";
+    position: absolute;
+    border-radius: 50%;
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    border: 1px dashed rgba(255,255,255,.18);
+  }
+  .rings::before { width: 65vmin; height: 65vmin; }
+  .rings::after  { width: 85vmin; height: 85vmin; }
+
+  /* Hidden file input */
+  #bgFile { display: none }
+</style>
+</head>
+<body>
+  <div id="app">
+    <div class="toolbar">
+      <button id="btnUploadBg">Background</button>
+      <button id="btnRepair">Repair Storage</button>
+      <button id="btnReset">Reset Storage</button>
+      <input type="file" id="bgFile" accept="image/*">
+    </div>
+    <div class="rings" aria-hidden="true"></div>
+
+    <div id="centerBubble" class="bubble main" data-id="center" data-main="1">
+      <div class="ring"></div>
+      <div class="content" id="centerContent" contenteditable="plaintext-only" spellcheck="false"></div>
+      <div class="hint">Chat center</div>
+    </div>
+    <div id="layer" aria-hidden="false"></div>
+  </div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ====== IndexedDB helper with self-repair and guarded calls ======
+  const DB_NAME = "bubbleprop";
+  const EXPECTED_STORES = {
+    bubbles: { keyPath: "id" },
+    settings: { keyPath: "key" }
+  };
+
+  let _db = null;
+  let _opening = null;
+
+  function hasAllStores(db) {
+    const names = db.objectStoreNames;
+    return Object.keys(EXPECTED_STORES).every(s => names.contains(s));
+  }
+  function ensureStores(db, tx) {
+    const names = db.objectStoreNames;
+    for (const [name, opts] of Object.entries(EXPECTED_STORES)) {
+      if (!names.contains(name)) {
+        db.createObjectStore(name, opts);
+      }
+    }
+  }
+
+  async function openDB() {
+    if (_db) return _db;
+    if (_opening) return _opening;
+    _opening = new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME);
+      req.onupgradeneeded = (e) => {
+        const db = e.target.result;
+        ensureStores(db, e.target.transaction);
+      };
+      req.onsuccess = (e) => {
+        let db = e.target.result;
+        if (!hasAllStores(db)) {
+          // Self-repair: bump version to create missing stores
+          const newVersion = db.version + 1;
+          db.close();
+          const req2 = indexedDB.open(DB_NAME, newVersion);
+          req2.onupgradeneeded = (ee) => {
+            ensureStores(ee.target.result, ee.target.transaction);
+          };
+          req2.onsuccess = (ee) => {
+            _db = ee.target.result;
+            _db.onversionchange = () => _db.close();
+            resolve(_db);
+          };
+          req2.onerror = (ee) => reject(ee.target.error);
+          return;
+        }
+        _db = db;
+        _db.onversionchange = () => _db.close();
+        resolve(_db);
+      };
+      req.onerror = (e) => reject(e.target.error);
+    }).finally(() => { _opening = null });
+    return _opening;
+  }
+
+  async function repairStorage() {
+    const db = await openDB();
+    if (hasAllStores(db)) return true;
+    db.close();
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, db.version + 1);
+      req.onupgradeneeded = (e) => ensureStores(e.target.result, e.target.transaction);
+      req.onsuccess = (e) => {
+        _db = e.target.result;
+        _db.onversionchange = () => _db.close();
+        resolve(true);
+      };
+      req.onerror = (e) => reject(e.target.error);
+    });
+  }
+
+  async function withStore(storeName, mode, fn) {
+    try {
+      const db = await openDB();
+      const tx = db.transaction([storeName], mode);
+      const store = tx.objectStore(storeName);
+      const res = await fn(store, tx);
+      await txdone(tx);
+      return res;
+    } catch (err) {
+      if (err && err.name === "NotFoundError") {
+        await repairStorage();
+        const db = await openDB();
+        const tx = db.transaction([storeName], mode);
+        const store = tx.objectStore(storeName);
+        const res = await fn(store, tx);
+        await txdone(tx);
+        return res;
+      }
+      throw err;
+    }
+  }
+  function txdone(tx) {
+    return new Promise((resolve, reject) => {
+      tx.oncomplete = () => resolve(true);
+      tx.onabort = tx.onerror = (e) => reject(tx.error || e);
+    });
+  }
+
+  // IDB API
+  const idb = {
+    async putBubble(b) {
+      return withStore("bubbles", "readwrite", (st) => promisify(st.put(b)));
+    },
+    async deleteBubble(id) {
+      return withStore("bubbles", "readwrite", (st) => promisify(st.delete(id)));
+    },
+    async getAllBubbles() {
+      return withStore("bubbles", "readonly", (st) => promisify(st.getAll()));
+    },
+    async putSetting(obj) { // { key, ... }
+      return withStore("settings", "readwrite", (st) => promisify(st.put(obj)));
+    },
+    async getSetting(key) {
+      return withStore("settings", "readonly", (st) => promisify(st.get(key)));
+    }
+  };
+  function promisify(req) {
+    return new Promise((resolve, reject) => {
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  // ====== App state and helpers ======
+  const app = document.getElementById("app");
+  const layer = document.getElementById("layer");
+  const centerBubble = document.getElementById("centerBubble");
+  const centerContent = document.getElementById("centerContent");
+  const btnUploadBg = document.getElementById("btnUploadBg");
+  const bgFile = document.getElementById("bgFile");
+  const btnRepair = document.getElementById("btnRepair");
+  const btnReset = document.getElementById("btnReset");
+
+  const state = {
+    bubbles: new Map(), // id -> bubble data
+    zCounter: 1000,
+    pageBgUrl: null,
+    dragging: null,
+  };
+
+  function makeId() {
+    return "b_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2,8);
+  }
+
+  function getAppRect() {
+    return app.getBoundingClientRect();
+  }
+  function getCenterPoint() {
+    const a = getAppRect();
+    return { x: a.width / 2, y: a.height / 2 };
+  }
+  function getCenterBubbleRadius() {
+    const r = centerBubble.getBoundingClientRect();
+    return r.width / 2;
+  }
+
+  function clamp(n, min, max) { return Math.min(max, Math.max(min, n)); }
+  function clampPos(x, y, size) {
+    const a = getAppRect();
+    return {
+      x: clamp(x, 0, a.width - size),
+      y: clamp(y, 0, a.height - size)
+    };
+  }
+  function bubbleFont(size) {
+    return Math.max(11, Math.round(size * 0.19));
+  }
+
+  // ====== Background handling (page) ======
+  async function loadPageBackground() {
+    try {
+      const rec = await idb.getSetting("pageBg");
+      if (rec && rec.blob) {
+        if (state.pageBgUrl) URL.revokeObjectURL(state.pageBgUrl);
+        const url = URL.createObjectURL(rec.blob);
+        state.pageBgUrl = url;
+        app.style.backgroundImage = `url('${url}')`;
+        document.body.style.backgroundImage = `url('${url}')`;
+      }
+    } catch {}
+  }
+  async function setPageBackgroundFromFile(file) {
+    if (!file) return;
+    await idb.putSetting({ key: "pageBg", blob: file, type: file.type || "" });
+    await loadPageBackground();
+  }
+
+  // ====== Bubble creation & rendering ======
+  function renderBubble(b) {
+    // If an element exists, update it; else create.
+    let el = layer.querySelector(`.bubble[data-id="${b.id}"]`);
+    const isNew = !el;
+    if (!el) {
+      el = document.createElement("div");
+      el.className = "bubble";
+      el.dataset.id = b.id;
+      el.style.zIndex = String(b.z || ++state.zCounter);
+
+      const ring = document.createElement("div");
+      ring.className = "ring";
+      el.appendChild(ring);
+
+      const close = document.createElement("div");
+      close.className = "close";
+      close.textContent = "×";
+      el.appendChild(close);
+
+      const content = document.createElement("div");
+      content.className = "content";
+      content.contentEditable = "plaintext-only";
+      content.spellcheck = false;
+      el.appendChild(content);
+
+      // Events
+      // Dragging vs click
+      el.addEventListener("pointerdown", (e) => onBubblePointerDown(e, el, b));
+      window.addEventListener("pointermove", onPointerMove);
+      window.addEventListener("pointerup", onPointerUp);
+
+      // Delete
+      close.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const ok = confirm("Delete this bubble?");
+        if (!ok) return;
+        await deleteBubble(b.id, el);
+      });
+
+      // Input content
+      content.addEventListener("input", debounce(async () => {
+        b.html = content.innerText; // plaintext
+        await idb.putBubble(b);
+      }, 300));
+
+      // Paste background image (non-main bubbles only)
+      el.addEventListener("paste", async (e) => {
+        if (el.dataset.main === "1") return; // no background paste for main
+        const items = (e.clipboardData && e.clipboardData.items) || [];
+        for (const it of items) {
+          if (it.type && it.type.startsWith("image/")) {
+            const file = it.getAsFile();
+            if (file) {
+              e.preventDefault();
+              await setBubbleBackground(b, el, file);
+              break;
+            }
+          }
+        }
+      });
+
+      // Contextmenu: if selection => spawn bubble from text; else push this bubble away
+      el.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const sel = window.getSelection();
+        const gotSel = sel && !sel.isCollapsed && (sel.toString().trim().length > 0);
+        if (gotSel) {
+          createBubbleFromSelection();
+          return;
+        }
+        if (el.dataset.main === "1") return; // no push on main
+        pushBubble(el, b);
+      });
+
+      layer.appendChild(el);
+    }
+
+    // Apply position/size/content
+    applyBubbleGeometry(el, b);
+    const contentEl = el.querySelector(".content");
+    if (isNew || contentEl.innerText !== (b.html || "")) {
+      contentEl.innerText = b.html || "";
+    }
+
+    // Background image for bubble
+    if (b.bgBlob) {
+      if (b._bgUrl) URL.revokeObjectURL(b._bgUrl);
+      b._bgUrl = URL.createObjectURL(b.bgBlob);
+      el.style.backgroundImage = `url('${b._bgUrl}')`;
+    } else {
+      el.style.backgroundImage = "";
+    }
+
+    // Store to state map
+    state.bubbles.set(b.id, b);
+
+    return el;
+  }
+
+  function applyBubbleGeometry(el, b) {
+    const size = b.size || 160;
+    const pos = clampPos(b.x, b.y, size);
+    b.x = pos.x; b.y = pos.y; b.size = size;
+
+    el.style.left = b.x + "px";
+    el.style.top = b.y + "px";
+    el.style.width = size + "px";
+    el.style.height = size + "px";
+
+    const content = el.querySelector(".content");
+    content.style.fontSize = bubbleFont(size) + "px";
+  }
+
+  async function deleteBubble(id, el) {
+    const b = state.bubbles.get(id);
+    state.bubbles.delete(id);
+    if (b && b._bgUrl) {
+      URL.revokeObjectURL(b._bgUrl);
+      b._bgUrl = null;
+    }
+    el?.remove();
+    try { await idb.deleteBubble(id); } catch {}
+  }
+
+  async function setBubbleBackground(b, el, blob) {
+    b.bgBlob = blob;
+    if (b._bgUrl) { URL.revokeObjectURL(b._bgUrl); b._bgUrl = null; }
+    if (blob) {
+      b._bgUrl = URL.createObjectURL(blob);
+      el.style.backgroundImage = `url('${b._bgUrl}')`;
+    } else {
+      el.style.backgroundImage = "";
+    }
+    await idb.putBubble(b);
+  }
+
+  // ====== Pointer interactions (drag / pull / push) ======
+  function onBubblePointerDown(e, el, b) {
+    if (el.dataset.main === "1") return; // main bubble can't be dragged/pulled
+    // Avoid treating clicks inside editable content as drag/pull triggers
+    const isContent = e.target.closest(".content");
+    const isClose = e.target.closest(".close");
+    if (isClose) return;
+    // Register z-index bump
+    b.z = ++state.zCounter;
+    el.style.zIndex = String(b.z);
+
+    // Start drag on primary button
+    if (e.button === 0) {
+      state.dragging = {
+        id: b.id,
+        el,
+        data: b,
+        startX: e.clientX,
+        startY: e.clientY,
+        origX: b.x,
+        origY: b.y,
+        moved: false,
+        startedInContent: !!isContent
+      };
+      el.setPointerCapture(e.pointerId);
+    }
+  }
+  function onPointerMove(e) {
+    if (!state.dragging) return;
+    const d = state.dragging;
+    const dx = e.clientX - d.startX;
+    const dy = e.clientY - d.startY;
+    if (!d.moved && Math.hypot(dx,dy) > 3) d.moved = true;
+    if (!d.moved) return;
+
+    const size = d.data.size || 160;
+    const pos = clampPos(d.origX + dx, d.origY + dy, size);
+    d.data.x = pos.x; d.data.y = pos.y;
+    d.el.style.left = d.data.x + "px";
+    d.el.style.top = d.data.y + "px";
+  }
+  async function onPointerUp(e) {
+    if (!state.dragging) return;
+    const d = state.dragging;
+    d.el.releasePointerCapture?.(e.pointerId);
+    const wasMoved = d.moved;
+    const startedInContent = d.startedInContent;
+    state.dragging = null;
+
+    // Save position if moved
+    if (wasMoved) {
+      try { await idb.putBubble(d.data); } catch {}
+      return; // dragging should not trigger pull
+    }
+
+    // If not moved and not started inside text, treat as pull on left click
+    if (e.button === 0 && !startedInContent) {
+      pullBubble(d.el, d.data);
+    }
+  }
+
+  function pullBubble(el, b) {
+    const c = getCenterPoint();
+    const cx = c.x, cy = c.y;
+    const bc = { x: b.x + b.size/2, y: b.y + b.size/2 };
+    let vx = bc.x - cx;
+    let vy = bc.y - cy;
+
+    // If at the same point, nudge outward randomly first
+    if (vx === 0 && vy === 0) {
+      const ang = Math.random() * Math.PI * 2;
+      vx = Math.cos(ang); vy = Math.sin(ang);
+    }
+
+    // Pull by ratio and enlarge slightly
+    const ratio = 0.85;
+    const nx = cx + vx * ratio;
+    const ny = cy + vy * ratio;
+
+    const newSize = clamp((b.size || 160) * 1.10, 60, 420);
+    const newX = nx - newSize / 2;
+    const newY = ny - newSize / 2;
+    const pos = clampPos(newX, newY, newSize);
+
+    b.x = pos.x; b.y = pos.y; b.size = newSize;
+    applyBubbleGeometry(el, b);
+    idb.putBubble(b).catch(()=>{});
+  }
+
+  function pushBubble(el, b) {
+    const c = getCenterPoint();
+    const cx = c.x, cy = c.y;
+    const bc = { x: b.x + b.size/2, y: b.y + b.size/2 };
+    let vx = bc.x - cx;
+    let vy = bc.y - cy;
+
+    if (vx === 0 && vy === 0) {
+      const ang = Math.random() * Math.PI * 2;
+      vx = Math.cos(ang); vy = Math.sin(ang);
+    }
+
+    const ratio = 1.15;
+    const nx = cx + vx * ratio;
+    const ny = cy + vy * ratio;
+
+    const newSize = clamp((b.size || 160) * 0.90, 56, 600);
+    const newX = nx - newSize / 2;
+    const newY = ny - newSize / 2;
+    const pos = clampPos(newX, newY, newSize);
+
+    b.x = pos.x; b.y = pos.y; b.size = newSize;
+    applyBubbleGeometry(el, b);
+    idb.putBubble(b).catch(()=>{});
+  }
+
+  // ====== Spawn bubble from selection ======
+  function createBubbleFromSelection() {
+    const sel = window.getSelection();
+    const text = sel ? sel.toString().trim() : "";
+    if (!text) return;
+    sel.removeAllRanges();
+
+    const id = makeId();
+    const size = clamp(120 + Math.round(Math.random()*80), 120, 220);
+    const c = getCenterPoint();
+    const ringR = getCenterBubbleRadius() + 80 + Math.random() * 160;
+    const ang = Math.random() * Math.PI * 2;
+
+    let cx = c.x + Math.cos(ang) * ringR;
+    let cy = c.y + Math.sin(ang) * ringR;
+
+    let x = cx - size/2;
+    let y = cy - size/2;
+    const pos = clampPos(x, y, size);
+    const b = { id, x: pos.x, y: pos.y, size, html: text, z: ++state.zCounter };
+
+    renderBubble(b);
+    idb.putBubble(b).catch(()=>{});
+  }
+
+  // ====== Center content persistence ======
+  const saveCenter = debounce(async () => {
+    try {
+      const html = centerContent.innerText || "";
+      await idb.putSetting({ key: "centerHTML", html });
+    } catch {}
+  }, 400);
+
+  async function loadCenter() {
+    try {
+      const rec = await idb.getSetting("centerHTML");
+      centerContent.innerText = (rec && rec.html) || "";
+    } catch {
+      centerContent.innerText = "";
+    }
+  }
+
+  // ====== Global context menu handling ======
+  document.addEventListener("contextmenu", (e) => {
+    // Always suppress default context menu
+    e.preventDefault();
+    e.stopPropagation();
+
+    const sel = window.getSelection();
+    const hasSelection = sel && !sel.isCollapsed && sel.toString().trim().length > 0;
+
+    if (hasSelection) {
+      createBubbleFromSelection();
+      return;
+    }
+
+    // If right-clicked over a specific non-main bubble, push it
+    const bubbleEl = e.target.closest(".bubble");
+    if (bubbleEl && bubbleEl.dataset.main !== "1") {
+      const id = bubbleEl.dataset.id;
+      const b = state.bubbles.get(id);
+      if (b) pushBubble(bubbleEl, b);
+    }
+    // Otherwise: just eat the context menu by design.
+  }, { capture: true });
+
+  // ====== Toolbar events ======
+  btnUploadBg.addEventListener("click", () => bgFile.click());
+  bgFile.addEventListener("change", async (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (f) await setPageBackgroundFromFile(f);
+    bgFile.value = "";
+  });
+
+  btnRepair.addEventListener("click", async () => {
+    try {
+      await repairStorage();
+      alert("Storage repair completed.");
+    } catch (e) {
+      alert("Repair failed: " + (e?.message || e));
+    }
+  });
+
+  btnReset.addEventListener("click", async () => {
+    if (!confirm("Reset storage? This will delete all bubbles and background.")) return;
+    try {
+      _db?.close();
+      await new Promise((res, rej) => {
+        const req = indexedDB.deleteDatabase(DB_NAME);
+        req.onsuccess = () => res(true);
+        req.onerror = () => rej(req.error);
+        req.onblocked = () => res(true);
+      });
+    } catch {}
+    location.reload();
+  });
+
+  // ====== Resize handling (keep main centered visually) ======
+  window.addEventListener("resize", () => {
+    // main bubble uses transform:translate(-50%, -50%), no changes required
+    // other bubbles remain at absolute positions (fixed on page)
+  });
+
+  // Utility: debounce
+  function debounce(fn, ms) {
+    let t = null;
+    return function(...args) {
+      clearTimeout(t);
+      t = setTimeout(() => fn.apply(this, args), ms);
+    }
+  }
+
+  // ====== Boot ======
+  (async function init(){
+    await openDB().catch(()=>{});
+    await loadPageBackground().catch(()=>{});
+    await loadCenter().catch(()=>{});
+
+    // Load bubbles from DB
+    try {
+      const list = await idb.getAllBubbles();
+      for (const b of list) {
+        renderBubble(b);
+      }
+    } catch {}
+
+    // Keep center content saved
+    centerContent.addEventListener("input", saveCenter);
+
+    // A tiny starter hint bubble if empty
+    if (state.bubbles.size === 0) {
+      const c = getCenterPoint();
+      const id = makeId();
+      const size = 160;
+      const b = {
+        id,
+        x: clamp(c.x + 180 - size/2, 0, getAppRect().width - size),
+        y: clamp(c.y - 30 - size/2, 0, getAppRect().height - size),
+        size,
+        html: "Right-click highlighted text to bubble it.",
+        z: ++state.zCounter
+      };
+      renderBubble(b);
+      idb.putBubble(b).catch(()=>{});
+    }
+  })();
+
+})();
+</script>
+</body>
+</html>
