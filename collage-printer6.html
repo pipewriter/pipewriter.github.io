@@ -1,0 +1,429 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Collager — paste images, arrange, print A4</title>
+<style>
+  :root { --scale: 1; --toolbar-h: 48px; --ui-bg: #1f1f1f; --ui-fg: #f0f0f0; }
+  html, body { height: 100%; margin: 0; }
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background: #808080; color: #111; -webkit-font-smoothing: antialiased; }
+
+  /* Toolbar */
+  #toolbar {
+    position: fixed; z-index: 10000; top: 0; left: 0; right: 0; height: var(--toolbar-h);
+    display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+    background: var(--ui-bg); color: var(--ui-fg); box-shadow: 0 1px 0 rgba(0,0,0,0.4);
+    user-select: none;
+  }
+  #toolbar .group { display: inline-flex; align-items: center; gap: 4px; }
+  #toolbar button {
+    appearance: none; border: 1px solid #3b3b3b; background: #2a2a2a; color: var(--ui-fg);
+    padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 13px;
+  }
+  #toolbar button:hover { background: #333; }
+  #toolbar button:disabled { opacity: 0.5; cursor: default; }
+  #toolbar .sep { width: 1px; height: 28px; background: #3b3b3b; margin: 0 6px; }
+  #hint { font-size: 12px; opacity: 0.8; }
+
+  /* Workspace and page */
+  #workspace {
+    position: absolute; top: var(--toolbar-h); left: 0; right: 0; bottom: 0;
+    display: grid; place-items: center; overflow: hidden; background: #808080;
+  }
+  #pageFrame { transform-origin: top left; }
+  #page {
+    width: 210mm; height: 297mm; background: white; position: relative; overflow: hidden;
+    box-shadow: 0 0 0 1px #ddd, 0 8px 30px rgba(0,0,0,.25);
+    color: black; print-color-adjust: exact; -webkit-print-color-adjust: exact;
+    touch-action: none; /* prevent browser touch gestures while editing */
+  }
+
+  /* Items */
+  .item { position: absolute; }
+  .item img { width: 100%; height: auto; display: block; pointer-events: none; }
+  .item.selected { outline: calc(2px / var(--scale)) solid #4da3ff; outline-offset: calc(2px / var(--scale)); }
+
+  /* Handles (corner-only, keep aspect) */
+  .item .handle {
+    position: absolute; width: calc(12px / var(--scale)); height: calc(12px / var(--scale));
+    background: #4da3ff; border: calc(2px / var(--scale)) solid white; border-radius: calc(2px / var(--scale));
+    box-shadow: 0 0 1px rgba(0,0,0,.6); display: none;
+  }
+  .item.selected .handle { display: block; }
+  .item .handle.nw { top: calc(-8px / var(--scale)); left: calc(-8px / var(--scale)); cursor: nwse-resize; }
+  .item .handle.ne { top: calc(-8px / var(--scale)); right: calc(-8px / var(--scale)); cursor: nesw-resize; }
+  .item .handle.sw { bottom: calc(-8px / var(--scale)); left: calc(-8px / var(--scale)); cursor: nesw-resize; }
+  .item .handle.se { bottom: calc(-8px / var(--scale)); right: calc(-8px / var(--scale)); cursor: nwse-resize; }
+
+  /* Screen vs print */
+  @media print {
+    body { background: white !important; }
+    #toolbar, #hintbar { display: none !important; }
+    #workspace { background: white !important; }
+    #pageFrame { transform: none !important; }
+    #page { box-shadow: none !important; margin: 0 !important; }
+    .item.selected { outline: none !important; }
+    .item .handle { display: none !important; }
+    @page { size: A4 portrait; margin: 0; }
+  }
+</style>
+</head>
+<body>
+  <div id="toolbar">
+    <div class="group">
+      <button id="bringFront" title="Bring to front (Ctrl+Shift+])">Front</button>
+      <button id="bringForward" title="Bring forward (Ctrl+])">Forward</button>
+      <button id="sendBackward" title="Send backward (Ctrl+[)">Backward</button>
+      <button id="sendBack" title="Send to back (Ctrl+Shift+[)">Back</button>
+      <div class="sep"></div>
+      <button id="deleteBtn" title="Delete selected (Del/Backspace)">Delete</button>
+    </div>
+    <div class="sep"></div>
+    <div id="hint">Paste images with Ctrl/Cmd+V. Drag to move. Drag corners to resize. Print with Ctrl/Cmd+P.</div>
+  </div>
+  <div id="workspace">
+    <div id="pageFrame">
+      <div id="page" class="portrait" aria-label="A4 page"></div>
+    </div>
+  </div>
+
+<script>
+(()=> {
+  const page = document.getElementById('page');
+  const pageFrame = document.getElementById('pageFrame');
+  const workspace = document.getElementById('workspace');
+
+  const btnFront = document.getElementById('bringFront');
+  const btnForward = document.getElementById('bringForward');
+  const btnBackward = document.getElementById('sendBackward');
+  const btnBack = document.getElementById('sendBack');
+  const btnDelete = document.getElementById('deleteBtn');
+
+  const PAGE_MM = { portrait: { w: 210, h: 297 } };
+  function currentPageMm() { return PAGE_MM.portrait; }
+
+  let items = []; // DOM order list; last = front-most
+  const meta = new Map(); // el -> {x,y,w,h,ar}
+  let selected = null;
+
+  function fitToWindow() {
+    const ws = workspace.getBoundingClientRect();
+    const pad = 20;
+    const pageWpx = page.offsetWidth;
+    const pageHpx = page.offsetHeight;
+    const scale = Math.max(0.1, Math.min(4, Math.min((ws.width - pad)/pageWpx, (ws.height - pad)/pageHpx)));
+    pageFrame.style.transform = `scale(${scale})`;
+    document.documentElement.style.setProperty('--scale', scale);
+  }
+  window.addEventListener('resize', fitToWindow);
+
+  function mmPerPixel() {
+    const rect = page.getBoundingClientRect();
+    const mm = currentPageMm();
+    return { x: mm.w / rect.width, y: mm.h / rect.height, rect };
+  }
+
+  function applyBox(el) {
+    const m = meta.get(el);
+    el.style.left = m.x + 'mm';
+    el.style.top = m.y + 'mm';
+    el.style.width = m.w + 'mm'; // height comes from image aspect automatically
+  }
+
+  function addHandles(el) {
+    const mk = dir => {
+      const h = document.createElement('div');
+      h.className = 'handle ' + dir;
+      h.dataset.dir = dir;
+      h.addEventListener('pointerdown', e => startResize(el, dir, e));
+      return h;
+    };
+    const nw = mk('nw'), ne = mk('ne'), sw = mk('sw'), se = mk('se');
+    el.appendChild(nw); el.appendChild(ne); el.appendChild(sw); el.appendChild(se);
+  }
+
+  function addImage(dataUrl, name='') {
+    const temp = new Image();
+    temp.onload = () => {
+      const ar = temp.naturalWidth / temp.naturalHeight || 1;
+      const mm = currentPageMm();
+
+      // Default width: up to 60% of page width, but not exceeding page
+      const defaultW = Math.min(mm.w * 0.6, mm.w - 10);
+      const defaultH = defaultW / ar;
+
+      const x = (mm.w - defaultW) / 2;
+      const y = (mm.h - defaultH) / 2;
+
+      const el = document.createElement('div');
+      el.className = 'item';
+      el.setAttribute('role', 'figure');
+      el.setAttribute('aria-label', name || 'pasted image');
+
+      const img = document.createElement('img');
+      img.src = dataUrl;
+      img.draggable = false;
+
+      el.appendChild(img);
+      page.appendChild(el);
+
+      // Meta
+      meta.set(el, { x, y, w: defaultW, h: defaultH, ar });
+      applyBox(el);
+      addHandles(el);
+
+      // Interactions
+      el.addEventListener('pointerdown', e => {
+        if (!(e.target instanceof Element) || e.target.classList.contains('handle')) return;
+        if (e.button !== 0) return;
+        select(el);
+        startDrag(el, e);
+      });
+      img.addEventListener('dragstart', e => e.preventDefault());
+
+      // Order and selection
+      items.push(el);
+      updateZ();
+      select(el);
+    };
+    temp.src = dataUrl;
+  }
+
+  // Conversions
+  function blobToDataURL(blob) {
+    return new Promise((res, rej) => {
+      const fr = new FileReader();
+      fr.onload = () => res(fr.result);
+      fr.onerror = rej;
+      fr.readAsDataURL(blob);
+    });
+  }
+
+  // Selection
+  function select(el) {
+    if (selected === el) return;
+    if (selected) selected.classList.remove('selected');
+    selected = el || null;
+    if (selected) selected.classList.add('selected');
+    updateToolbarState();
+  }
+  function updateToolbarState() {
+    const has = !!selected;
+    for (const b of [btnFront, btnForward, btnBackward, btnBack, btnDelete]) {
+      b.disabled = !has;
+    }
+  }
+
+  function updateZ() {
+    items.forEach((el, i) => el.style.zIndex = String(i + 1));
+  }
+
+  // Dragging
+  function startDrag(el, e) {
+    e.preventDefault();
+    const mmpx = mmPerPixel();
+    const m = meta.get(el);
+    const start = { x: m.x, y: m.y };
+    const startPt = { x: (e.clientX - mmpx.rect.left) * mmpx.x, y: (e.clientY - mmpx.rect.top) * mmpx.y };
+
+    function onMove(ev) {
+      const pt = { x: (ev.clientX - mmpx.rect.left) * mmpx.x, y: (ev.clientY - mmpx.rect.top) * mmpx.y };
+      const dx = pt.x - startPt.x;
+      const dy = pt.y - startPt.y;
+      m.x = start.x + dx;
+      m.y = start.y + dy;
+      applyBox(el);
+    }
+    function onUp() {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    }
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  }
+
+  // Resizing with fixed aspect
+  function startResize(el, dir, e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const mmpx = mmPerPixel();
+    const m = meta.get(el);
+    const start = { x: m.x, y: m.y, w: m.w, h: m.h, ar: m.ar };
+
+    // Determine anchor (opposite corner)
+    const anchor = {
+      x: dir.includes('e') ? start.x : (start.x + start.w),
+      y: dir.includes('s') ? start.y : (start.y + start.h),
+    };
+    // Starting handle corner position
+    const handle0 = {
+      x: dir.includes('e') ? (start.x + start.w) : start.x,
+      y: dir.includes('s') ? (start.y + start.h) : start.y,
+    };
+    const v0 = { x: handle0.x - anchor.x, y: handle0.y - anchor.y };
+    const len0 = Math.max(0.0001, Math.hypot(v0.x, v0.y));
+    const minW = 5; // mm minimum width
+    const minS = minW / start.w;
+
+    function onMove(ev) {
+      const mx = (ev.clientX - mmpx.rect.left) * mmpx.x;
+      const my = (ev.clientY - mmpx.rect.top) * mmpx.y;
+      const v = { x: mx - anchor.x, y: my - anchor.y };
+      const len = Math.hypot(v.x, v.y);
+      let s = Math.max(minS, len / len0);
+
+      const newW = start.w * s;
+      const newH = start.h * s;
+
+      const anchorIsWest = dir.includes('e');   // if handle on east, anchor is west
+      const anchorIsNorth = dir.includes('s');  // if handle on south, anchor is north
+
+      m.w = newW;
+      m.h = newH;
+      m.x = anchorIsWest ? anchor.x : (anchor.x - newW);
+      m.y = anchorIsNorth ? anchor.y : (anchor.y - newH);
+
+      applyBox(el);
+    }
+    function onUp() {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    }
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  }
+
+  // Paste handler
+  async function onPaste(e) {
+    const dt = e.clipboardData;
+    if (!dt) return;
+    let found = 0;
+    const itemsArr = Array.from(dt.items || []);
+    for (const it of itemsArr) {
+      if (it.type && it.type.startsWith('image/')) {
+        const file = it.getAsFile();
+        if (file) {
+          found++;
+          const url = await blobToDataURL(file);
+          addImage(url, file.name || '');
+        }
+      }
+    }
+    // Fallback: try files list if no items
+    if (!found && dt.files && dt.files.length) {
+      for (const f of dt.files) {
+        if (f.type.startsWith('image/')) {
+          found++;
+          const url = await blobToDataURL(f);
+          addImage(url, f.name || '');
+        }
+      }
+    }
+    if (found) e.preventDefault();
+  }
+
+  // Drag-and-drop files
+  document.addEventListener('dragover', e => e.preventDefault());
+  document.addEventListener('drop', async e => {
+    e.preventDefault();
+    const files = e.dataTransfer?.files || [];
+    for (const f of files) {
+      if (f.type && f.type.startsWith('image/')) {
+        const url = await blobToDataURL(f);
+        addImage(url, f.name || '');
+      }
+    }
+  });
+
+  // Click on empty area clears selection
+  page.addEventListener('pointerdown', e => {
+    if (e.target === page) select(null);
+  });
+
+  // Keyboard shortcuts
+  window.addEventListener('keydown', e => {
+    // Delete
+    if ((e.key === 'Delete' || e.key === 'Backspace') && selected) {
+      e.preventDefault();
+      deleteSelected();
+      return;
+    }
+    if (!selected) return;
+
+    // Nudge
+    const step = e.shiftKey ? 5 : 1; // mm
+    const m = meta.get(selected);
+    if (e.key === 'ArrowLeft') { e.preventDefault(); m.x -= step; applyBox(selected); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); m.x += step; applyBox(selected); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); m.y -= step; applyBox(selected); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); m.y += step; applyBox(selected); }
+
+    // Z-order
+    const ctrl = e.ctrlKey || e.metaKey;
+    if (ctrl && (e.key === ']')) { e.preventDefault(); bringForward(); }
+    if (ctrl && (e.key === '[')) { e.preventDefault(); sendBackward(); }
+    if (ctrl && e.shiftKey && (e.key === ']')) { e.preventDefault(); bringToFront(); }
+    if (ctrl && e.shiftKey && (e.key === '[')) { e.preventDefault(); sendToBack(); }
+  });
+
+  // Buttons
+  btnDelete.addEventListener('click', deleteSelected);
+  btnFront.addEventListener('click', bringToFront);
+  btnForward.addEventListener('click', bringForward);
+  btnBackward.addEventListener('click', sendBackward);
+  btnBack.addEventListener('click', sendToBack);
+
+  function deleteSelected() {
+    if (!selected) return;
+    const i = items.indexOf(selected);
+    if (i >= 0) items.splice(i, 1);
+    selected.remove();
+    meta.delete(selected);
+    selected = null;
+    updateZ();
+    updateToolbarState();
+  }
+  function bringToFront() {
+    if (!selected) return;
+    const i = items.indexOf(selected);
+    if (i >= 0) items.splice(i, 1);
+    items.push(selected);
+    updateZ();
+  }
+  function sendToBack() {
+    if (!selected) return;
+    const i = items.indexOf(selected);
+    if (i >= 0) items.splice(i, 1);
+    items.unshift(selected);
+    updateZ();
+  }
+  function bringForward() {
+    if (!selected) return;
+    const i = items.indexOf(selected);
+    if (i >= 0 && i < items.length - 1) {
+      const tmp = items[i+1]; items[i+1] = items[i]; items[i] = tmp;
+      updateZ();
+    }
+  }
+  function sendBackward() {
+    if (!selected) return;
+    const i = items.indexOf(selected);
+    if (i > 0) {
+      const tmp = items[i-1]; items[i-1] = items[i]; items[i] = tmp;
+      updateZ();
+    }
+  }
+
+  // Init
+  document.addEventListener('paste', onPaste);
+  fitToWindow();
+
+  // Helpful: click anywhere outside to focus the document for keyboard shortcuts
+  document.body.addEventListener('mousedown', () => window.focus());
+})();
+</script>
+</body>
+</html>
+
