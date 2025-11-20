@@ -23,7 +23,7 @@ import * as THREE from 'https://unpkg.com/three@0.153.0/build/three.module.js';
 import { VRButton } from 'https://unpkg.com/three@0.153.0/examples/jsm/webxr/VRButton.js';
 
 let scene, camera, renderer;
-    const controllers = [];
+const controllers = [];
 
 const clock = new THREE.Clock();
 let sound, listener;
@@ -34,6 +34,15 @@ const orbitSpeed = 0.5;
 const camWorldPos = new THREE.Vector3();
 let rooms = [], currentIndex = 0;
 const params = new URLSearchParams(window.location.search);
+
+// orbit / view state
+let orbitang = 0;
+let hideToggled = false;
+let viewingangle = 0;
+
+// --- NEW: per-image panning state ---
+let isolatedIndex = -1;          // index of currently isolated / targeted image
+const panSpeed = 0.02;           // how fast the image pans per thumbstick unit
 
 await init();
 animate();
@@ -71,25 +80,25 @@ async function init() {
   // camera = renderer.xr.getCamera();
   document.body.append(renderer.domElement, VRButton.createButton(renderer));
 
-    // set up two controller slots (0=left, 1=right)
-    for (let i = 0; i < 2; i++) {
+  // set up two controller slots (0=left, 1=right)
+  for (let i = 0; i < 2; i++) {
     const ctrl = renderer.xr.getController(i);
     ctrl.userData.index = i;
     ctrl.userData.gamepad = null;
     ctrl.userData.prevButtons = [];
     ctrl.addEventListener('connected', e => {
-        ctrl.userData.gamepad = e.data.gamepad;
-        console.log(`controller ${i} connected:`, e.data);
+      ctrl.userData.gamepad = e.data.gamepad;
+      console.log(`controller ${i} connected:`, e.data);
     });
     ctrl.addEventListener('disconnected', () => {
-        ctrl.userData.gamepad = null;
-        ctrl.userData.prevButtons = [];
-        console.log(`controller ${i} disconnected`);
+      ctrl.userData.gamepad = null;
+      ctrl.userData.prevButtons = [];
+      console.log(`controller ${i} disconnected`);
     });
     scene.add(ctrl);
     controllers.push(ctrl);
-    }
-    
+  }
+
   listener = new THREE.AudioListener();
   camera.add(listener);
   sound = new THREE.Audio(listener);
@@ -215,6 +224,10 @@ async function loadRoom(indexOrName) {
   orbitItems.forEach(m=>scene.remove(m));
   orbitItems.length = 0;
 
+  // reset isolation / panning state for new room
+  hideToggled = false;
+  isolatedIndex = -1;
+
   // fetch this room’s JSON
   const url = `https://attentionfocus.s3.us-east-1.amazonaws.com/${roomName}.json`;
   const resp = await fetch(url);
@@ -222,7 +235,6 @@ async function loadRoom(indexOrName) {
 
   // update the lava seed
   sphereUniforms.seed.value = seed;
-
 
   // reload audio
   if (sound.isPlaying) sound.stop();
@@ -232,9 +244,9 @@ async function loadRoom(indexOrName) {
     sound.setVolume(0.5);
     // if we’re already in an XR session, resume+play immediately
     if (renderer.xr.getSession()) {
-        sound.context.resume().then(() => {
+      sound.context.resume().then(() => {
         if (!sound.isPlaying) sound.play();
-        });
+      });
     }
   });
 
@@ -242,10 +254,18 @@ async function loadRoom(indexOrName) {
   objects.filter(u=>/\.(jpe?g|png)$/i.test(u))
     .forEach(u => new THREE.TextureLoader().load(u, tex => {
       const aspect = tex.image.width/tex.image.height;
+      const geo = new THREE.PlaneGeometry(aspect,1);
       const mesh = new THREE.Mesh(
-        new THREE.PlaneGeometry(aspect,1),
+        geo,
         new THREE.MeshBasicMaterial({ map:tex, transparent:true })
       );
+
+      // --- NEW: per-image pan info (in local plane units) ---
+      mesh.userData.panX = 0;
+      mesh.userData.panY = 0;
+      mesh.userData.maxPanX = geo.parameters.width * 0.5;
+      mesh.userData.maxPanY = geo.parameters.height * 0.5;
+
       scene.add(mesh);
       orbitItems.push(mesh);
     }));
@@ -260,10 +280,18 @@ async function loadRoom(indexOrName) {
       video.play().catch(()=>window.addEventListener('click',()=>video.play()));
       video.addEventListener('loadeddata',()=>{
         const tex = new THREE.VideoTexture(video);
+        const geo = new THREE.PlaneGeometry(1.6,0.9);
         const mesh = new THREE.Mesh(
-          new THREE.PlaneGeometry(1.6,0.9),
+          geo,
           new THREE.MeshBasicMaterial({ map:tex })
         );
+
+        // --- NEW: per-video pan info ---
+        mesh.userData.panX = 0;
+        mesh.userData.panY = 0;
+        mesh.userData.maxPanX = geo.parameters.width * 0.5;
+        mesh.userData.maxPanY = geo.parameters.height * 0.5;
+
         scene.add(mesh);
         orbitItems.push(mesh);
       });
@@ -279,126 +307,175 @@ function onWindowResize(){
 function animate(){
   renderer.setAnimationLoop(render);
 }
-let orbitang = 0;
-let hideToggled = false;
-let viewingangle = 0;
 
 function render(){
   const t = clock.getElapsedTime();
-//   (sphereUniforms.time.value = clock.getElapsedTime());
+  // sphereUniforms.time.value = t; // optional lava animation
   camera.getWorldPosition(camWorldPos);
+
+  // base orbit positions, facing the center
+  const step = orbitItems.length > 0 ? (2 * Math.PI / orbitItems.length) : 0;
   orbitItems.forEach((item,i)=>{
-    const ang = orbitang + i * (2*Math.PI/orbitItems.length);
+    const ang = orbitang + i * step;
     item.position.set(
       camWorldPos.x + orbitRadius*Math.cos(ang),
       camWorldPos.y+1,
       camWorldPos.z + orbitRadius*Math.sin(ang)
     );
-    // console.log(camera)
     item.lookAt(0,1,0);
-    
   });
+
+  // tilt whole ring for supine/upright viewing
   const axis = new THREE.Vector3(1, 0, 0);
   const angle = viewingangle;
-  // pivot point for rotation
   const pivot = new THREE.Vector3(0, 1, 0);
 
   orbitItems.forEach(item => {
-    // 1) translate position so pivot becomes the origin
+    // rotate around pivot
     item.position.sub(pivot);
-
-    // 2) rotate around that origin (i.e., around pivot)
     item.position.applyAxisAngle(axis, angle);
-
-    // 3) translate back to world space
     item.position.add(pivot);
 
-    // rotate the item's orientation to stay upright
+    // keep orientation upright
     item.quaternion.premultiply(
       new THREE.Quaternion().setFromAxisAngle(axis, angle)
     );
-  });
-  // console.log(renderer.xr)
-    // console.log('hi')
-    // for each controller, poll axes + A/B buttons
-      controllers.forEach(ctrl => {
-        const gp = ctrl.userData.gamepad;
-        if (gp) {
-          // Trigger button (idx 0) to toggle hiding images
-          const pressed0 = gp.buttons[0]?.pressed;
-          const prev0 = ctrl.userData.prevButtons[0] || false;
-          if (pressed0 && !prev0) {
-            hideToggled = !hideToggled;
-            if (hideToggled) {
-              // Compute which item is directly in front of the camera
-              const forward = new THREE.Vector3();
-              camera.getWorldDirection(forward);
-              let minAngle = Infinity;
-              let frontIndex = -1;
-              orbitItems.forEach((item, idx) => {
-                const dir = new THREE.Vector3().subVectors(item.position, camWorldPos).normalize();
-                const angle = forward.angleTo(dir);
-                if (angle < minAngle) {
-                  minAngle = angle;
-                  frontIndex = idx;
-                }
-              });
-              // Hide all except the front item
-              orbitItems.forEach((item, idx) => {
-                item.visible = (idx === frontIndex);
-              });
-            } else {
-              // Show all items again
-              orbitItems.forEach(item => {
-                item.visible = true;
-              });
-            }
-          }
-          ctrl.userData.prevButtons[0] = pressed0;
-          // *joystick* – most XR thumbsticks live at axes[2]/[3], fall back to [0]/[1]
-          const x = gp.axes[2] !== undefined ? gp.axes[2] : gp.axes[0];
-          const y = gp.axes[3] !== undefined ? gp.axes[3] : gp.axes[1];
-          if (Math.abs(x) > 0.01 || Math.abs(y) > 0.01) {
-            orbitang += x/30;
-            // if lower trigger is held, adjust viewing angle instead of radius
-            const lowerPressed = gp.buttons[1]?.pressed;
-            if (lowerPressed) {
-              viewingangle -= y/30;
-            } else {
-              orbitRadius -= y/30;
-            }
-            console.log(
-              `controller ${ctrl.userData.index} stick:`,
-              x.toFixed(2),
-              y.toFixed(2),
-              lowerPressed ? '(adjusting view angle)' : '(adjusting radius)'
-            );
-          }
 
-          // *A/B buttons* – on Quest these usually land at buttons[4] (A) & [5] (B)
-          [
-            { name: 'A', idx: 4 },
-            { name: 'B', idx: 5 }
-          ].forEach(btn => {
-            const pressed = gp.buttons[btn.idx]?.pressed;
-            const prev    = ctrl.userData.prevButtons[btn.idx] || false;
-            // if (pressed && !prev){
-            //     console.log(`${btn.name} pressed`);
-            //     loadRoom((currentIndex+1)%rooms.length);
-            // }     
-            if(pressed && !prev){
-              if(btn.idx == 4){
-                console.log(`${btn.name} pressed`);
-                loadRoom((currentIndex+1)%rooms.length);
-              }else if(btn.idx == 5){
-                loadRoom((currentIndex-1 + rooms.length)%rooms.length);
-              }
-            }
-            else if (!pressed && prev) console.log(`${btn.name} released`);
-            ctrl.userData.prevButtons[btn.idx] = pressed;
-          });
+    // --- apply per-image pan in its own plane ---
+    const px = item.userData.panX || 0;
+    const py = item.userData.panY || 0;
+    if (px !== 0 || py !== 0) {
+      const right = new THREE.Vector3(1, 0, 0).applyQuaternion(item.quaternion);
+      const up = new THREE.Vector3(0, 1, 0).applyQuaternion(item.quaternion);
+      item.position.addScaledVector(right, px);
+      item.position.addScaledVector(up, py);
+    }
+  });
+
+  // for each controller, poll axes + buttons
+  controllers.forEach(ctrl => {
+    const gp = ctrl.userData.gamepad;
+    if (!gp) return;
+
+    // Trigger button (idx 0) – isolate image, plus pan when held
+    const pressed0 = gp.buttons[0]?.pressed;
+    const prev0 = ctrl.userData.prevButtons[0] || false;
+
+    if (pressed0 && !prev0) {
+      // toggle hide/isolation
+      hideToggled = !hideToggled;
+      if (hideToggled) {
+        // Compute which item is directly in front of the camera
+        const forward = new THREE.Vector3();
+        camera.getWorldDirection(forward);
+        let minAngle = Infinity;
+        let frontIndex = -1;
+        orbitItems.forEach((item, idx) => {
+          const dir = new THREE.Vector3().subVectors(item.position, camWorldPos).normalize();
+          const a = forward.angleTo(dir);
+          if (a < minAngle) {
+            minAngle = a;
+            frontIndex = idx;
+          }
+        });
+        isolatedIndex = frontIndex;
+
+        // Hide all except the front item & reset its pan
+        orbitItems.forEach((item, idx) => {
+          item.visible = (idx === frontIndex);
+          if (item.userData) {
+            item.userData.panX = 0;
+            item.userData.panY = 0;
+          }
+        });
+      } else {
+        // Show all items again & clear any pan
+        isolatedIndex = -1;
+        orbitItems.forEach(item => {
+          item.visible = true;
+          if (item.userData) {
+            item.userData.panX = 0;
+            item.userData.panY = 0;
+          }
+        });
+      }
+    }
+
+    // On release of the top trigger, snap pan back to center
+    if (!pressed0 && prev0 && isolatedIndex !== -1 && orbitItems[isolatedIndex]) {
+      const target = orbitItems[isolatedIndex];
+      target.userData.panX = 0;
+      target.userData.panY = 0;
+    }
+
+    ctrl.userData.prevButtons[0] = pressed0;
+
+    // *joystick* – most XR thumbsticks live at axes[2]/[3], fall back to [0]/[1]
+    const x = gp.axes[2] !== undefined ? gp.axes[2] : gp.axes[0];
+    const y = gp.axes[3] !== undefined ? gp.axes[3] : gp.axes[1];
+
+    if (Math.abs(x) > 0.01 || Math.abs(y) > 0.01) {
+      const lowerPressed = gp.buttons[1]?.pressed;
+
+      if (pressed0 && hideToggled && isolatedIndex !== -1) {
+        // --- PAN MODE: top trigger held while an image is isolated ---
+        const target = orbitItems[isolatedIndex];
+        if (target && target.userData) {
+          const maxPanX = target.userData.maxPanX ?? 0;
+          const maxPanY = target.userData.maxPanY ?? 0;
+
+          // X: left stick moves image right so left edge can reach center
+          target.userData.panX = THREE.MathUtils.clamp(
+            (target.userData.panX ?? 0) - x * panSpeed,
+            -maxPanX,
+            maxPanX
+          );
+
+          // Y: up stick (y < 0) moves image down so top edge can reach center
+          target.userData.panY = THREE.MathUtils.clamp(
+            (target.userData.panY ?? 0) + y * panSpeed,
+            -maxPanY,
+            maxPanY
+          );
         }
+      } else {
+        // normal behavior: spin ring & change radius / viewing angle
+        orbitang += x/30;
+        if (lowerPressed) {
+          viewingangle -= y/30;
+        } else {
+          orbitRadius -= y/30;
+        }
+        console.log(
+          `controller ${ctrl.userData.index} stick:`,
+          x.toFixed(2),
+          y.toFixed(2),
+          lowerPressed ? '(adjusting view angle)' : '(adjusting radius)'
+        );
+      }
+    }
+
+    // *A/B buttons* – on Quest these usually land at buttons[4] (A) & [5] (B)
+    [
+      { name: 'A', idx: 4 },
+      { name: 'B', idx: 5 }
+    ].forEach(btn => {
+      const pressed = gp.buttons[btn.idx]?.pressed;
+      const prev    = ctrl.userData.prevButtons[btn.idx] || false;
+
+      if(pressed && !prev){
+        if(btn.idx == 4){
+          console.log(`${btn.name} pressed`);
+          loadRoom((currentIndex+1)%rooms.length);
+        }else if(btn.idx == 5){
+          loadRoom((currentIndex-1 + rooms.length)%rooms.length);
+        }
+      }
+      else if (!pressed && prev) console.log(`${btn.name} released`);
+      ctrl.userData.prevButtons[btn.idx] = pressed;
     });
+  });
+
   renderer.render(scene, camera);
 }
 </script>
