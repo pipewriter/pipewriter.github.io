@@ -403,7 +403,22 @@ function render(){
 
     // On release of the top trigger, snap pan back to center
     if (!pressed0 && prev0 && isolatedIndex !== -1 && orbitItems[isolatedIndex]) {
+      
       const target = orbitItems[isolatedIndex];
+      // actually if this happend I also want to toggle the mode back to show all
+      // only if it was panning though
+      if(target.userData.panY != 0){
+        isolatedIndex = -1;
+        console.log("release")
+        orbitItems.forEach(item => {
+          item.visible = true;
+          if (item.userData) {
+            item.userData.panX = 0;
+            item.userData.panY = 0;
+          }
+        });
+      }
+
       target.userData.panX = 0;
       target.userData.panY = 0;
     }
