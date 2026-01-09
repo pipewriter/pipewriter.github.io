@@ -368,6 +368,12 @@ function render(){
         // Compute which item is directly in front of the camera
         const forward = new THREE.Vector3();
         camera.getWorldDirection(forward);
+
+        // If images are rotated above the user's head, invert the selection logic
+        if (Math.abs(viewingangle) > Math.PI / 2) {
+          forward.multiplyScalar(-1);
+        }
+
         let minAngle = Infinity;
         let frontIndex = -1;
         orbitItems.forEach((item, idx) => {
