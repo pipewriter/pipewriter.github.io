@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wave Function Collapse — WebXR Terrain</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0a0a0f; overflow: hidden; font-family: system-ui, sans-serif; color: #eee; }
+    canvas { display: block; }
+    #ui {
+      position: absolute; top: 16px; left: 16px; z-index: 10;
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    #ui button {
+      padding: 10px 20px; border: 1px solid rgba(255,255,255,0.2);
+      background: rgba(10,10,20,0.85); color: #eee; border-radius: 6px;
+      cursor: pointer; font-size: 14px; backdrop-filter: blur(8px);
+      transition: background 0.2s;
+    }
+    #ui button:hover { background: rgba(40,40,80,0.9); }
+    #legend {
+      position: absolute; bottom: 16px; left: 16px; z-index: 10;
+      background: rgba(10,10,20,0.85); border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 6px; padding: 12px 16px; backdrop-filter: blur(8px);
+      font-size: 13px; line-height: 1.6;
+    }
+    #legend .swatch {
+      display: inline-block; width: 12px; height: 12px; border-radius: 2px;
+      margin-right: 6px; vertical-align: middle;
+    }
+    #info {
+      position: absolute; top: 16px; right: 16px; z-index: 10;
+      background: rgba(10,10,20,0.85); border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 6px; padding: 12px 16px; backdrop-filter: blur(8px);
+      font-size: 13px; max-width: 280px; line-height: 1.5;
+    }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.162.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.162.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+
+<div id="ui">
+  <button id="btn-regen">Regenerate Terrain</button>
+  <button id="btn-size-up">Grid +2</button>
+  <button id="btn-size-down">Grid −2</button>
+</div>
+
+<div id="info">
+  <strong>WFC Terrain Generator</strong><br>
+  Wave Function Collapse builds terrain by propagating adjacency constraints tile-by-tile.<br><br>
+  <span id="grid-label">Grid: 20×20</span><br>
+  Drag to orbit · Scroll to zoom<br>
+  VR headset detected? Click <em>Enter VR</em>.
+</div>
+
+<div id="legend">
+  <strong>Tile Legend</strong><br>
+  <span class="swatch" style="background:#1a3a6a"></span>Deep Water<br>
+  <span class="swatch" style="background:#2a7abf"></span>Shallow Water<br>
+  <span class="swatch" style="background:#d4b96a"></span>Sand / Beach<br>
+  <span class="swatch" style="background:#4a9e3f"></span>Grassland<br>
+  <span class="swatch" style="background:#2d6e1e"></span>Forest<br>
+  <span class="swatch" style="background:#7a7a7a"></span>Mountain<br>
+  <span class="swatch" style="background:#e8e8f0"></span>Snow Peak
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { VRButton } from 'three/addons/webxr/VRButton.js';
+
+// ──────────────────────────────────────────────
+//  Tile definitions
+// ──────────────────────────────────────────────
+
+const TILE = {
+  DEEP_WATER: 0,
+  WATER:      1,
+  SAND:       2,
+  GRASS:      3,
+  FOREST:     4,
+  MOUNTAIN:   5,
+  SNOW:       6,
+};
+const TILE_COUNT = 7;
+
+const TILE_META = {
+  [TILE.DEEP_WATER]: { name: 'Deep Water',     color: 0x1a3a6a, height: -0.35, weight: 8  },
+  [TILE.WATER]:      { name: 'Shallow Water',   color: 0x2a7abf, height: -0.15, weight: 10 },
+  [TILE.SAND]:       { name: 'Sand',            color: 0xd4b96a, height:  0.00, weight: 6  },
+  [TILE.GRASS]:      { name: 'Grassland',       color: 0x4a9e3f, height:  0.08, weight: 12 },
+  [TILE.FOREST]:     { name: 'Forest',          color: 0x2d6e1e, height:  0.15, weight: 10 },
+  [TILE.MOUNTAIN]:   { name: 'Mountain',        color: 0x7a7a7a, height:  0.45, weight: 5  },
+  [TILE.SNOW]:       { name: 'Snow Peak',       color: 0xe8e8f0, height:  0.70, weight: 3  },
+};
+
+// Adjacency: which tiles may sit beside each other
+const ADJACENCY = [
+  /* DEEP_WATER */ new Set([TILE.DEEP_WATER, TILE.WATER]),
+  /* WATER      */ new Set([TILE.DEEP_WATER, TILE.WATER, TILE.SAND]),
+  /* SAND       */ new Set([TILE.WATER, TILE.SAND, TILE.GRASS]),
+  /* GRASS      */ new Set([TILE.SAND, TILE.GRASS, TILE.FOREST]),
+  /* FOREST     */ new Set([TILE.GRASS, TILE.FOREST, TILE.MOUNTAIN]),
+  /* MOUNTAIN   */ new Set([TILE.FOREST, TILE.MOUNTAIN, TILE.SNOW]),
+  /* SNOW       */ new Set([TILE.MOUNTAIN, TILE.SNOW]),
+];
+
+// ──────────────────────────────────────────────
+//  Wave Function Collapse
+// ──────────────────────────────────────────────
+
+class WFC {
+  constructor(width, height) {
+    this.w = width;
+    this.h = height;
+    this.grid = [];         // each cell: Set of possible tile ids
+    this.result = [];       // collapsed tile id per cell (-1 if not yet)
+    this._init();
+  }
+
+  _init() {
+    const all = new Set();
+    for (let i = 0; i < TILE_COUNT; i++) all.add(i);
+    this.grid = [];
+    this.result = [];
+    for (let i = 0; i < this.w * this.h; i++) {
+      this.grid.push(new Set(all));
+      this.result.push(-1);
+    }
+  }
+
+  _idx(x, y) { return y * this.w + x; }
+
+  _neighbors(x, y) {
+    const n = [];
+    if (x > 0)           n.push([x - 1, y]);
+    if (x < this.w - 1)  n.push([x + 1, y]);
+    if (y > 0)           n.push([x, y - 1]);
+    if (y < this.h - 1)  n.push([x, y + 1]);
+    return n;
+  }
+
+  // Entropy = number of remaining possibilities (lower = more constrained)
+  _entropy(i) {
+    return this.grid[i].size;
+  }
+
+  // Pick the uncollapsed cell with lowest entropy (random tiebreak)
+  _pickCell() {
+    let minE = Infinity;
+    let candidates = [];
+    for (let i = 0; i < this.grid.length; i++) {
+      if (this.result[i] !== -1) continue;
+      const e = this._entropy(i);
+      if (e === 0) return -2; // contradiction
+      if (e < minE) { minE = e; candidates = [i]; }
+      else if (e === minE) candidates.push(i);
+    }
+    if (candidates.length === 0) return -1; // all collapsed
+    return candidates[Math.floor(Math.random() * candidates.length)];
+  }
+
+  // Weighted random pick from a set of tile ids
+  _weightedPick(options) {
+    let total = 0;
+    for (const t of options) total += TILE_META[t].weight;
+    let r = Math.random() * total;
+    for (const t of options) {
+      r -= TILE_META[t].weight;
+      if (r <= 0) return t;
+    }
+    return [...options][options.size - 1];
+  }
+
+  // Propagate constraints from a collapsed cell outward (BFS)
+  _propagate(startX, startY) {
+    const stack = [[startX, startY]];
+    const visited = new Set();
+    visited.add(this._idx(startX, startY));
+
+    while (stack.length > 0) {
+      const [cx, cy] = stack.pop();
+      const ci = this._idx(cx, cy);
+      const allowed = this.grid[ci];
+
+      for (const [nx, ny] of this._neighbors(cx, cy)) {
+        const ni = this._idx(nx, ny);
+        if (this.result[ni] !== -1) continue; // already collapsed
+
+        // Build set of tiles that can be neighbor to ANY tile still in allowed
+        const neighborAllowed = new Set();
+        for (const t of allowed) {
+          for (const adj of ADJACENCY[t]) {
+            if (this.grid[ni].has(adj)) neighborAllowed.add(adj);
+          }
+        }
+
+        if (neighborAllowed.size < this.grid[ni].size) {
+          this.grid[ni] = neighborAllowed;
+          const key = ni;
+          if (!visited.has(key)) {
+            visited.add(key);
+            stack.push([nx, ny]);
+          }
+        }
+      }
+    }
+  }
+
+  run(maxAttempts = 20) {
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      this._init();
+      let success = true;
+
+      while (true) {
+        const cell = this._pickCell();
+        if (cell === -1) break;       // done
+        if (cell === -2) { success = false; break; } // contradiction
+
+        const x = cell % this.w;
+        const y = Math.floor(cell / this.w);
+
+        // Collapse
+        const chosen = this._weightedPick(this.grid[cell]);
+        this.grid[cell] = new Set([chosen]);
+        this.result[cell] = chosen;
+
+        // Propagate
+        this._propagate(x, y);
+      }
+
+      if (success) return this.result;
+    }
+    // Fallback: fill remaining with grass
+    for (let i = 0; i < this.result.length; i++) {
+      if (this.result[i] === -1) this.result[i] = TILE.GRASS;
+    }
+    return this.result;
+  }
+}
+
+// ──────────────────────────────────────────────
+//  Procedural texture generator (canvas-based)
+// ──────────────────────────────────────────────
+
+function makeTexture(tileId) {
+  const size = 128;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const meta = TILE_META[tileId];
+  const base = new THREE.Color(meta.color);
+
+  // Fill base
+  ctx.fillStyle = '#' + base.getHexString();
+  ctx.fillRect(0, 0, size, size);
+
+  // Add noise / detail
+  const imgData = ctx.getImageData(0, 0, size, size);
+  const d = imgData.data;
+
+  for (let i = 0; i < d.length; i += 4) {
+    const px = (i / 4) % size;
+    const py = Math.floor((i / 4) / size);
+    let noise = (Math.random() - 0.5);
+
+    switch (tileId) {
+      case TILE.DEEP_WATER:
+      case TILE.WATER: {
+        // Horizontal wave bands
+        const wave = Math.sin(py * 0.3 + px * 0.05) * 15;
+        d[i]     = Math.min(255, Math.max(0, d[i] + wave + noise * 10));
+        d[i + 1] = Math.min(255, Math.max(0, d[i + 1] + wave * 0.5 + noise * 8));
+        d[i + 2] = Math.min(255, Math.max(0, d[i + 2] + noise * 12));
+        break;
+      }
+      case TILE.SAND: {
+        // Speckled grains
+        const grain = Math.random() > 0.92 ? 30 : 0;
+        d[i]     = Math.min(255, Math.max(0, d[i] + noise * 18 + grain));
+        d[i + 1] = Math.min(255, Math.max(0, d[i + 1] + noise * 14 + grain * 0.6));
+        d[i + 2] = Math.min(255, Math.max(0, d[i + 2] + noise * 10));
+        break;
+      }
+      case TILE.GRASS: {
+        // Grassy variation
+        const blade = Math.sin(px * 1.2) * Math.cos(py * 0.8) * 12;
+        d[i]     = Math.min(255, Math.max(0, d[i] + noise * 10 - 5));
+        d[i + 1] = Math.min(255, Math.max(0, d[i + 1] + blade + noise * 15));
+        d[i + 2] = Math.min(255, Math.max(0, d[i + 2] + noise * 8));
+        break;
+      }
+      case TILE.FOREST: {
+        // Dark patches
+        const dark = (Math.sin(px * 0.4) * Math.sin(py * 0.6) > 0.3) ? -20 : 0;
+        d[i]     = Math.min(255, Math.max(0, d[i] + noise * 8 + dark));
+        d[i + 1] = Math.min(255, Math.max(0, d[i + 1] + noise * 12 + dark));
+        d[i + 2] = Math.min(255, Math.max(0, d[i + 2] + noise * 6));
+        break;
+      }
+      case TILE.MOUNTAIN: {
+        // Rocky cracks
+        const crack = ((px + py * 3) % 17 < 2) ? -25 : 0;
+        d[i]     = Math.min(255, Math.max(0, d[i] + noise * 20 + crack));
+        d[i + 1] = Math.min(255, Math.max(0, d[i + 1] + noise * 20 + crack));
+        d[i + 2] = Math.min(255, Math.max(0, d[i + 2] + noise * 18 + crack));
+        break;
+      }
+      case TILE.SNOW: {
+        // Sparkle
+        const sparkle = Math.random() > 0.97 ? 30 : 0;
+        d[i]     = Math.min(255, Math.max(0, d[i] + noise * 6 + sparkle));
+        d[i + 1] = Math.min(255, Math.max(0, d[i + 1] + noise * 6 + sparkle));
+        d[i + 2] = Math.min(255, Math.max(0, d[i + 2] + noise * 8 + sparkle));
+        break;
+      }
+    }
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.magFilter = THREE.NearestFilter;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+// ──────────────────────────────────────────────
+//  3D Object builders per tile type
+// ──────────────────────────────────────────────
+
+function seededRandom(seed) {
+  let s = seed;
+  return () => { s = (s * 16807 + 0) % 2147483647; return (s - 1) / 2147483646; };
+}
+
+function buildTileObjects(tileId, tileSize, cellX, cellY) {
+  const group = new THREE.Group();
+  const rand = seededRandom(cellX * 1000 + cellY * 37 + tileId * 7);
+
+  switch (tileId) {
+    case TILE.DEEP_WATER: {
+      // Subtle wave surface indicators — small transparent-ish spheres
+      for (let i = 0; i < 3; i++) {
+        const geo = new THREE.SphereGeometry(0.04, 8, 6);
+        const mat = new THREE.MeshStandardMaterial({
+          color: 0x4488cc, transparent: true, opacity: 0.4
+        });
+        const m = new THREE.Mesh(geo, mat);
+        m.position.set(
+          (rand() - 0.5) * tileSize * 0.7,
+          -0.02,
+          (rand() - 0.5) * tileSize * 0.7
+        );
+        m.scale.y = 0.3;
+        group.add(m);
+      }
+      break;
+    }
+
+    case TILE.WATER: {
+      // Small lily-pad-like discs
+      for (let i = 0; i < 2; i++) {
+        const geo = new THREE.CylinderGeometry(0.06, 0.06, 0.01, 8);
+        const mat = new THREE.MeshStandardMaterial({ color: 0x3a8844 });
+        const m = new THREE.Mesh(geo, mat);
+        m.position.set(
+          (rand() - 0.5) * tileSize * 0.6,
+          0.01,
+          (rand() - 0.5) * tileSize * 0.6
+        );
+        group.add(m);
+      }
+      break;
+    }
+
+    case TILE.SAND: {
+      // Small pebbles and a shell
+      for (let i = 0; i < 5; i++) {
+        const geo = new THREE.SphereGeometry(0.015 + rand() * 0.02, 6, 4);
+        const mat = new THREE.MeshStandardMaterial({
+          color: new THREE.Color().setHSL(0.08, 0.2 + rand() * 0.2, 0.55 + rand() * 0.2)
+        });
+        const m = new THREE.Mesh(geo, mat);
+        m.position.set(
+          (rand() - 0.5) * tileSize * 0.7,
+          0.01,
+          (rand() - 0.5) * tileSize * 0.7
+        );
+        m.scale.y = 0.5 + rand() * 0.5;
+        group.add(m);
+      }
+      // Driftwood stick
+      if (rand() > 0.5) {
+        const geo = new THREE.CylinderGeometry(0.008, 0.005, 0.15, 5);
+        const mat = new THREE.MeshStandardMaterial({ color: 0x8B7355 });
+        const m = new THREE.Mesh(geo, mat);
+        m.rotation.z = Math.PI / 2 + (rand() - 0.5) * 0.5;
+        m.position.set(
+          (rand() - 0.5) * tileSize * 0.4,
+          0.01,
+          (rand() - 0.5) * tileSize * 0.4
+        );
+        group.add(m);
+      }
+      break;
+    }
+
+    case TILE.GRASS: {
+      // Grass tufts — clusters of thin stretched boxes
+      const clusterCount = 3 + Math.floor(rand() * 4);
+      for (let c = 0; c < clusterCount; c++) {
+        const cx = (rand() - 0.5) * tileSize * 0.75;
+        const cz = (rand() - 0.5) * tileSize * 0.75;
+        const bladeCount = 3 + Math.floor(rand() * 4);
+        for (let b = 0; b < bladeCount; b++) {
+          const h = 0.04 + rand() * 0.06;
+          const geo = new THREE.BoxGeometry(0.006, h, 0.003);
+          const mat = new THREE.MeshStandardMaterial({
+            color: new THREE.Color().setHSL(0.28 + rand() * 0.06, 0.7, 0.35 + rand() * 0.15)
+          });
+          const m = new THREE.Mesh(geo, mat);
+          m.position.set(
+            cx + (rand() - 0.5) * 0.05,
+            h / 2,
+            cz + (rand() - 0.5) * 0.05
+          );
+          m.rotation.y = rand() * Math.PI;
+          m.rotation.x = (rand() - 0.5) * 0.3;
+          group.add(m);
+        }
+      }
+      // Occasional small flower
+      if (rand() > 0.6) {
+        const stem = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.003, 0.003, 0.08, 4),
+          new THREE.MeshStandardMaterial({ color: 0x3a7a2a })
+        );
+        stem.position.set(
+          (rand() - 0.5) * tileSize * 0.5,
+          0.04,
+          (rand() - 0.5) * tileSize * 0.5
+        );
+        group.add(stem);
+        const flower = new THREE.Mesh(
+          new THREE.SphereGeometry(0.015, 6, 4),
+          new THREE.MeshStandardMaterial({
+            color: new THREE.Color().setHSL(rand(), 0.8, 0.6)
+          })
+        );
+        flower.position.set(stem.position.x, 0.085, stem.position.z);
+        group.add(flower);
+      }
+      break;
+    }
+
+    case TILE.FOREST: {
+      // Trees: trunk (cylinder) + canopy (cone or sphere)
+      const treeCount = 2 + Math.floor(rand() * 3);
+      for (let t = 0; t < treeCount; t++) {
+        const tx = (rand() - 0.5) * tileSize * 0.65;
+        const tz = (rand() - 0.5) * tileSize * 0.65;
+        const trunkH = 0.1 + rand() * 0.08;
+        const trunkR = 0.012 + rand() * 0.008;
+
+        // Trunk
+        const trunk = new THREE.Mesh(
+          new THREE.CylinderGeometry(trunkR * 0.7, trunkR, trunkH, 6),
+          new THREE.MeshStandardMaterial({ color: 0x6B4226 })
+        );
+        trunk.position.set(tx, trunkH / 2, tz);
+        group.add(trunk);
+
+        // Canopy — mix of cones (conifers) and spheres (deciduous)
+        if (rand() > 0.4) {
+          // Conifer — layered cones
+          const layers = 2 + Math.floor(rand() * 2);
+          for (let l = 0; l < layers; l++) {
+            const coneH = 0.08 + rand() * 0.04;
+            const coneR = 0.05 + rand() * 0.03 - l * 0.01;
+            const cone = new THREE.Mesh(
+              new THREE.ConeGeometry(coneR, coneH, 7),
+              new THREE.MeshStandardMaterial({
+                color: new THREE.Color().setHSL(0.28 + rand() * 0.05, 0.65, 0.2 + rand() * 0.1)
+              })
+            );
+            cone.position.set(tx, trunkH + l * coneH * 0.55 + coneH * 0.3, tz);
+            group.add(cone);
+          }
+        } else {
+          // Deciduous — round canopy
+          const canopyR = 0.06 + rand() * 0.04;
+          const canopy = new THREE.Mesh(
+            new THREE.IcosahedronGeometry(canopyR, 1),
+            new THREE.MeshStandardMaterial({
+              color: new THREE.Color().setHSL(0.3 + rand() * 0.08, 0.6, 0.25 + rand() * 0.12)
+            })
+          );
+          canopy.position.set(tx, trunkH + canopyR * 0.6, tz);
+          canopy.scale.y = 0.8 + rand() * 0.4;
+          group.add(canopy);
+        }
+      }
+      // Undergrowth
+      for (let i = 0; i < 4; i++) {
+        const bush = new THREE.Mesh(
+          new THREE.IcosahedronGeometry(0.02 + rand() * 0.015, 0),
+          new THREE.MeshStandardMaterial({
+            color: new THREE.Color().setHSL(0.3, 0.5, 0.2 + rand() * 0.1)
+          })
+        );
+        bush.position.set(
+          (rand() - 0.5) * tileSize * 0.7,
+          0.015,
+          (rand() - 0.5) * tileSize * 0.7
+        );
+        bush.scale.y = 0.6;
+        group.add(bush);
+      }
+      break;
+    }
+
+    case TILE.MOUNTAIN: {
+      // Rocky peaks — irregular cones and boulders
+      const peakCount = 1 + Math.floor(rand() * 2);
+      for (let p = 0; p < peakCount; p++) {
+        const px2 = (rand() - 0.5) * tileSize * 0.4;
+        const pz = (rand() - 0.5) * tileSize * 0.4;
+        const peakH = 0.15 + rand() * 0.2;
+        const peakR = 0.06 + rand() * 0.05;
+
+        const peak = new THREE.Mesh(
+          new THREE.ConeGeometry(peakR, peakH, 5 + Math.floor(rand() * 3)),
+          new THREE.MeshStandardMaterial({
+            color: new THREE.Color().setHSL(0.06, 0.1 + rand() * 0.15, 0.35 + rand() * 0.15),
+            flatShading: true
+          })
+        );
+        // Distort vertices for natural look
+        const pos = peak.geometry.attributes.position;
+        for (let v = 0; v < pos.count; v++) {
+          pos.setX(v, pos.getX(v) + (rand() - 0.5) * 0.02);
+          pos.setZ(v, pos.getZ(v) + (rand() - 0.5) * 0.02);
+        }
+        pos.needsUpdate = true;
+        peak.geometry.computeVertexNormals();
+        peak.position.set(px2, peakH / 2, pz);
+        group.add(peak);
+      }
+      // Boulders
+      for (let b = 0; b < 3; b++) {
+        const boulder = new THREE.Mesh(
+          new THREE.IcosahedronGeometry(0.02 + rand() * 0.025, 0),
+          new THREE.MeshStandardMaterial({
+            color: new THREE.Color().setHSL(0.05, 0.08, 0.4 + rand() * 0.15),
+            flatShading: true
+          })
+        );
+        boulder.position.set(
+          (rand() - 0.5) * tileSize * 0.7,
+          0.02,
+          (rand() - 0.5) * tileSize * 0.7
+        );
+        boulder.rotation.set(rand() * Math.PI, rand() * Math.PI, 0);
+        boulder.scale.set(1 + rand() * 0.5, 0.6 + rand() * 0.4, 1 + rand() * 0.5);
+        group.add(boulder);
+      }
+      break;
+    }
+
+    case TILE.SNOW: {
+      // Tall snow-capped peak with ice crystals
+      const mainH = 0.25 + rand() * 0.25;
+      const mainR = 0.07 + rand() * 0.04;
+      const mainPeak = new THREE.Mesh(
+        new THREE.ConeGeometry(mainR, mainH, 6),
+        new THREE.MeshStandardMaterial({
+          color: 0x9999aa, flatShading: true
+        })
+      );
+      const mpos = mainPeak.geometry.attributes.position;
+      for (let v = 0; v < mpos.count; v++) {
+        mpos.setX(v, mpos.getX(v) + (rand() - 0.5) * 0.015);
+        mpos.setZ(v, mpos.getZ(v) + (rand() - 0.5) * 0.015);
+      }
+      mpos.needsUpdate = true;
+      mainPeak.geometry.computeVertexNormals();
+      mainPeak.position.set(0, mainH / 2, 0);
+      group.add(mainPeak);
+
+      // Snow cap on top
+      const capH = mainH * 0.35;
+      const cap = new THREE.Mesh(
+        new THREE.ConeGeometry(mainR * 0.6, capH, 6),
+        new THREE.MeshStandardMaterial({ color: 0xf0f0ff })
+      );
+      cap.position.set(0, mainH - capH * 0.3, 0);
+      group.add(cap);
+
+      // Ice crystals
+      for (let i = 0; i < 3; i++) {
+        const crystal = new THREE.Mesh(
+          new THREE.OctahedronGeometry(0.015 + rand() * 0.01, 0),
+          new THREE.MeshStandardMaterial({
+            color: 0xaaddff, transparent: true, opacity: 0.7
+          })
+        );
+        crystal.position.set(
+          (rand() - 0.5) * tileSize * 0.5,
+          0.02 + rand() * 0.04,
+          (rand() - 0.5) * tileSize * 0.5
+        );
+        crystal.rotation.set(rand(), rand(), rand());
+        group.add(crystal);
+      }
+      break;
+    }
+  }
+
+  return group;
+}
+
+// ──────────────────────────────────────────────
+//  Terrain mesh builder
+// ──────────────────────────────────────────────
+
+const tileTextures = {};
+for (let t = 0; t < TILE_COUNT; t++) {
+  tileTextures[t] = makeTexture(t);
+}
+
+const tileMaterials = {};
+for (let t = 0; t < TILE_COUNT; t++) {
+  tileMaterials[t] = new THREE.MeshStandardMaterial({
+    map: tileTextures[t],
+    roughness: t <= TILE.WATER ? 0.2 : 0.8,
+    metalness: t <= TILE.WATER ? 0.3 : 0.05,
+  });
+}
+
+function buildTerrain(wfcResult, gridW, gridH) {
+  const terrainGroup = new THREE.Group();
+  const tileSize = 0.3;
+  const halfW = (gridW * tileSize) / 2;
+  const halfH = (gridH * tileSize) / 2;
+
+  for (let y = 0; y < gridH; y++) {
+    for (let x = 0; x < gridW; x++) {
+      const tileId = wfcResult[y * gridW + x];
+      const meta = TILE_META[tileId];
+
+      // Ground tile
+      const geo = new THREE.BoxGeometry(tileSize, 0.08 + Math.max(0, meta.height), tileSize);
+      const mesh = new THREE.Mesh(geo, tileMaterials[tileId]);
+      const posX = x * tileSize - halfW + tileSize / 2;
+      const posZ = y * tileSize - halfH + tileSize / 2;
+      const posY = (0.08 + Math.max(0, meta.height)) / 2 + Math.min(0, meta.height);
+      mesh.position.set(posX, posY, posZ);
+      mesh.receiveShadow = true;
+      mesh.castShadow = true;
+      terrainGroup.add(mesh);
+
+      // Top objects
+      const objects = buildTileObjects(tileId, tileSize, x, y);
+      objects.position.set(posX, posY + (0.08 + Math.max(0, meta.height)) / 2, posZ);
+      terrainGroup.add(objects);
+    }
+  }
+
+  // Water plane for low areas
+  const waterGeo = new THREE.PlaneGeometry(gridW * tileSize + 0.1, gridH * tileSize + 0.1);
+  const waterMat = new THREE.MeshStandardMaterial({
+    color: 0x2266aa,
+    transparent: true,
+    opacity: 0.35,
+    roughness: 0.1,
+    metalness: 0.4,
+    side: THREE.DoubleSide,
+  });
+  const waterPlane = new THREE.Mesh(waterGeo, waterMat);
+  waterPlane.rotation.x = -Math.PI / 2;
+  waterPlane.position.y = -0.05;
+  waterPlane.name = 'waterPlane';
+  terrainGroup.add(waterPlane);
+
+  return terrainGroup;
+}
+
+// ──────────────────────────────────────────────
+//  Three.js scene setup
+// ──────────────────────────────────────────────
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87CEEB);
+scene.fog = new THREE.FogExp2(0x87CEEB, 0.15);
+
+// Camera
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.01, 100);
+camera.position.set(0, 4, 5);
+camera.lookAt(0, 0, 0);
+
+// Renderer
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+renderer.xr.enabled = true;
+document.body.appendChild(renderer.domElement);
+
+// VR Button
+document.body.appendChild(VRButton.createButton(renderer));
+
+// Controls (desktop)
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.maxPolarAngle = Math.PI / 2.1;
+controls.minDistance = 1;
+controls.maxDistance = 15;
+controls.target.set(0, 0, 0);
+
+// Lighting
+const ambientLight = new THREE.AmbientLight(0x8899bb, 0.6);
+scene.add(ambientLight);
+
+const sunLight = new THREE.DirectionalLight(0xfff4e0, 1.8);
+sunLight.position.set(5, 8, 3);
+sunLight.castShadow = true;
+sunLight.shadow.mapSize.set(2048, 2048);
+sunLight.shadow.camera.left = -8;
+sunLight.shadow.camera.right = 8;
+sunLight.shadow.camera.top = 8;
+sunLight.shadow.camera.bottom = -8;
+sunLight.shadow.camera.near = 0.1;
+sunLight.shadow.camera.far = 25;
+sunLight.shadow.bias = -0.001;
+scene.add(sunLight);
+
+const fillLight = new THREE.DirectionalLight(0xaabbff, 0.4);
+fillLight.position.set(-3, 4, -2);
+scene.add(fillLight);
+
+// Hemisphere light for sky/ground color
+const hemiLight = new THREE.HemisphereLight(0x88bbff, 0x446633, 0.5);
+scene.add(hemiLight);
+
+// Ground plane (large, under everything)
+const groundGeo = new THREE.PlaneGeometry(50, 50);
+const groundMat = new THREE.MeshStandardMaterial({ color: 0x1a3a6a });
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI / 2;
+ground.position.y = -0.5;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// ──────────────────────────────────────────────
+//  Terrain generation state
+// ──────────────────────────────────────────────
+
+let gridSize = 20;
+let terrainGroup = null;
+
+function regenerate() {
+  if (terrainGroup) {
+    terrainGroup.traverse(child => {
+      if (child.isMesh) {
+        child.geometry.dispose();
+        if (child.material.map && !Object.values(tileTextures).includes(child.material.map)) {
+          child.material.map.dispose();
+        }
+        if (!Object.values(tileMaterials).includes(child.material)) {
+          child.material.dispose();
+        }
+      }
+    });
+    scene.remove(terrainGroup);
+  }
+
+  const wfc = new WFC(gridSize, gridSize);
+  const result = wfc.run();
+  terrainGroup = buildTerrain(result, gridSize, gridSize);
+  scene.add(terrainGroup);
+  document.getElementById('grid-label').textContent = `Grid: ${gridSize}×${gridSize}`;
+}
+
+regenerate();
+
+// ──────────────────────────────────────────────
+//  UI
+// ──────────────────────────────────────────────
+
+document.getElementById('btn-regen').addEventListener('click', regenerate);
+document.getElementById('btn-size-up').addEventListener('click', () => {
+  gridSize = Math.min(40, gridSize + 2);
+  regenerate();
+});
+document.getElementById('btn-size-down').addEventListener('click', () => {
+  gridSize = Math.max(6, gridSize - 2);
+  regenerate();
+});
+
+// ──────────────────────────────────────────────
+//  Animation loop
+// ──────────────────────────────────────────────
+
+const clock = new THREE.Clock();
+
+renderer.setAnimationLoop(() => {
+  const t = clock.getElapsedTime();
+
+  // Animate water plane
+  if (terrainGroup) {
+    const water = terrainGroup.getObjectByName('waterPlane');
+    if (water) {
+      water.position.y = -0.05 + Math.sin(t * 0.8) * 0.008;
+    }
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+});
+
+// ──────────────────────────────────────────────
+//  Resize
+// ──────────────────────────────────────────────
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+</script>
+</body>
+</html>
