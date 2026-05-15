@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Depth Partitioning / Multi-Frustum Rendering</title>
+<style>
+  html, body { margin: 0; padding: 0; overflow: hidden; background: #000; }
+  canvas { display: block; }
+  #info {
+    position: absolute; top: 10px; left: 10px;
+    color: #fff; font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 12px; line-height: 1.45;
+    background: rgba(0,0,0,0.55); padding: 10px 14px;
+    border-radius: 4px; pointer-events: none;
+    max-width: 460px;
+  }
+  #info b { color: #ffd97a; }
+  #blocker {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(10,15,25,0.78); color: #fff;
+    font-family: system-ui, sans-serif; font-size: 18px;
+    cursor: pointer; user-select: none;
+  }
+  #blocker .inner { text-align: center; max-width: 540px; padding: 30px; }
+  #blocker h1 { font-size: 22px; margin: 0 0 14px; letter-spacing: 0.5px; }
+  #blocker p  { font-size: 14px; line-height: 1.5; opacity: 0.85; margin: 8px 0; }
+  #blocker .key { font-family: ui-monospace, Menlo, monospace; background: rgba(255,255,255,0.08); padding: 2px 6px; border-radius: 3px; }
+  #blocker.hidden { display: none; }
+</style>
+</head>
+<body>
+<div id="info">
+  <b>Depth partitioning &mdash; 3 frustums, depth cleared between</b><br>
+  Layer 1 &nbsp;far &nbsp;&nbsp;znear=500m &nbsp;zfar=500km &nbsp;&rarr; mountain range<br>
+  Layer 2 &nbsp;mid &nbsp;&nbsp;znear=1m &nbsp;&nbsp;&nbsp;zfar=5km &nbsp;&nbsp;&rarr; surrounding skyscrapers<br>
+  Layer 3 &nbsp;near&nbsp;&nbsp;znear=0.05m&nbsp;zfar=100m &nbsp;&rarr; observation deck (you)<br>
+  Fog: <span style="color:#9fd1ff">FogExp2 on length(viewPos)</span> &mdash; same in every layer<br>
+  <span style="opacity:.65">WASD walk &middot; mouse look &middot; shift sprint</span>
+</div>
+<div id="blocker">
+  <div class="inner">
+    <h1>Depth Partitioning Demo</h1>
+    <p>You're inside the observation deck at the top of a skyscraper. Outside: more towers nearby, a mountain range far beyond. Each is rendered through its own frustum so the depth buffer never has to span the whole scale.</p>
+    <p><span class="key">W A S D</span> walk &nbsp; <span class="key">Mouse</span> look &nbsp; <span class="key">Shift</span> sprint &nbsp; <span class="key">Esc</span> release</p>
+    <p style="margin-top:18px;font-size:16px"><b>Click to enter</b></p>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+
+// ---------------------------------------------------------------------------
+// True-distance fog override
+// FogExp2 normally uses view-space -z; we want length(viewPos) so an object
+// off to the side at distance D fogs the same as one straight ahead at D.
+// This means all 3 frustums attenuate identically with real-world distance.
+// ---------------------------------------------------------------------------
+THREE.ShaderChunk.fog_vertex = `
+#ifdef USE_FOG
+  vFogDepth = length( mvPosition.xyz );
+#endif
+`;
+
+// ---------------------------------------------------------------------------
+// Renderer
+// ---------------------------------------------------------------------------
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
+renderer.autoClear = false; // we manage clear/clearDepth between passes
+document.body.appendChild(renderer.domElement);
+
+const fogColor = new THREE.Color(0xb8c8d8);
+const fogDensity = 0.00002;
+renderer.setClearColor(fogColor, 1);
+
+// ---------------------------------------------------------------------------
+// Three scenes, three cameras  ---  one per depth slice
+// ---------------------------------------------------------------------------
+const sceneFar  = new THREE.Scene(); // mountains
+const sceneMid  = new THREE.Scene(); // other skyscrapers, city ground
+const sceneNear = new THREE.Scene(); // interior of the deck
+
+for (const s of [sceneFar, sceneMid, sceneNear]) {
+  s.fog = new THREE.FogExp2(fogColor, fogDensity);
+}
+
+const aspect = () => window.innerWidth / window.innerHeight;
+const FOV = 70;
+const cameraNear = new THREE.PerspectiveCamera(FOV, aspect(), 0.05,    100);
+const cameraMid  = new THREE.PerspectiveCamera(FOV, aspect(), 1,      5000);
+const cameraFar  = new THREE.PerspectiveCamera(FOV, aspect(), 500, 500000);
+
+// ---------------------------------------------------------------------------
+// Per-scene lighting (identical so shading matches across layers)
+// ---------------------------------------------------------------------------
+function lightUp(scene) {
+  scene.add(new THREE.HemisphereLight(0xcfdcf5, 0x4a4030, 0.55));
+  const sun = new THREE.DirectionalLight(0xfff2d4, 1.05);
+  sun.position.set(0.55, 1.0, 0.35).multiplyScalar(1000);
+  scene.add(sun);
+}
+lightUp(sceneFar);
+lightUp(sceneMid);
+lightUp(sceneNear);
+
+// ---------------------------------------------------------------------------
+// Procedural canvas textures
+// ---------------------------------------------------------------------------
+function makeCanvasTex(size, draw) {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  draw(c.getContext('2d'), size);
+  const t = new THREE.CanvasTexture(c);
+  t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+
+const rockTex = makeCanvasTex(512, (ctx, s) => {
+  ctx.fillStyle = '#6c6a60'; ctx.fillRect(0, 0, s, s);
+  for (let i = 0; i < 5000; i++) {
+    const v = Math.random();
+    ctx.fillStyle = v < 0.4 ? '#48473f'
+                  : v < 0.7 ? '#7d7b70'
+                  : v < 0.9 ? '#928e7e'
+                  :           '#33312c';
+    ctx.fillRect(Math.random()*s, Math.random()*s, 1 + Math.random()*4, 1 + Math.random()*4);
+  }
+  for (let i = 0; i < 80; i++) {
+    ctx.strokeStyle = `rgba(35,32,28,${0.1 + Math.random()*0.18})`;
+    ctx.lineWidth = 0.5 + Math.random()*2;
+    ctx.beginPath();
+    ctx.moveTo(Math.random()*s, Math.random()*s);
+    ctx.lineTo(Math.random()*s, Math.random()*s);
+    ctx.stroke();
+  }
+});
+
+const windowTex = makeCanvasTex(256, (ctx, s) => {
+  ctx.fillStyle = '#202024'; ctx.fillRect(0, 0, s, s);
+  const cols = 10, rows = 14;
+  const cw = s/cols, rh = s/rows;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const r2 = Math.random();
+      let col;
+      if (r2 < 0.50)      col = '#15192a';
+      else if (r2 < 0.78) col = '#3b475a';
+      else if (r2 < 0.94) col = '#a9b9cf';
+      else                col = '#ffe7a8';
+      ctx.fillStyle = col;
+      ctx.fillRect(c*cw + 1, r*rh + 1, cw - 2, rh - 2);
+    }
+  }
+});
+
+const floorTex = makeCanvasTex(512, (ctx, s) => {
+  ctx.fillStyle = '#23262e'; ctx.fillRect(0, 0, s, s);
+  for (let i = 0; i < 60; i++) {
+    ctx.strokeStyle = `rgba(110,125,150,${0.15 + Math.random()*0.35})`;
+    ctx.lineWidth = 0.5 + Math.random()*2;
+    ctx.beginPath();
+    ctx.moveTo(Math.random()*s, Math.random()*s);
+    ctx.bezierCurveTo(
+      Math.random()*s, Math.random()*s,
+      Math.random()*s, Math.random()*s,
+      Math.random()*s, Math.random()*s
+    );
+    ctx.stroke();
+  }
+  ctx.strokeStyle = '#15171c'; ctx.lineWidth = 2.5;
+  const tiles = 4;
+  for (let i = 0; i <= tiles; i++) {
+    ctx.beginPath();
+    ctx.moveTo(0, i*s/tiles); ctx.lineTo(s, i*s/tiles);
+    ctx.moveTo(i*s/tiles, 0); ctx.lineTo(i*s/tiles, s);
+    ctx.stroke();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// FAR LAYER : mountain range + sky dome
+// ---------------------------------------------------------------------------
+function buildMountains() {
+  const group = new THREE.Group();
+
+  function hash(x, y) {
+    const n = Math.sin(x*12.9898 + y*78.233) * 43758.5453;
+    return n - Math.floor(n);
+  }
+  function noise2(x, y) {
+    const xi = Math.floor(x), yi = Math.floor(y);
+    const xf = x - xi, yf = y - yi;
+    const a = hash(xi,   yi  );
+    const b = hash(xi+1, yi  );
+    const c = hash(xi,   yi+1);
+    const d = hash(xi+1, yi+1);
+    const u = xf*xf*(3 - 2*xf);
+    const v = yf*yf*(3 - 2*yf);
+    return a*(1-u)*(1-v) + b*u*(1-v) + c*(1-u)*v + d*u*v;
+  }
+  function fbm(x, y) {
+    let v = 0, amp = 1, freq = 1, total = 0;
+    for (let i = 0; i < 5; i++) {
+      v += amp * noise2(x*freq, y*freq);
+      total += amp;
+      amp  *= 0.5;
+      freq *= 2.13;
+    }
+    return v / total;
+  }
+
+  const size = 300000;
+  const seg  = 280;
+  const geom = new THREE.PlaneGeometry(size, size, seg, seg);
+  geom.rotateX(-Math.PI/2);
+
+  const pos    = geom.attributes.position;
+  const colors = new Float32Array(pos.count * 3);
+
+  const INNER = 5500;   // flat circle around camera
+  const RAMP  = 6500;   // ramp-up distance
+
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const z = pos.getZ(i);
+    const dist = Math.sqrt(x*x + z*z);
+
+    let h;
+    if (dist < INNER) {
+      h = -8;
+    } else {
+      const fx = x * 0.00018;
+      const fz = z * 0.00018;
+      const base  = fbm(fx, fz);
+      const ridge = 1.0 - Math.abs(fbm(fx*2 + 11, fz*2 + 7) - 0.5) * 2.0;
+      let raw = (base * 0.45 + ridge * 0.55);
+      raw = Math.pow(raw, 1.35);
+      h = raw * 5200;
+
+      const t = Math.min(1, (dist - INNER) / RAMP);
+      h *= t;
+      // sharpen peaks a touch
+      h = h * (0.7 + h / 7000);
+    }
+    pos.setY(i, h);
+
+    // Colour by altitude
+    let r, g, b;
+    if (h > 2400)      { r = 0.95; g = 0.96; b = 1.00; }                 // snow
+    else if (h > 1500) { const t = (h-1500)/900;
+                         r = 0.52+t*0.43; g = 0.52+t*0.44; b = 0.52+t*0.48; } // rock-to-snow
+    else if (h > 350)  { r = 0.43; g = 0.43; b = 0.39; }                 // rock
+    else if (h > 0)    { r = 0.34; g = 0.41; b = 0.30; }                 // foothill green
+    else               { r = 0.36; g = 0.40; b = 0.36; }                 // flat ring
+    colors[i*3+0] = r; colors[i*3+1] = g; colors[i*3+2] = b;
+  }
+  geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geom.computeVertexNormals();
+
+  const rt = rockTex.clone();
+  rt.repeat.set(120, 120);
+  rt.needsUpdate = true;
+  const mat = new THREE.MeshLambertMaterial({ map: rt, vertexColors: true });
+  group.add(new THREE.Mesh(geom, mat));
+
+  // Gradient sky dome  (no fog so the upper sky stays blue)
+  const skyMat = new THREE.ShaderMaterial({
+    uniforms: {
+      topColor:    { value: new THREE.Color(0x3f6fa8) },
+      bottomColor: { value: fogColor.clone() }
+    },
+    vertexShader: `
+      varying vec3 vDir;
+      void main() {
+        vDir = normalize( position );
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }`,
+    fragmentShader: `
+      uniform vec3 topColor;
+      uniform vec3 bottomColor;
+      varying vec3 vDir;
+      void main() {
+        float t = clamp(vDir.y, 0.0, 1.0);
+        t = pow(t, 0.55);
+        gl_FragColor = vec4(mix(bottomColor, topColor, t), 1.0);
+      }`,
+    side: THREE.BackSide,
+    fog: false,
+    depthWrite: false
+  });
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(260000, 32, 16), skyMat);
+  group.add(sky);
+
+  // Small sun
+  const sunDisc = new THREE.Mesh(
+    new THREE.CircleGeometry(1800, 32),
+    new THREE.MeshBasicMaterial({ color: 0xfff4cc, fog: false, depthWrite: false })
+  );
+  sunDisc.position.set(70000, 50000, 40000);
+  sunDisc.lookAt(0, 0, 0);
+  group.add(sunDisc);
+
+  return group;
+}
+sceneFar.add(buildMountains());
+
+// ---------------------------------------------------------------------------
+// MID LAYER : surrounding skyscrapers, city ground, our tower's exterior
+// ---------------------------------------------------------------------------
+const DECK_Y = 240; // top-of-tower deck height
+function buildCity() {
+  const group = new THREE.Group();
+  const rng = (() => {
+    let s = 1337;
+    return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+  })();
+  const rand = (a, b) => a + rng()*(b-a);
+
+  // City ground
+  const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(9000, 9000, 1, 1),
+    new THREE.MeshLambertMaterial({ color: 0x252528 })
+  );
+  ground.rotation.x = -Math.PI/2;
+  group.add(ground);
+
+  // Road grid (slightly lighter strips)
+  for (let i = -8; i <= 8; i++) {
+    const w = (i % 4 === 0) ? 14 : 6;
+    const a = new THREE.Mesh(
+      new THREE.PlaneGeometry(9000, w),
+      new THREE.MeshLambertMaterial({ color: 0x2e2e34 })
+    );
+    a.rotation.x = -Math.PI/2;
+    a.position.set(0, 0.05, i*120);
+    group.add(a);
+
+    const b = new THREE.Mesh(
+      new THREE.PlaneGeometry(w, 9000),
+      new THREE.MeshLambertMaterial({ color: 0x2e2e34 })
+    );
+    b.rotation.x = -Math.PI/2;
+    b.position.set(i*120, 0.05, 0);
+    group.add(b);
+  }
+
+  // Surrounding skyscrapers
+  for (let i = 0; i < 110; i++) {
+    const angle  = rng() * Math.PI * 2;
+    const radius = rand(110, 2200);
+    const x = Math.cos(angle) * radius;
+    const z = Math.sin(angle) * radius;
+    const w = rand(22, 65);
+    const d = rand(22, 65);
+    const h = rand(70, 360);
+
+    const tex = windowTex.clone();
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(Math.max(2, Math.round(w/11)), Math.max(4, Math.round(h/13)));
+    tex.needsUpdate = true;
+    const tint = new THREE.Color().setHSL(0.55 + rng()*0.1, 0.05 + rng()*0.1, 0.45 + rng()*0.25);
+    const mat = new THREE.MeshLambertMaterial({ map: tex, color: tint });
+    const tower = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    tower.position.set(x, h/2, z);
+    group.add(tower);
+
+    // Roof cap
+    const cap = new THREE.Mesh(
+      new THREE.BoxGeometry(w * 1.08, 4, d * 1.08),
+      new THREE.MeshLambertMaterial({ color: 0x1a1a1e })
+    );
+    cap.position.set(x, h + 2, z);
+    group.add(cap);
+
+    // Antenna on tall ones
+    if (h > 240 && rng() < 0.5) {
+      const ant = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.3, 0.6, rand(15, 60)),
+        new THREE.MeshLambertMaterial({ color: 0x222 })
+      );
+      ant.position.set(x, h + ant.geometry.parameters.height/2 + 4, z);
+      group.add(ant);
+    }
+  }
+
+  // Player's tower exterior (so it occludes/composes correctly with neighbours)
+  const ptW = 50, ptD = 50;
+  const ptTex = windowTex.clone();
+  ptTex.wrapS = ptTex.wrapT = THREE.RepeatWrapping;
+  ptTex.repeat.set(4, 18);
+  ptTex.needsUpdate = true;
+  const playerTower = new THREE.Mesh(
+    new THREE.BoxGeometry(ptW, DECK_Y, ptD),
+    new THREE.MeshLambertMaterial({ map: ptTex, color: 0x6b7080 })
+  );
+  playerTower.position.set(0, DECK_Y/2, 0);
+  group.add(playerTower);
+
+  // Small parapet rim under the deck
+  const rim = new THREE.Mesh(
+    new THREE.BoxGeometry(ptW + 2, 2, ptD + 2),
+    new THREE.MeshLambertMaterial({ color: 0x111114 })
+  );
+  rim.position.set(0, DECK_Y - 1, 0);
+  group.add(rim);
+
+  return group;
+}
+sceneMid.add(buildCity());
+
+// ---------------------------------------------------------------------------
+// NEAR LAYER : observation deck interior
+// ---------------------------------------------------------------------------
+function buildInterior() {
+  const group = new THREE.Group();
+  const W = 50, D = 50, H = 4.2;
+
+  // Floor
+  const fTex = floorTex.clone(); fTex.wrapS = fTex.wrapT = THREE.RepeatWrapping;
+  fTex.repeat.set(8, 8); fTex.needsUpdate = true;
+  const floor = new THREE.Mesh(
+    new THREE.PlaneGeometry(W, D),
+    new THREE.MeshLambertMaterial({ map: fTex })
+  );
+  floor.rotation.x = -Math.PI/2;
+  floor.position.y = DECK_Y;
+  group.add(floor);
+
+  // Ceiling
+  const ceil = new THREE.Mesh(
+    new THREE.PlaneGeometry(W, D),
+    new THREE.MeshLambertMaterial({ color: 0x1d1f25 })
+  );
+  ceil.rotation.x =  Math.PI/2;
+  ceil.position.y = DECK_Y + H;
+  group.add(ceil);
+
+  // Window framing  ---  pillars on a grid + rails top & bottom
+  const frameMat = new THREE.MeshLambertMaterial({ color: 0x101013 });
+  function pillar(x, z) {
+    const p = new THREE.Mesh(new THREE.BoxGeometry(0.55, H, 0.55), frameMat);
+    p.position.set(x, DECK_Y + H/2, z);
+    group.add(p);
+  }
+  const bays = 6;
+  for (let i = 0; i <= bays; i++) {
+    const t = (i/bays - 0.5) * W;
+    pillar(t, -D/2);
+    pillar(t,  D/2);
+    pillar(-W/2, t);
+    pillar( W/2, t);
+  }
+  function rail(x1, z1, x2, z2, y, thick=0.25) {
+    const len = Math.hypot(x2-x1, z2-z1);
+    const r = new THREE.Mesh(new THREE.BoxGeometry(len, thick, thick), frameMat);
+    r.position.set((x1+x2)/2, y, (z1+z2)/2);
+    r.rotation.y = -Math.atan2(z2-z1, x2-x1);
+    group.add(r);
+  }
+  for (const y of [DECK_Y + 0.05, DECK_Y + 1.0, DECK_Y + H - 0.05]) {
+    rail(-W/2,-D/2,  W/2,-D/2, y);
+    rail(-W/2, D/2,  W/2, D/2, y);
+    rail(-W/2,-D/2, -W/2, D/2, y);
+    rail( W/2,-D/2,  W/2, D/2, y);
+  }
+
+  // A central column / elevator shaft
+  const core = new THREE.Mesh(
+    new THREE.BoxGeometry(4, H, 4),
+    new THREE.MeshLambertMaterial({ color: 0x2a2c34 })
+  );
+  core.position.set(0, DECK_Y + H/2, 0);
+  group.add(core);
+
+  // Desk
+  const desk = new THREE.Mesh(
+    new THREE.BoxGeometry(3.2, 1.0, 1.4),
+    new THREE.MeshLambertMaterial({ color: 0x6a4a2a })
+  );
+  desk.position.set(-15, DECK_Y + 0.5, -8);
+  group.add(desk);
+
+  // Benches
+  for (let i = 0; i < 4; i++) {
+    const b = new THREE.Mesh(
+      new THREE.BoxGeometry(3.0, 0.45, 0.8),
+      new THREE.MeshLambertMaterial({ color: 0x44372a })
+    );
+    b.position.set(-12 + i*8, DECK_Y + 0.22, 14);
+    group.add(b);
+  }
+
+  // Coin-op telescope
+  const teleGroup = new THREE.Group();
+  const post = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.09, 0.15, 1.4, 12),
+    new THREE.MeshLambertMaterial({ color: 0x1a1a1e })
+  );
+  post.position.y = 0.7;
+  teleGroup.add(post);
+  const head = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.18, 0.18, 0.7, 16),
+    new THREE.MeshLambertMaterial({ color: 0x29384a })
+  );
+  head.position.y = 1.5;
+  head.rotation.z = Math.PI/2;
+  teleGroup.add(head);
+  teleGroup.position.set(18, DECK_Y, 0);
+  group.add(teleGroup);
+
+  // Floor sign  ---  red rope-line area
+  const rug = new THREE.Mesh(
+    new THREE.PlaneGeometry(6, 4),
+    new THREE.MeshLambertMaterial({ color: 0x5a1f1f })
+  );
+  rug.rotation.x = -Math.PI/2;
+  rug.position.set(8, DECK_Y + 0.01, -10);
+  group.add(rug);
+
+  return group;
+}
+sceneNear.add(buildInterior());
+
+// ---------------------------------------------------------------------------
+// Controls
+// ---------------------------------------------------------------------------
+const controls = new PointerLockControls(cameraNear, renderer.domElement);
+const blocker = document.getElementById('blocker');
+blocker.addEventListener('click', () => controls.lock());
+controls.addEventListener('lock',   () => blocker.classList.add('hidden'));
+controls.addEventListener('unlock', () => blocker.classList.remove('hidden'));
+
+cameraNear.position.set(0, DECK_Y + 1.7, 14);
+cameraNear.lookAt(0, DECK_Y + 1.7, 0);
+
+const keys = {};
+addEventListener('keydown', e => { keys[e.code] = true; });
+addEventListener('keyup',   e => { keys[e.code] = false; });
+
+const dir = new THREE.Vector3();
+const clock = new THREE.Clock();
+
+function updateMovement(dt) {
+  if (!controls.isLocked) return;
+  const sprint = keys['ShiftLeft'] || keys['ShiftRight'];
+  const speed = (sprint ? 18 : 6);
+
+  dir.z = (keys['KeyW'] ? 1 : 0) - (keys['KeyS'] ? 1 : 0);
+  dir.x = (keys['KeyD'] ? 1 : 0) - (keys['KeyA'] ? 1 : 0);
+  if (dir.lengthSq() > 0) dir.normalize();
+
+  controls.moveRight  (dir.x * speed * dt);
+  controls.moveForward(dir.z * speed * dt);
+
+  // Clamp inside the deck (don't fall off through the windows)
+  const HALF = 24.4;
+  const p = cameraNear.position;
+  p.x = Math.max(-HALF, Math.min(HALF, p.x));
+  p.z = Math.max(-HALF, Math.min(HALF, p.z));
+  p.y = DECK_Y + 1.7;
+
+  // Push out of the central core (4x4 block)
+  const CORE = 2.4;
+  if (Math.abs(p.x) < CORE && Math.abs(p.z) < CORE) {
+    if (Math.abs(p.x) > Math.abs(p.z)) p.x = Math.sign(p.x || 1) * CORE;
+    else                                p.z = Math.sign(p.z || 1) * CORE;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Resize
+// ---------------------------------------------------------------------------
+addEventListener('resize', () => {
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  for (const c of [cameraNear, cameraMid, cameraFar]) {
+    c.aspect = aspect();
+    c.updateProjectionMatrix();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// The actual depth-partitioned render.
+//   1.  clear color + depth      (fog colour fills anywhere nothing draws)
+//   2.  render FAR  (mountains)  with its huge frustum
+//   3.  clearDepth()             (mid will always draw on top of far)
+//   4.  render MID  (city)       with a moderate frustum
+//   5.  clearDepth()             (near always draws on top of mid)
+//   6.  render NEAR (interior)   with a tight precise frustum
+// Each pass enjoys a full 24-bit depth buffer spread over only its slice,
+// so a 4500m mountain peak and a 0.5cm window mullion both get plenty of
+// precision and never z-fight each other.
+// ---------------------------------------------------------------------------
+function syncCameras() {
+  cameraMid.position.copy(cameraNear.position);
+  cameraMid.quaternion.copy(cameraNear.quaternion);
+  cameraFar.position.copy(cameraNear.position);
+  cameraFar.quaternion.copy(cameraNear.quaternion);
+}
+
+function frame() {
+  const dt = Math.min(0.1, clock.getDelta());
+  updateMovement(dt);
+  syncCameras();
+
+  renderer.clear(true, true, true);
+  renderer.render(sceneFar, cameraFar);
+  renderer.clearDepth();
+  renderer.render(sceneMid, cameraMid);
+  renderer.clearDepth();
+  renderer.render(sceneNear, cameraNear);
+
+  requestAnimationFrame(frame);
+}
+frame();
+</script>
+</body>
+</html>
