@@ -1,0 +1,1546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Depth Partitioning / Multi-Frustum City</title>
+<style>
+  html, body { margin: 0; padding: 0; overflow: hidden; background: #000; }
+  canvas { display: block; }
+  #info {
+    position: absolute; top: 10px; left: 10px;
+    color: #fff; font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 12px; line-height: 1.45;
+    background: rgba(0,0,0,0.55); padding: 10px 14px;
+    border-radius: 4px; pointer-events: none;
+    max-width: 480px;
+  }
+  #info b { color: #ffd97a; }
+  #hud {
+    position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+    color: #fff; font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 13px; background: rgba(0,0,0,0.55); padding: 7px 16px;
+    border-radius: 20px; pointer-events: none; white-space: nowrap;
+  }
+  #hud b { color: #ffd97a; }
+  #hud .dim { opacity: 0.6; }
+  #cross {
+    position: absolute; top: 50%; left: 50%;
+    width: 18px; height: 18px; margin: -9px 0 0 -9px;
+    pointer-events: none;
+  }
+  #cross::before, #cross::after {
+    content: ""; position: absolute; background: rgba(255,255,255,0.7);
+  }
+  #cross::before { left: 8px; top: 0;  width: 2px; height: 18px; }
+  #cross::after  { top: 8px;  left: 0; width: 18px; height: 2px; }
+  #cross.target { width: 30px; height: 30px; margin: -15px 0 0 -15px;
+    border: 2px solid #ffd24a; border-radius: 3px; box-shadow: 0 0 10px rgba(255,210,74,0.7); }
+  #cross.target::before, #cross.target::after { background: rgba(255,210,74,0.95); }
+  #hint {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, 26px);
+    color: #ffe9a8; font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 12px; background: rgba(0,0,0,0.6); padding: 4px 10px;
+    border-radius: 4px; pointer-events: none; display: none; white-space: nowrap;
+  }
+  #blocker {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(10,15,25,0.78); color: #fff;
+    font-family: system-ui, sans-serif; font-size: 18px;
+    cursor: pointer; user-select: none;
+  }
+  #blocker .inner { text-align: center; max-width: 560px; padding: 30px; }
+  #blocker h1 { font-size: 22px; margin: 0 0 14px; letter-spacing: 0.5px; }
+  #blocker p  { font-size: 14px; line-height: 1.5; opacity: 0.85; margin: 8px 0; }
+  #blocker .key { font-family: ui-monospace, Menlo, monospace; background: rgba(255,255,255,0.08); padding: 2px 6px; border-radius: 3px; }
+  #blocker.hidden { display: none; }
+</style>
+</head>
+<body>
+<div id="info">
+  <b>Depth partitioning &mdash; 3 frustums, depth cleared between</b><br>
+  Layer 1 &nbsp;far &nbsp;&nbsp;mountain range (idiosyncratic, named peaks)<br>
+  Layer 2 &nbsp;mid &nbsp;&nbsp;the city &mdash; rectangular, <b>L-shaped</b> &amp; <b>triangular</b> towers + 28 landmarks<br>
+  Layer 3 &nbsp;near&nbsp;&nbsp;the floor you stand on (one floor at a time)<br>
+  <span style="opacity:.7">A diagonal avenue slices the grid &mdash; towers on its edge are cut to wedges.</span><br>
+  <span style="opacity:.7">Tower heights follow a power law; the tallest tops 60 storeys.</span><br>
+  <span style="opacity:.65">WASD walk &middot; mouse look &middot; Q/E change floor &middot; aim at a tower &amp; click to travel</span>
+</div>
+<div id="hud"><span id="hudtxt">&mdash;</span></div>
+<div id="cross"></div>
+<div id="hint"></div>
+<div id="blocker">
+  <div class="inner">
+    <h1>Depth Partitioning &mdash; The Vertical City</h1>
+    <p>You stand on one floor of one tower. Only that floor is rendered near you; the city and the mountains live in their own frustums far beyond.</p>
+    <p>Press <span class="key">Q</span>/<span class="key">E</span> to drop or climb a floor &mdash; instant, deterministic: the same floor always rebuilds the same.</p>
+    <p>Walk to a window, aim the crosshair at another tower &mdash; a floor-segment lights up &mdash; and <b>click to teleport</b> onto that exact floor.</p>
+    <p><span class="key">W A S D</span> walk &nbsp; <span class="key">Mouse</span> look &nbsp; <span class="key">Shift</span> sprint &nbsp; <span class="key">Esc</span> release</p>
+    <p style="margin-top:18px;font-size:16px"><b>Click to enter</b></p>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+
+// ---------------------------------------------------------------------------
+// True-distance fog override (same in every layer / frustum)
+// ---------------------------------------------------------------------------
+THREE.ShaderChunk.fog_vertex = `
+#ifdef USE_FOG
+  vFogDepth = length( mvPosition.xyz );
+#endif
+`;
+
+// ---------------------------------------------------------------------------
+// Renderer
+// ---------------------------------------------------------------------------
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
+renderer.autoClear = false;
+document.body.appendChild(renderer.domElement);
+
+const fogColor = new THREE.Color(0xb8c8d8);
+const fogDensity = 0.00002;
+renderer.setClearColor(fogColor, 1);
+
+// ---------------------------------------------------------------------------
+// Three scenes, three cameras  ---  one per depth slice
+// ---------------------------------------------------------------------------
+const sceneFar  = new THREE.Scene(); // mountains
+const sceneMid  = new THREE.Scene(); // the whole city
+const sceneNear = new THREE.Scene(); // the single floor you're on
+
+for (const s of [sceneFar, sceneMid, sceneNear]) {
+  s.fog = new THREE.FogExp2(fogColor, fogDensity);
+}
+
+const aspect = () => window.innerWidth / window.innerHeight;
+const FOV = 70;
+const cameraNear = new THREE.PerspectiveCamera(FOV, aspect(), 0.05,    220);
+const cameraMid  = new THREE.PerspectiveCamera(FOV, aspect(), 1,      6000);
+const cameraFar  = new THREE.PerspectiveCamera(FOV, aspect(), 500, 600000);
+
+function lightUp(scene) {
+  scene.add(new THREE.HemisphereLight(0xcfdcf5, 0x4a4030, 0.6));
+  const sun = new THREE.DirectionalLight(0xfff2d4, 1.05);
+  sun.position.set(0.55, 1.0, 0.35).multiplyScalar(1000);
+  scene.add(sun);
+}
+lightUp(sceneFar);
+lightUp(sceneMid);
+lightUp(sceneNear);
+
+// ---------------------------------------------------------------------------
+// Deterministic RNG  (mulberry32)
+// ---------------------------------------------------------------------------
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function cellSeed(gx, gz) {
+  return (Math.imul(gx + 4096, 73856093) ^ Math.imul(gz + 4096, 19349663)) >>> 0;
+}
+function floorSeed(b, floor) {
+  return (b.seed ^ Math.imul(floor + 1, 0x9E3779B9)) >>> 0;
+}
+const smoothstep = (a, b, x) => {
+  const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+
+// ---------------------------------------------------------------------------
+// World constants
+// ---------------------------------------------------------------------------
+const CELL    = 132;   // grid cell size (towers can't exceed this)
+const GRID    = 9;     // 9 x 9 cells
+const FLOOR_H = 6;     // exterior segment height == interior floor height
+const EYE     = 1.7;
+
+// ---------------------------------------------------------------------------
+// Shared procedural textures
+// ---------------------------------------------------------------------------
+function makeCanvasTex(size, draw) {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  draw(c.getContext('2d'), size);
+  const t = new THREE.CanvasTexture(c);
+  t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+
+const rockTex = makeCanvasTex(512, (ctx, s) => {
+  ctx.fillStyle = '#6c6a60'; ctx.fillRect(0, 0, s, s);
+  for (let i = 0; i < 5000; i++) {
+    const v = Math.random();
+    ctx.fillStyle = v < 0.4 ? '#48473f' : v < 0.7 ? '#7d7b70' : v < 0.9 ? '#928e7e' : '#33312c';
+    ctx.fillRect(Math.random()*s, Math.random()*s, 1 + Math.random()*4, 1 + Math.random()*4);
+  }
+  for (let i = 0; i < 80; i++) {
+    ctx.strokeStyle = `rgba(35,32,28,${0.1 + Math.random()*0.18})`;
+    ctx.lineWidth = 0.5 + Math.random()*2;
+    ctx.beginPath();
+    ctx.moveTo(Math.random()*s, Math.random()*s);
+    ctx.lineTo(Math.random()*s, Math.random()*s);
+    ctx.stroke();
+  }
+});
+
+const floorTex = makeCanvasTex(512, (ctx, s) => {
+  ctx.fillStyle = '#2a2d36'; ctx.fillRect(0, 0, s, s);
+  for (let i = 0; i < 60; i++) {
+    ctx.strokeStyle = `rgba(120,135,160,${0.12 + Math.random()*0.32})`;
+    ctx.lineWidth = 0.5 + Math.random()*2;
+    ctx.beginPath();
+    ctx.moveTo(Math.random()*s, Math.random()*s);
+    ctx.bezierCurveTo(Math.random()*s, Math.random()*s, Math.random()*s, Math.random()*s, Math.random()*s, Math.random()*s);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = '#181b21'; ctx.lineWidth = 2.5;
+  for (let i = 0; i <= 4; i++) {
+    ctx.beginPath();
+    ctx.moveTo(0, i*s/4); ctx.lineTo(s, i*s/4);
+    ctx.moveTo(i*s/4, 0); ctx.lineTo(i*s/4, s);
+    ctx.stroke();
+  }
+});
+
+// --- Six stylised facade textures, evocative of real tower types -----------
+function lit() { const v = Math.random(); return v < 0.86 ? 0 : v < 0.96 ? 1 : 2; }
+const facadeTex = [];
+// 0 : vertical curtain-wall glass
+facadeTex.push(makeCanvasTex(256, (ctx, s) => {
+  ctx.fillStyle = '#1b2533'; ctx.fillRect(0, 0, s, s);
+  const cols = 13;
+  for (let c = 0; c < cols; c++) {
+    const x = c*s/cols;
+    ctx.fillStyle = '#26384f'; ctx.fillRect(x+2, 0, s/cols-3, s);
+    ctx.fillStyle = '#3d4f68'; ctx.fillRect(x, 0, 2, s);
+  }
+  for (let r = 0; r < 13; r++) {
+    ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, r*s/13); ctx.lineTo(s, r*s/13); ctx.stroke();
+  }
+  for (let r = 0; r < 13; r++) for (let c = 0; c < cols; c++) {
+    const l = lit(); if (!l) continue;
+    ctx.fillStyle = l === 1 ? '#9fb6cf' : '#ffe7a8';
+    ctx.fillRect(c*s/cols+3, r*s/13+2, s/cols-5, s/13-4);
+  }
+}));
+// 1 : punched-window grid (masonry-frame office)
+facadeTex.push(makeCanvasTex(256, (ctx, s) => {
+  ctx.fillStyle = '#3a3b41'; ctx.fillRect(0, 0, s, s);
+  const cols = 9, rows = 13, cw = s/cols, rh = s/rows;
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const l = lit();
+    ctx.fillStyle = l === 0 ? '#15192a' : l === 1 ? '#5e7186' : '#ffe7a8';
+    ctx.fillRect(c*cw + cw*0.22, r*rh + rh*0.16, cw*0.56, rh*0.62);
+  }
+}));
+// 2 : horizontal ribbon windows (streamline / modern)
+facadeTex.push(makeCanvasTex(256, (ctx, s) => {
+  ctx.fillStyle = '#cfd0cb'; ctx.fillRect(0, 0, s, s);
+  const rows = 15, rh = s/rows;
+  for (let r = 0; r < rows; r++) {
+    const y = r*rh;
+    ctx.fillStyle = '#2f4760'; ctx.fillRect(0, y + rh*0.12, s, rh*0.56);
+    for (let c = 0; c < 16; c++) { if (lit() === 2) { ctx.fillStyle = '#ffe7a8'; ctx.fillRect(c*s/16+2, y+rh*0.12, s/16-4, rh*0.56); } }
+  }
+}));
+// 3 : brick with setbacks
+facadeTex.push(makeCanvasTex(256, (ctx, s) => {
+  ctx.fillStyle = '#6e4636'; ctx.fillRect(0, 0, s, s);
+  const bh = s/26;
+  for (let r = 0; r*bh < s; r++) {
+    const off = (r % 2) * bh;
+    ctx.strokeStyle = 'rgba(30,20,16,0.5)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, r*bh); ctx.lineTo(s, r*bh); ctx.stroke();
+    for (let x = -bh*2; x < s; x += bh*2) { ctx.beginPath(); ctx.moveTo(x+off, r*bh); ctx.lineTo(x+off, (r+1)*bh); ctx.stroke(); }
+  }
+  const cols = 6, rows = 9;
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const l = lit();
+    ctx.fillStyle = l === 2 ? '#ffe2a0' : '#1c2230';
+    ctx.fillRect(c*s/cols + s/cols*0.28, r*s/rows + s/rows*0.2, s/cols*0.44, s/rows*0.5);
+  }
+}));
+// 4 : dark spandrel-glass tower
+facadeTex.push(makeCanvasTex(256, (ctx, s) => {
+  ctx.fillStyle = '#16242f'; ctx.fillRect(0, 0, s, s);
+  for (let r = 0; r < 20; r++) {
+    const y = r*s/20;
+    ctx.fillStyle = '#0c161d'; ctx.fillRect(0, y + s/20*0.6, s, s/20*0.4);
+  }
+  for (let c = 0; c < 11; c++) { ctx.fillStyle = 'rgba(120,150,175,0.18)'; ctx.fillRect(c*s/11, 0, 1.5, s); }
+  for (let r = 0; r < 20; r++) for (let c = 0; c < 11; c++) {
+    const l = lit();
+    if (l === 2) ctx.fillStyle = '#ffe7a8';
+    else if (l === 1) ctx.fillStyle = '#7fa9c8';
+    else continue;
+    ctx.fillRect(c*s/11+2, r*s/20+1, s/11-4, s/20*0.55);
+  }
+}));
+// 5 : piered tower (vertical structural ribs)
+facadeTex.push(makeCanvasTex(256, (ctx, s) => {
+  ctx.fillStyle = '#2a2c34'; ctx.fillRect(0, 0, s, s);
+  const piers = 6;
+  for (let p = 0; p < piers; p++) {
+    const x = p*s/piers;
+    ctx.fillStyle = '#191b21'; ctx.fillRect(x, 0, s/piers*0.34, s);
+    for (let r = 0; r < 14; r++) {
+      const l = lit();
+      ctx.fillStyle = l === 0 ? '#10131c' : l === 1 ? '#54677d' : '#ffe7a8';
+      ctx.fillRect(x + s/piers*0.42, r*s/14 + s/14*0.2, s/piers*0.5, s/14*0.55);
+    }
+  }
+}));
+
+// --- abstract art for picture frames (deterministic per seed) --------------
+const ART_PALETTES = [
+  ['#e7c8a0', '#c2543d', '#3b5a6e', '#1f2530', '#d8a13b'],
+  ['#cfd9e0', '#7392a8', '#2e3a4a', '#b9542f', '#e8e2d4'],
+  ['#1b1b22', '#d6473a', '#e7d9b8', '#3f7e6e', '#dca33c'],
+  ['#243447', '#9bb7c4', '#e4d2b2', '#8a3b3b', '#cbd6cc'],
+  ['#2a2520', '#b07a3c', '#dcc79a', '#5a6b52', '#a8403a']
+];
+function makeArtTexture(rng) {
+  return makeCanvasTex(256, (ctx, s) => {
+    const pal = ART_PALETTES[(rng()*ART_PALETTES.length)|0];
+    const style = (rng()*3)|0;
+    ctx.fillStyle = pal[0]; ctx.fillRect(0, 0, s, s);
+    if (style === 0) {            // geometric composition
+      const n = 5 + (rng()*9|0);
+      for (let i = 0; i < n; i++) {
+        ctx.fillStyle = pal[1 + (rng()*4|0)];
+        const shape = (rng()*3)|0;
+        const x = rng()*s, y = rng()*s, w = 30 + rng()*120;
+        if (shape === 0) ctx.fillRect(x, y, w, 30 + rng()*120);
+        else if (shape === 1) { ctx.beginPath(); ctx.arc(x, y, w*0.5, 0, 7); ctx.fill(); }
+        else { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x+w, y); ctx.lineTo(x+w*0.5, y-w); ctx.closePath(); ctx.fill(); }
+      }
+    } else if (style === 1) {     // colour fields
+      const bands = 3 + (rng()*3|0);
+      const vert = rng() < 0.5;
+      for (let i = 0; i < bands; i++) {
+        ctx.fillStyle = pal[1 + (rng()*4|0)];
+        if (vert) ctx.fillRect(i*s/bands, 0, s/bands+1, s);
+        else      ctx.fillRect(0, i*s/bands, s, s/bands+1);
+      }
+      ctx.fillStyle = pal[1 + (rng()*4|0)];
+      ctx.beginPath(); ctx.arc(s*(0.3+rng()*0.4), s*(0.3+rng()*0.4), 20+rng()*50, 0, 7); ctx.fill();
+    } else {                      // gestural strokes
+      for (let i = 0; i < 40; i++) {
+        ctx.strokeStyle = pal[1 + (rng()*4|0)];
+        ctx.lineWidth = 1 + rng()*9;
+        ctx.beginPath();
+        ctx.moveTo(rng()*s, rng()*s);
+        ctx.bezierCurveTo(rng()*s, rng()*s, rng()*s, rng()*s, rng()*s, rng()*s);
+        ctx.stroke();
+      }
+    }
+    ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 6;
+    ctx.strokeRect(3, 3, s-6, s-6);
+  });
+}
+
+// ===========================================================================
+// FAR LAYER : idiosyncratic mountain range with named, mnemonic landmarks
+// ===========================================================================
+function buildMountains() {
+  const group = new THREE.Group();
+
+  function hash(x, y) {
+    const n = Math.sin(x*12.9898 + y*78.233) * 43758.5453;
+    return n - Math.floor(n);
+  }
+  function noise2(x, y) {
+    const xi = Math.floor(x), yi = Math.floor(y);
+    const xf = x - xi, yf = y - yi;
+    const a = hash(xi, yi), b = hash(xi+1, yi), c = hash(xi, yi+1), d = hash(xi+1, yi+1);
+    const u = xf*xf*(3-2*xf), v = yf*yf*(3-2*yf);
+    return a*(1-u)*(1-v) + b*u*(1-v) + c*(1-u)*v + d*u*v;
+  }
+  function fbm(x, y) {
+    let val = 0, amp = 1, freq = 1, total = 0;
+    for (let i = 0; i < 5; i++) { val += amp*noise2(x*freq, y*freq); total += amp; amp *= 0.5; freq *= 2.13; }
+    return val/total;
+  }
+
+  const lrng = mulberry32(90215);
+  const kinds = ['horn', 'twin', 'mesa', 'fold', 'peak', 'fold', 'horn', 'mesa', 'twin', 'peak'];
+  const landmarks = kinds.map((kind, i) => {
+    const az = (i / kinds.length) * Math.PI*2 + (lrng()-0.5)*0.55;
+    const dist = 34000 + lrng()*72000;
+    return {
+      kind, x: Math.cos(az)*dist, z: Math.sin(az)*dist,
+      amp: 2700 + lrng()*2700, sigma: 7500 + lrng()*9000,
+      rot: lrng()*Math.PI
+    };
+  });
+  function landmarkHeight(lm, x, z) {
+    const dx = x - lm.x, dz = z - lm.z;
+    const cr = Math.cos(lm.rot), sr = Math.sin(lm.rot);
+    const u = dx*cr - dz*sr, v = dx*sr + dz*cr;
+    const d = Math.hypot(u, v);
+    switch (lm.kind) {
+      case 'peak': return lm.amp * Math.exp(-(d*d)/(lm.sigma*lm.sigma));
+      case 'horn': {
+        const g = Math.exp(-Math.pow(d/(lm.sigma*0.72), 1.4));
+        return lm.amp * 1.2 * g;
+      }
+      case 'twin': {
+        const off = lm.sigma*0.55, sg = lm.sigma*0.6;
+        const g1 = Math.exp(-(((u-off)*(u-off) + v*v))/(sg*sg));
+        const g2 = Math.exp(-(((u+off)*(u+off) + v*v))/(sg*sg));
+        return lm.amp * Math.max(g1, g2);
+      }
+      case 'mesa': {
+        const t = 1 - smoothstep(lm.sigma*0.5, lm.sigma*1.15, d);
+        return lm.amp * 0.85 * t;
+      }
+      case 'fold': {
+        const across = Math.exp(-(v*v)/Math.pow(lm.sigma*0.46, 2));
+        const along  = Math.exp(-(u*u)/Math.pow(lm.sigma*1.7, 2));
+        const folds  = 0.68 + 0.32*Math.cos(u/(lm.sigma*0.33));
+        return lm.amp * across * along * folds;
+      }
+    }
+    return 0;
+  }
+
+  const size = 320000, seg = 240;
+  const geom = new THREE.PlaneGeometry(size, size, seg, seg);
+  geom.rotateX(-Math.PI/2);
+  const pos = geom.attributes.position;
+  const colors = new Float32Array(pos.count * 3);
+
+  const INNER = 5200, RAMP = 9000;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), z = pos.getZ(i);
+    const dist = Math.sqrt(x*x + z*z);
+    let h;
+    if (dist < INNER) {
+      h = -8;
+    } else {
+      const base = fbm(x*0.00019 + 5, z*0.00019 - 3) * 900;
+      let lm = 0;
+      for (const L of landmarks) lm += landmarkHeight(L, x, z);
+      h = base*0.55 + lm;
+      const t = Math.min(1, (dist - INNER)/RAMP);
+      h *= t;
+      h = h * (0.78 + h/9000);
+    }
+    pos.setY(i, h);
+    let r, g, b;
+    if (h > 2550)      { r = 0.95; g = 0.96; b = 1.00; }
+    else if (h > 1500) { const t = (h-1500)/1050; r = 0.5+t*0.45; g = 0.5+t*0.46; b = 0.5+t*0.5; }
+    else if (h > 350)  { r = 0.43; g = 0.43; b = 0.39; }
+    else if (h > 0)    { r = 0.34; g = 0.41; b = 0.30; }
+    else               { r = 0.36; g = 0.40; b = 0.36; }
+    colors[i*3] = r; colors[i*3+1] = g; colors[i*3+2] = b;
+  }
+  geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geom.computeVertexNormals();
+
+  const rt = rockTex.clone(); rt.repeat.set(120, 120); rt.needsUpdate = true;
+  group.add(new THREE.Mesh(geom, new THREE.MeshLambertMaterial({ map: rt, vertexColors: true })));
+
+  const skyMat = new THREE.ShaderMaterial({
+    uniforms: { topColor: { value: new THREE.Color(0x3f6fa8) }, bottomColor: { value: fogColor.clone() } },
+    vertexShader: `varying vec3 vDir;
+      void main(){ vDir = normalize(position); gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+    fragmentShader: `uniform vec3 topColor; uniform vec3 bottomColor; varying vec3 vDir;
+      void main(){ float t = pow(clamp(vDir.y,0.0,1.0),0.55); gl_FragColor = vec4(mix(bottomColor,topColor,t),1.0); }`,
+    side: THREE.BackSide, fog: false, depthWrite: false
+  });
+  group.add(new THREE.Mesh(new THREE.SphereGeometry(280000, 32, 16), skyMat));
+
+  const sunDisc = new THREE.Mesh(
+    new THREE.CircleGeometry(1800, 32),
+    new THREE.MeshBasicMaterial({ color: 0xfff4cc, fog: false, depthWrite: false })
+  );
+  sunDisc.position.set(70000, 50000, 40000);
+  sunDisc.lookAt(0, 0, 0);
+  group.add(sunDisc);
+  return group;
+}
+sceneFar.add(buildMountains());
+
+// ===========================================================================
+// MID LAYER : the city  ---  enterable towers (rect / L / triangular)
+//             + a diagonal avenue + 28 unique decorator landmarks
+// ===========================================================================
+function posMesh(geo, mat, x, y, z) {
+  const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); return m;
+}
+const M = c => new THREE.MeshLambertMaterial({ color: c });
+function shade(hex, f) {
+  const c = new THREE.Color(hex);
+  c.r = Math.min(1, Math.max(0, c.r*f));
+  c.g = Math.min(1, Math.max(0, c.g*f));
+  c.b = Math.min(1, Math.max(0, c.b*f));
+  return c.getHex();
+}
+
+// --- 2D footprint polygon helpers (points are [x, z], local to building) ---
+function polyArea(poly) {
+  let a = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const p = poly[i], q = poly[(i+1) % poly.length];
+    a += p[0]*q[1] - q[0]*p[1];
+  }
+  return a / 2;
+}
+function normalizePoly(poly) {
+  return polyArea(poly) < 0 ? poly.slice().reverse() : poly;
+}
+function cleanPoly(poly) {
+  const out = [];
+  for (const p of poly) {
+    const q = out[out.length-1];
+    if (!q || Math.hypot(p[0]-q[0], p[1]-q[1]) > 0.5) out.push(p);
+  }
+  if (out.length > 1) {
+    const a = out[0], b = out[out.length-1];
+    if (Math.hypot(a[0]-b[0], a[1]-b[1]) < 0.5) out.pop();
+  }
+  return out;
+}
+function pointInPoly(x, z, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length-1; i < poly.length; j = i++) {
+    const xi = poly[i][0], zi = poly[i][1], xj = poly[j][0], zj = poly[j][1];
+    if (((zi > z) !== (zj > z)) && (x < (xj-xi)*(z-zi)/(zj-zi) + xi)) inside = !inside;
+  }
+  return inside;
+}
+function edgeDist(x, z, poly) {
+  let best = 1e9;
+  for (let i = 0; i < poly.length; i++) {
+    const A = poly[i], B = poly[(i+1) % poly.length];
+    const dx = B[0]-A[0], dz = B[1]-A[1];
+    const l2 = dx*dx + dz*dz || 1;
+    let t = ((x-A[0])*dx + (z-A[1])*dz) / l2;
+    t = Math.max(0, Math.min(1, t));
+    const d = Math.hypot(x - (A[0]+t*dx), z - (A[1]+t*dz));
+    if (d < best) best = d;
+  }
+  return best;
+}
+// keep the half-plane  nx*x + nz*z <= c
+function clipPoly(poly, nx, nz, c) {
+  const out = [], n = poly.length;
+  for (let i = 0; i < n; i++) {
+    const A = poly[i], B = poly[(i+1) % n];
+    const da = nx*A[0] + nz*A[1] - c;
+    const db = nx*B[0] + nz*B[1] - c;
+    if (da <= 1e-9) out.push(A);
+    if ((da < -1e-9 && db > 1e-9) || (da > 1e-9 && db < -1e-9)) {
+      const t = da / (da - db);
+      out.push([A[0] + t*(B[0]-A[0]), A[1] + t*(B[1]-A[1])]);
+    }
+  }
+  return out;
+}
+function polyShape(poly) {
+  const s = new THREE.Shape();
+  poly.forEach((p, i) => i ? s.lineTo(p[0], p[1]) : s.moveTo(p[0], p[1]));
+  s.closePath();
+  return s;
+}
+// largest inscribed disc -> good spot + size for the elevator core
+function poleOfInaccessibility(poly) {
+  let minx = 1e9, maxx = -1e9, minz = 1e9, maxz = -1e9;
+  for (const p of poly) {
+    minx = Math.min(minx, p[0]); maxx = Math.max(maxx, p[0]);
+    minz = Math.min(minz, p[1]); maxz = Math.max(maxz, p[1]);
+  }
+  let best = { x: (minx+maxx)/2, z: (minz+maxz)/2, r: 0 };
+  const N = 18;
+  for (let i = 0; i <= N; i++) for (let j = 0; j <= N; j++) {
+    const x = minx + (maxx-minx)*i/N, z = minz + (maxz-minz)*j/N;
+    if (!pointInPoly(x, z, poly)) continue;
+    const d = edgeDist(x, z, poly);
+    if (d > best.r) best = { x, z, r: d };
+  }
+  return best;
+}
+function clampInsidePoly(x, z, poly, margin) {
+  let best = 1e9, npx = x, npz = z, nnx = 0, nnz = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const A = poly[i], B = poly[(i+1) % poly.length];
+    const dx = B[0]-A[0], dz = B[1]-A[1];
+    const l2 = dx*dx + dz*dz || 1;
+    let t = ((x-A[0])*dx + (z-A[1])*dz) / l2;
+    t = Math.max(0, Math.min(1, t));
+    const px = A[0]+t*dx, pz = A[1]+t*dz;
+    const d = Math.hypot(x-px, z-pz);
+    if (d < best) {
+      best = d; npx = px; npz = pz;
+      const l = Math.sqrt(l2);
+      nnx = -dz/l; nnz = dx/l;          // inward normal (CCW winding)
+    }
+  }
+  const signed = pointInPoly(x, z, poly) ? best : -best;
+  if (signed >= margin) return [x, z];
+  return [npx + nnx*margin, npz + nnz*margin];
+}
+function rectPoly(w, d) {
+  const hw = w/2, hd = d/2;
+  return [[-hw,-hd], [hw,-hd], [hw,hd], [-hw,hd]];
+}
+// rectangle with one corner notched out -> an L-shaped footprint
+function lPoly(w, d, corner, cw, cd) {
+  const hw = w/2, hd = d/2;
+  let p = [[-hw,-hd], [hw,-hd], [hw,hd-cd], [hw-cw,hd-cd], [hw-cw,hd], [-hw,hd]];
+  for (let k = 0; k < corner; k++) p = p.map(([x,z]) => [-z, x]);   // rotate 90 deg
+  return p;
+}
+// rectangle with one corner dropped -> a triangular footprint (a wedge lot)
+function triPoly(w, d, drop) {
+  return rectPoly(w, d).filter((_, i) => i !== drop);
+}
+function shuffledDeck(n, rng) {
+  const a = [...Array(n).keys()];
+  for (let i = n-1; i > 0; i--) {
+    const j = (rng()*(i+1)) | 0;
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+function starShape(spikes, rOut, rIn) {
+  const s = new THREE.Shape();
+  for (let i = 0; i < spikes*2; i++) {
+    const r = (i % 2) ? rIn : rOut;
+    const a = i / (spikes*2) * Math.PI*2;
+    const x = Math.cos(a)*r, y = Math.sin(a)*r;
+    i ? s.lineTo(x, y) : s.moveTo(x, y);
+  }
+  s.closePath();
+  return s;
+}
+
+const NAME_ADJ = ['Azure','Crimson','Granite','Iron','Solace','Meridian','Halcyon','Vesper',
+  'Onyx','Cobalt','Amber','Verdant','Pallas','Zenith','Hollow','Quartz','Ember','Slate','Mistral','Aurora'];
+const NAME_NOUN = ['Spire','Court','Exchange','Heights','Tower','Plaza','Crest','Works',
+  'Atrium','Beacon','Pavilion','House','Terrace','Point','Hall','Quarter'];
+function nameFor(b) {
+  const r = mulberry32(b.seed ^ 0x5bd1e995);
+  return NAME_ADJ[(r()*NAME_ADJ.length)|0] + ' ' + NAME_NOUN[(r()*NAME_NOUN.length)|0];
+}
+
+// ---------------------------------------------------------------------------
+// 28 decorator landmarks --- each a distinct model AND a distinct colour.
+// They are dealt out without repetition, so no two placed ones ever match.
+// ---------------------------------------------------------------------------
+const DECOS = [
+  { name: 'Museum', color: 0xc8bfa6, build(rng, c) {
+      const g = new THREE.Group(); const w = 92, d = 56, h = 24;
+      g.add(posMesh(new THREE.BoxGeometry(w, h, d), M(c), 0, h/2, 0));
+      const roof = posMesh(new THREE.CylinderGeometry(d*0.5, d*0.5, w, 28, 1, false, 0, Math.PI), M(shade(c,0.86)), 0, h, 0);
+      roof.rotation.z = Math.PI/2; g.add(roof);
+      for (let i = -2; i <= 2; i++)
+        g.add(posMesh(new THREE.CylinderGeometry(2, 2, h*0.92, 14), M(shade(c,1.14)), i*w*0.2, h*0.46, d*0.5+2));
+      return g; } },
+  { name: 'Planetarium', color: 0x7d93b0, build(rng, c) {
+      const g = new THREE.Group(); const r = 30;
+      g.add(posMesh(new THREE.CylinderGeometry(r*0.6, r*0.8, 14, 24), M(shade(c,0.66)), 0, 7, 0));
+      g.add(posMesh(new THREE.SphereGeometry(r, 40, 28), M(c), 0, 14 + r*0.8, 0));
+      return g; } },
+  { name: 'Obelisk', color: 0xb9bcc2, build(rng, c) {
+      const g = new THREE.Group(); const h = 152;
+      g.add(posMesh(new THREE.BoxGeometry(34, 12, 34), M(shade(c,0.78)), 0, 6, 0));
+      const sh = posMesh(new THREE.CylinderGeometry(7, 11, h, 4), M(c), 0, 12 + h/2, 0);
+      sh.rotation.y = Math.PI/4; g.add(sh);
+      const cap = posMesh(new THREE.ConeGeometry(9.5, 18, 4), M(shade(c,1.16)), 0, 12 + h + 9, 0);
+      cap.rotation.y = Math.PI/4; g.add(cap);
+      return g; } },
+  { name: 'Cathedral', color: 0x5c5650, build(rng, c) {
+      const g = new THREE.Group(); const navW = 42, navL = 84, navH = 34;
+      g.add(posMesh(new THREE.BoxGeometry(navW, navH, navL), M(c), 0, navH/2, 0));
+      const roof = posMesh(new THREE.CylinderGeometry(navW*0.62, navW*0.62, navL, 3), M(shade(c,0.66)), 0, navH + navW*0.2, 0);
+      roof.rotation.x = Math.PI/2; roof.rotation.y = Math.PI/2; g.add(roof);
+      for (const sx of [-1,1]) {
+        const th = navH + 34;
+        g.add(posMesh(new THREE.BoxGeometry(navW*0.5, th, navW*0.5), M(c), sx*navW*0.62, th/2, -navL*0.42));
+        g.add(posMesh(new THREE.ConeGeometry(navW*0.42, 28, 4), M(shade(c,0.66)), sx*navW*0.62, th + 14, -navL*0.42));
+      }
+      return g; } },
+  { name: 'Pyramid', color: 0xcaa46f, build(rng, c) {
+      const g = new THREE.Group(); const base = 72, h = 96;
+      const p = posMesh(new THREE.ConeGeometry(base, h, 4), M(c), 0, h/2, 0);
+      p.rotation.y = Math.PI/4; g.add(p);
+      g.add(posMesh(new THREE.ConeGeometry(8, 14, 4), M(shade(c,1.22)), 0, h + 5, 0));
+      return g; } },
+  { name: 'Ring sculpture', color: 0xc08a3a, build(rng, c) {
+      const g = new THREE.Group(); const R = 42;
+      g.add(posMesh(new THREE.TorusGeometry(R, R*0.14, 20, 48), M(c), 0, R + 24, 0));
+      for (const sx of [-1,1]) g.add(posMesh(new THREE.BoxGeometry(8, 30, 12), M(shade(c,0.6)), sx*R*0.5, 15, 0));
+      return g; } },
+  { name: 'Domed rotunda', color: 0x6fae93, build(rng, c) {
+      const g = new THREE.Group(); const r = 38, dh = 44;
+      g.add(posMesh(new THREE.CylinderGeometry(r, r, dh, 32), M(c), 0, dh/2, 0));
+      g.add(posMesh(new THREE.SphereGeometry(r, 32, 16, 0, Math.PI*2, 0, Math.PI/2), M(shade(c,1.16)), 0, dh, 0));
+      g.add(posMesh(new THREE.SphereGeometry(5, 12, 8), M(shade(c,1.3)), 0, dh + r, 0));
+      return g; } },
+  { name: 'Ziggurat', color: 0xb56a44, build(rng, c) {
+      const g = new THREE.Group(); let y = 0;
+      for (let i = 0; i < 6; i++) {
+        const s = 84 - i*13, h = 14;
+        g.add(posMesh(new THREE.BoxGeometry(s, h, s), M(shade(c, 1 - i*0.06)), 0, y + h/2, 0));
+        y += h;
+      }
+      return g; } },
+  { name: 'Twisted tower', color: 0x3f8f8a, build(rng, c) {
+      const g = new THREE.Group(); const n = 22, h = 9.5;
+      for (let i = 0; i < n; i++) {
+        const m = posMesh(new THREE.BoxGeometry(40, h + 0.4, 40), M(shade(c, 0.82 + 0.34*i/n)), 0, i*h + h/2, 0);
+        m.rotation.y = i*0.13; g.add(m);
+      }
+      return g; } },
+  { name: 'Triumphal arch', color: 0x8a8d92, build(rng, c) {
+      const g = new THREE.Group(); const H = 64, W = 72, pw = 18;
+      for (const sx of [-1,1]) g.add(posMesh(new THREE.BoxGeometry(pw, H, pw), M(c), sx*(W/2 - pw/2), H/2, 0));
+      g.add(posMesh(new THREE.BoxGeometry(W, 16, pw), M(c), 0, H + 8, 0));
+      g.add(posMesh(new THREE.BoxGeometry(W*0.8, 12, pw*0.8), M(shade(c,1.16)), 0, H + 22, 0));
+      return g; } },
+  { name: 'Cooling tower', color: 0xd9d6cc, build(rng, c) {
+      const g = new THREE.Group(); const h = 128, base = 34, pts = [];
+      for (let i = 0; i <= 14; i++) {
+        const t = i/14;
+        pts.push(new THREE.Vector2(base*(0.6 + 1.7*Math.pow(t-0.46,2)), t*h));
+      }
+      g.add(new THREE.Mesh(new THREE.LatheGeometry(pts, 40),
+        new THREE.MeshLambertMaterial({ color: c, side: THREE.DoubleSide })));
+      return g; } },
+  { name: 'Pagoda', color: 0xb5402f, build(rng, c) {
+      const g = new THREE.Group(); let y = 0;
+      for (let i = 0; i < 5; i++) {
+        const w = 46 - i*7;
+        g.add(posMesh(new THREE.BoxGeometry(w, 16, w), M(c), 0, y + 8, 0));
+        g.add(posMesh(new THREE.ConeGeometry(w*0.95, 9, 4), M(shade(c,0.58)), 0, y + 20, 0));
+        y += 20;
+      }
+      g.add(posMesh(new THREE.ConeGeometry(4, 14, 4), M(shade(c,1.4)), 0, y + 5, 0));
+      return g; } },
+  { name: 'Glass cone', color: 0x86c4cf, build(rng, c) {
+      const g = new THREE.Group(); const h = 112;
+      g.add(posMesh(new THREE.ConeGeometry(34, h, 24),
+        new THREE.MeshLambertMaterial({ color: c, transparent: true, opacity: 0.78 }), 0, h/2, 0));
+      for (let i = 1; i < 6; i++) {
+        const ring = posMesh(new THREE.TorusGeometry(34*(1 - i/6.2), 0.7, 6, 28), M(shade(c,0.58)), 0, h*i/6, 0);
+        ring.rotation.x = Math.PI/2; g.add(ring);
+      }
+      return g; } },
+  { name: 'Concert hall', color: 0x4a4d55, build(rng, c) {
+      const g = new THREE.Group();
+      g.add(posMesh(new THREE.CylinderGeometry(44, 46, 30, 40), M(c), 0, 15, 0));
+      g.add(posMesh(new THREE.CylinderGeometry(50, 50, 4, 40), M(shade(c,1.5)), 5, 32, -4));
+      g.add(posMesh(new THREE.CylinderGeometry(20, 20, 26, 28), M(shade(c,1.28)), -8, 45, 8));
+      return g; } },
+  { name: 'Geodesic dome', color: 0xb9c0c8, build(rng, c) {
+      const g = new THREE.Group(); const r = 42;
+      const geo = new THREE.IcosahedronGeometry(r, 2);
+      const m = new THREE.Mesh(geo, M(c)); m.position.y = r*0.3; g.add(m);
+      const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo),
+        new THREE.LineBasicMaterial({ color: shade(c,0.5) }));
+      e.position.y = r*0.3; g.add(e);
+      return g; } },
+  { name: 'Wind turbine', color: 0xe8e7e0, build(rng, c) {
+      const g = new THREE.Group(); const h = 120;
+      g.add(posMesh(new THREE.CylinderGeometry(3, 5, h, 16), M(c), 0, h/2, 0));
+      g.add(posMesh(new THREE.BoxGeometry(10, 7, 16), M(shade(c,0.7)), 0, h, 3));
+      const hub = new THREE.Group(); hub.position.set(0, h, 8);
+      for (let i = 0; i < 3; i++) {
+        const arm = new THREE.Group();
+        arm.add(posMesh(new THREE.BoxGeometry(2.6, 50, 1.4), M(shade(c,0.92)), 0, 25, 0));
+        arm.rotation.z = i*Math.PI*2/3; hub.add(arm);
+      }
+      g.add(hub);
+      return g; } },
+  { name: 'Clock tower', color: 0xc9a24a, build(rng, c) {
+      const g = new THREE.Group(); const h = 104;
+      g.add(posMesh(new THREE.BoxGeometry(30, h, 30), M(c), 0, h/2, 0));
+      for (const [ax, az] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+        const face = posMesh(new THREE.CylinderGeometry(9, 9, 1.5, 24), M(shade(c,1.5)),
+          ax*15.4, h - 16, az*15.4);
+        if (ax) face.rotation.z = Math.PI/2; else face.rotation.x = Math.PI/2;
+        g.add(face);
+      }
+      const roof = posMesh(new THREE.ConeGeometry(24, 26, 4), M(shade(c,0.55)), 0, h + 13, 0);
+      roof.rotation.y = Math.PI/4; g.add(roof);
+      return g; } },
+  { name: 'Star bastion', color: 0x7c8456, build(rng, c) {
+      const g = new THREE.Group();
+      const geo = new THREE.ExtrudeGeometry(starShape(6, 48, 25), { depth: 22, bevelEnabled: false });
+      geo.rotateX(-Math.PI/2);
+      g.add(new THREE.Mesh(geo, M(c)));
+      g.add(posMesh(new THREE.CylinderGeometry(16, 16, 32, 16), M(shade(c,1.16)), 0, 22 + 16, 0));
+      return g; } },
+  { name: 'Crystal cluster', color: 0x9a72b8, build(rng, c) {
+      const g = new THREE.Group();
+      const spec = [[0,0,72,18],[22,8,48,12],[-20,5,54,13],[8,-22,40,11],[-14,-16,34,9]];
+      for (const [x,z,hh,rr] of spec) {
+        const cone = posMesh(new THREE.ConeGeometry(rr, hh, 6), M(shade(c, 0.78 + rng()*0.5)), x, hh/2, z);
+        cone.rotation.x = (rng()-0.5)*0.24; cone.rotation.z = (rng()-0.5)*0.24;
+        g.add(cone);
+      }
+      return g; } },
+  { name: 'Tent pavilion', color: 0xcf6b32, build(rng, c) {
+      const g = new THREE.Group(); const h = 70;
+      for (const [sx,sz] of [[-1,-1],[1,-1],[1,1],[-1,1]])
+        g.add(posMesh(new THREE.CylinderGeometry(2, 2, h*0.5, 8), M(shade(c,0.55)), sx*40, h*0.25, sz*40));
+      const tent = posMesh(new THREE.ConeGeometry(62, h, 4, 1, true),
+        new THREE.MeshLambertMaterial({ color: c, side: THREE.DoubleSide }), 0, h*0.5 + h/2, 0);
+      tent.rotation.y = Math.PI/4; g.add(tent);
+      g.add(posMesh(new THREE.CylinderGeometry(2, 2, h, 8), M(shade(c,0.55)), 0, h*0.5 + h/2, 0));
+      return g; } },
+  { name: 'Stacked cubes', color: 0x9a9082, build(rng, c) {
+      const g = new THREE.Group(); let y = 0; const sz = 26;
+      for (let i = 0; i < 8; i++) {
+        const ox = (rng()-0.5)*sz*0.9, oz = (rng()-0.5)*sz*0.9;
+        g.add(posMesh(new THREE.BoxGeometry(sz, sz, sz), M(shade(c, 0.82 + 0.34*i/8)), ox, y + sz/2, oz));
+        y += sz*0.82;
+      }
+      return g; } },
+  { name: 'Lighthouse', color: 0xd96f5e, build(rng, c) {
+      const g = new THREE.Group(); const h = 86;
+      g.add(posMesh(new THREE.CylinderGeometry(9, 16, h, 20), M(c), 0, h/2, 0));
+      g.add(posMesh(new THREE.CylinderGeometry(13, 13, 8, 20), M(shade(c,0.48)), 0, h + 4, 0));
+      g.add(posMesh(new THREE.CylinderGeometry(9, 9, 10, 16),
+        new THREE.MeshLambertMaterial({ color: 0xfff2b0, emissive: 0x6b5a14 }), 0, h + 13, 0));
+      g.add(posMesh(new THREE.ConeGeometry(11, 12, 20), M(shade(c,0.66)), 0, h + 24, 0));
+      return g; } },
+  { name: 'Helix tower', color: 0x9bbf4a, build(rng, c) {
+      const g = new THREE.Group(); const h = 122, turns = 4, n = 72;
+      g.add(posMesh(new THREE.CylinderGeometry(4, 4, h, 12), M(shade(c,0.66)), 0, h/2, 0));
+      for (let i = 0; i < n; i++) {
+        const t = i/n, a = t*Math.PI*2*turns, r = 22;
+        const m = posMesh(new THREE.BoxGeometry(13, 3.2, 5), M(shade(c, 0.78 + 0.45*t)),
+          Math.cos(a)*r, t*h + 4, Math.sin(a)*r);
+        m.rotation.y = -a; g.add(m);
+      }
+      return g; } },
+  { name: 'Shell hall', color: 0xd8d2c2, build(rng, c) {
+      const g = new THREE.Group();
+      const geo = new THREE.SphereGeometry(40, 32, 20, 0, Math.PI*2, 0, Math.PI*0.55);
+      geo.scale(1.5, 0.9, 1);
+      const m = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: c, side: THREE.DoubleSide }));
+      m.position.y = 2; g.add(m);
+      g.add(posMesh(new THREE.BoxGeometry(122, 4, 56), M(shade(c,0.68)), 0, 1, 0));
+      return g; } },
+  { name: 'Floating cube', color: 0x4b5ba0, build(rng, c) {
+      const g = new THREE.Group(); const lift = 34, s = 56;
+      for (const [sx,sz] of [[-1,-1],[1,-1],[1,1],[-1,1]])
+        g.add(posMesh(new THREE.CylinderGeometry(3.5, 3.5, lift, 12), M(shade(c,0.55)), sx*s*0.32, lift/2, sz*s*0.32));
+      g.add(posMesh(new THREE.BoxGeometry(s, s*0.8, s), M(c), 0, lift + s*0.4, 0));
+      return g; } },
+  { name: 'Sail structure', color: 0xc65a86, build(rng, c) {
+      const g = new THREE.Group();
+      for (let i = 0; i < 3; i++) {
+        const sh = new THREE.Shape(); const H = 60 + i*26, W = 30 + i*8;
+        sh.moveTo(0, 0); sh.quadraticCurveTo(W*0.5, H*0.4, W, H); sh.lineTo(0, H); sh.closePath();
+        const m = new THREE.Mesh(new THREE.ShapeGeometry(sh),
+          new THREE.MeshLambertMaterial({ color: shade(c, 0.78 + i*0.2), side: THREE.DoubleSide }));
+        m.position.set(-20 + i*16, 0, i*10 - 10); m.rotation.y = -0.4 - i*0.18;
+        g.add(m);
+      }
+      return g; } },
+  { name: 'Radio dish', color: 0xa6b0a4, build(rng, c) {
+      const g = new THREE.Group(); const h = 40;
+      for (const [sx,sz] of [[-1,-1],[1,-1],[0,1]])
+        g.add(posMesh(new THREE.CylinderGeometry(2.5, 2.5, h, 8), M(shade(c,0.6)), sx*16, h/2, sz*16));
+      const dish = new THREE.Mesh(
+        new THREE.SphereGeometry(34, 28, 14, 0, Math.PI*2, 0, Math.PI*0.34),
+        new THREE.MeshLambertMaterial({ color: c, side: THREE.DoubleSide }));
+      dish.position.set(0, h + 12, 0); dish.rotation.x = Math.PI*0.78; g.add(dish);
+      g.add(posMesh(new THREE.CylinderGeometry(1.4, 1.4, 22, 8), M(shade(c,1.3)), 0, h + 7, 0));
+      return g; } },
+  { name: 'Colosseum', color: 0xa8895f, build(rng, c) {
+      const g = new THREE.Group(); const h = 40;
+      const outer = posMesh(new THREE.CylinderGeometry(50, 52, h, 40, 1, true),
+        new THREE.MeshLambertMaterial({ color: c, side: THREE.DoubleSide }), 0, h/2, 0);
+      outer.scale.x = 1.3; g.add(outer);
+      const inner = posMesh(new THREE.CylinderGeometry(34, 34, h + 2, 36, 1, true),
+        new THREE.MeshLambertMaterial({ color: shade(c,0.68), side: THREE.DoubleSide }), 0, h/2, 0);
+      inner.scale.x = 1.3; g.add(inner);
+      for (let i = 0; i < 24; i++) {
+        const a = i/24*Math.PI*2;
+        const m = posMesh(new THREE.BoxGeometry(6, h*0.7, 8), M(shade(c,1.14)),
+          Math.cos(a)*51*1.3, h*0.35, Math.sin(a)*51);
+        m.rotation.y = -a; g.add(m);
+      }
+      return g; } }
+];
+
+const INTERIOR_WALLS = [0x2c2e36, 0x33302b, 0x2a3138, 0x352f31, 0x2e332e, 0x38332c];
+const FLOOR_TINTS    = [0xb9c2d2, 0xc6b9a6, 0xa9c0c4, 0xc9bcc0, 0xb2c2b0, 0xcabfa4];
+
+// --- the diagonal cross-street (an avenue that clips towers it crosses) ----
+const _SN = Math.hypot(0.86, 0.52);
+const NX = 0.86/_SN, NZ = 0.52/_SN;   // street-normal unit vector
+const C0 = 150;                       // centreline offset:  NX*x + NZ*z = C0
+const HW = 25;                        // half-width of the avenue corridor
+
+// returns clipped local footprint kept clear of the avenue, or null if erased
+function streetClip(poly, cx, cz) {
+  let mn = 1e9, mx = -1e9;
+  for (const p of poly) {
+    const s = NX*(cx+p[0]) + NZ*(cz+p[1]) - C0;
+    if (s < mn) mn = s; if (s > mx) mx = s;
+  }
+  if (mn > HW || mx < -HW) return poly;             // clear of the corridor
+  const base = NX*cx + NZ*cz - C0;
+  const plus  = cleanPoly(clipPoly(poly, -NX, -NZ, -(HW - base)));   // keep s >=  HW
+  const minus = cleanPoly(clipPoly(poly,  NX,  NZ,  (-HW - base)));  // keep s <= -HW
+  const ap = Math.abs(polyArea(plus)), am = Math.abs(polyArea(minus));
+  const okp = plus.length >= 3 && ap >= 240;
+  const okm = minus.length >= 3 && am >= 240;
+  if (!okp && !okm) return null;
+  if (okp && !okm) return plus;
+  if (okm && !okp) return minus;
+  // both viable -- favour a triangular wedge over the bulkier piece
+  if (plus.length === 3 && minus.length !== 3) return plus;
+  if (minus.length === 3 && plus.length !== 3) return minus;
+  return ap >= am ? plus : minus;
+}
+
+function buildTowerMesh(b) {
+  const grp = new THREE.Group();
+  grp.position.set(b.cx, 0, b.cz);
+  grp.userData.building = b;
+  for (let i = 0; i < b.poly.length; i++) {
+    const A = b.poly[i], B = b.poly[(i+1) % b.poly.length];
+    const dx = B[0]-A[0], dz = B[1]-A[1];
+    const len = Math.hypot(dx, dz);
+    if (len < 0.4) continue;
+    const tex = facadeTex[b.style].clone();
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(Math.max(2, Math.round(len/11)), b.floors);
+    tex.needsUpdate = true;
+    const wall = new THREE.Mesh(
+      new THREE.PlaneGeometry(len, b.height),
+      new THREE.MeshLambertMaterial({ map: tex, color: b.tint })
+    );
+    wall.position.set((A[0]+B[0])/2, b.height/2, (A[1]+B[1])/2);
+    wall.rotation.y = Math.atan2(-dz, dx) + Math.PI;   // facade faces outward
+    grp.add(wall);
+  }
+  const capGeo = new THREE.ShapeGeometry(polyShape(b.poly));
+  capGeo.rotateX(Math.PI/2);
+  const cap = new THREE.Mesh(capGeo, new THREE.MeshLambertMaterial({ color: 0x191a1e, side: THREE.DoubleSide }));
+  cap.position.y = b.height + 0.25;
+  grp.add(cap);
+  if (b.floors > 26) {
+    const aH = 16 + (b.floors - 26)*1.4;
+    const ant = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.3, 0.8, aH, 8),
+      M(0x202024)
+    );
+    ant.position.set(b.bcx, b.height + aH/2 + 3, b.bcz);
+    grp.add(ant);
+  }
+  return grp;
+}
+
+function generateCity() {
+  const group = new THREE.Group();
+  const buildings = [];
+  const gRng = mulberry32(778201);
+
+  const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(6000, 6000),
+    M(0x23242a)
+  );
+  ground.rotation.x = -Math.PI/2;
+  group.add(ground);
+
+  // orthogonal road grid along cell edges
+  for (let i = -GRID; i <= GRID; i++) {
+    const at = (i + 0.5) * CELL;
+    for (const along of [0, 1]) {
+      const geo = along ? new THREE.PlaneGeometry(6000, 9) : new THREE.PlaneGeometry(9, 6000);
+      const road = new THREE.Mesh(geo, M(0x2d2e34));
+      road.rotation.x = -Math.PI/2;
+      road.position.set(along ? 0 : at, 0.05, along ? at : 0);
+      group.add(road);
+    }
+  }
+
+  // the diagonal cross-street itself
+  const streetRotY = Math.atan2(-NX, -NZ);
+  {
+    const droad = new THREE.Mesh(new THREE.PlaneGeometry(2600, HW*2), M(0x303139));
+    droad.geometry.rotateX(-Math.PI/2);
+    droad.rotation.y = streetRotY;
+    droad.position.set(NX*C0, 0.09, NZ*C0);
+    group.add(droad);
+    const tx = -NZ, tz = NX;
+    for (let i = -24; i <= 24; i++) {
+      const dash = new THREE.Mesh(new THREE.PlaneGeometry(9, 1.7), M(0xb9a23a));
+      dash.geometry.rotateX(-Math.PI/2);
+      dash.rotation.y = streetRotY;
+      dash.position.set(NX*C0 + tx*i*46, 0.12, NZ*C0 + tz*i*46);
+      group.add(dash);
+    }
+  }
+
+  // ---- PASS 1 : decide the contents of every cell -------------------------
+  const specs = [];
+  const half = (GRID - 1) / 2;
+  for (let gx = -half; gx <= half; gx++) {
+    for (let gz = -half; gz <= half; gz++) {
+      const seed = cellSeed(gx, gz);
+      const rng = mulberry32(seed);
+      const cx = gx * CELL, cz = gz * CELL;
+      const isStart = (gx === 0 && gz === 0);
+      const roll = rng();
+      let kind = 'tower';
+      if (!isStart) {
+        if (roll < 0.12) kind = 'empty';
+        else if (roll < 0.57) kind = 'odd';
+      }
+      const centerS = NX*cx + NZ*cz - C0;
+      const spec = { gx, gz, cx, cz, seed, kind };
+
+      if (kind === 'empty') {
+        spec.plazaCol = rng() < 0.5 ? 0x33402f : 0x2f3036;
+        specs.push(spec);
+        continue;
+      }
+      if (kind === 'odd') {
+        // decorators give the avenue a wide berth
+        if (Math.abs(centerS) < HW + 38) { spec.kind = 'plaza'; spec.plazaCol = 0x2f3036; }
+        specs.push(spec);
+        continue;
+      }
+
+      // an enterable tower -- rectangular, L-shaped, or a triangular wedge lot
+      const footW = CELL * (0.34 + rng()*0.26);
+      const footD = CELL * (0.34 + rng()*0.26);
+      let poly = rectPoly(footW, footD);
+      const nearAvenue = !isStart && Math.abs(centerS) < HW + 82;
+      if (nearAvenue && rng() < 0.62) {
+        // a corner lot the diagonal avenue carves into a triangle:
+        // drop the rectangle corner that points at the avenue
+        const rc = rectPoly(footW, footD);
+        let drop = 0, bd = 1e9;
+        for (let i = 0; i < 4; i++) {
+          const cs = Math.abs(centerS + NX*rc[i][0] + NZ*rc[i][1]);
+          if (cs < bd) { bd = cs; drop = i; }
+        }
+        poly = triPoly(footW, footD, drop);
+      } else if (!isStart && rng() < 0.42) {
+        const corner = (rng()*4) | 0;
+        const cw = footW * (0.36 + rng()*0.30);
+        const cd = footD * (0.36 + rng()*0.30);
+        poly = lPoly(footW, footD, corner, cw, cd);
+      }
+      if (!isStart) {
+        const clipped = streetClip(poly, cx, cz);
+        if (clipped === null) { spec.kind = 'plaza'; spec.plazaCol = 0x2f3036; specs.push(spec); continue; }
+        poly = clipped;
+      }
+      poly = normalizePoly(cleanPoly(poly));
+      if (poly.length < 3 || Math.abs(polyArea(poly)) < 240) {
+        spec.kind = 'plaza'; spec.plazaCol = 0x2f3036; specs.push(spec); continue;
+      }
+      // power-law height distribution -- most are low, a few soar
+      let floors = Math.round(7 + 54 * Math.pow(rng(), 2.7));
+      if (isStart) floors = Math.max(floors, 14);
+      spec.poly = poly;
+      spec.floors = floors;
+      spec.style = (rng()*facadeTex.length) | 0;
+      spec.tint = new THREE.Color().setHSL(0.08 + rng()*0.62, 0.06 + rng()*0.22, 0.5 + rng()*0.28);
+      spec.wallColor = INTERIOR_WALLS[(rng()*INTERIOR_WALLS.length)|0];
+      spec.floorTint = FLOOR_TINTS[(rng()*FLOOR_TINTS.length)|0];
+      specs.push(spec);
+    }
+  }
+
+  // guarantee a genuine supertall : tallest tower tops 60 storeys
+  const towerSpecs = specs.filter(s => s.kind === 'tower');
+  if (towerSpecs.length) {
+    let tall = towerSpecs[0];
+    for (const s of towerSpecs) if (s.floors > tall.floors) tall = s;
+    tall.floors = Math.max(tall.floors, 60 + ((gRng()*6)|0));
+  }
+
+  // deal each decorator type to a unique cell -- never the same model twice
+  const oddSpecs = specs.filter(s => s.kind === 'odd');
+  const deck = shuffledDeck(DECOS.length, gRng);
+  oddSpecs.forEach((s, i) => {
+    if (i < DECOS.length) s.deco = deck[i];
+    else { s.kind = 'plaza'; s.plazaCol = 0x2f3036; }
+  });
+
+  // ---- PASS 2 : build the meshes ------------------------------------------
+  for (const s of specs) {
+    if (s.kind === 'empty' || s.kind === 'plaza') {
+      const sz = s.kind === 'empty' ? CELL*0.6 : CELL*0.62;
+      const plaza = new THREE.Mesh(new THREE.PlaneGeometry(sz, sz), M(s.plazaCol));
+      plaza.rotation.x = -Math.PI/2;
+      plaza.position.set(s.cx, 0.08, s.cz);
+      group.add(plaza);
+      continue;
+    }
+    if (s.kind === 'odd') {
+      const D = DECOS[s.deco];
+      const dRng = mulberry32(s.seed ^ 0x51ed27);
+      const dg = D.build(dRng, D.color);
+      dg.position.set(s.cx, 0, s.cz);
+      dg.rotation.y = ((dRng()*4)|0) * Math.PI/2;
+      group.add(dg);
+      continue;
+    }
+    // tower
+    const b = {
+      gx: s.gx, gz: s.gz, cx: s.cx, cz: s.cz, seed: s.seed, type: 'tower',
+      poly: s.poly, floors: s.floors, height: s.floors * FLOOR_H, style: s.style,
+      tint: s.tint, wallColor: s.wallColor, floorTint: s.floorTint
+    };
+    let minx = 1e9, maxx = -1e9, minz = 1e9, maxz = -1e9;
+    for (const p of b.poly) {
+      minx = Math.min(minx, p[0]); maxx = Math.max(maxx, p[0]);
+      minz = Math.min(minz, p[1]); maxz = Math.max(maxz, p[1]);
+    }
+    b.bw = maxx - minx; b.bd = maxz - minz;
+    b.bcx = (minx + maxx)/2; b.bcz = (minz + maxz)/2;
+    const pole = poleOfInaccessibility(b.poly);
+    b.coreInfo = { x: pole.x, z: pole.z };
+    b.coreW = Math.max(2.8, Math.min(6.4, pole.r * 1.05));
+    b.name = nameFor(b);
+    group.add(buildTowerMesh(b));
+    buildings.push(b);
+  }
+  return { group, buildings };
+}
+const city = generateCity();
+sceneMid.add(city.group);
+const buildings = city.buildings;
+
+// --- segment highlight (lives in the mid scene) ----------------------------
+const highlight = new THREE.Group();
+const hlBox = new THREE.Mesh(
+  new THREE.BoxGeometry(1, 1, 1),
+  new THREE.MeshBasicMaterial({ color: 0xffd24a, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false })
+);
+const hlEdges = new THREE.LineSegments(
+  new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)),
+  new THREE.LineBasicMaterial({ color: 0xffe27a })
+);
+highlight.add(hlBox, hlEdges);
+highlight.visible = false;
+highlight.traverse(o => { o.raycast = () => {}; });
+sceneMid.add(highlight);
+
+// ===========================================================================
+// NEAR LAYER : the single floor you stand on (rebuilt on every move)
+// ===========================================================================
+let roomGroup = null;
+
+function disposeRoom(g) {
+  g.traverse(o => {
+    if (o.geometry) o.geometry.dispose();
+    if (o.material) {
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      for (const m of mats) {
+        for (const k in m) { const v = m[k]; if (v && v.isTexture) v.dispose(); }
+        m.dispose();
+      }
+    }
+  });
+}
+
+// --- furniture builders (each returns an Object3D rooted at the floor) -----
+const FURN_WOOD = [0x6a4a2a, 0x4a3a28, 0x5b4632, 0x7a5a36];
+const FURN_FAB  = [0x3a4656, 0x5a3a3a, 0x40503c, 0x4a4654];
+function furnDesk(rng) {
+  const g = new THREE.Group();
+  const c = FURN_WOOD[(rng()*FURN_WOOD.length)|0];
+  g.add(posMesh(new THREE.BoxGeometry(2.0, 0.09, 1.0), new THREE.MeshLambertMaterial({ color: c }), 0, 0.78, 0));
+  for (const sx of [-1, 1])
+    g.add(posMesh(new THREE.BoxGeometry(0.08, 0.78, 0.85), new THREE.MeshLambertMaterial({ color: c }), sx*0.92, 0.39, 0));
+  return g;
+}
+function furnChair(rng) {
+  const g = new THREE.Group();
+  const m = new THREE.MeshLambertMaterial({ color: FURN_FAB[(rng()*FURN_FAB.length)|0] });
+  g.add(posMesh(new THREE.BoxGeometry(0.5, 0.08, 0.5), m, 0, 0.45, 0));
+  g.add(posMesh(new THREE.BoxGeometry(0.5, 0.5, 0.07), m, 0, 0.7, -0.21));
+  g.add(posMesh(new THREE.BoxGeometry(0.46, 0.45, 0.46), new THREE.MeshLambertMaterial({ color: 0x222226 }), 0, 0.22, 0));
+  return g;
+}
+function furnSofa(rng) {
+  const g = new THREE.Group();
+  const m = new THREE.MeshLambertMaterial({ color: FURN_FAB[(rng()*FURN_FAB.length)|0] });
+  g.add(posMesh(new THREE.BoxGeometry(2.2, 0.45, 0.9), m, 0, 0.24, 0));
+  g.add(posMesh(new THREE.BoxGeometry(2.2, 0.5, 0.22), m, 0, 0.55, -0.34));
+  for (const sx of [-1, 1]) g.add(posMesh(new THREE.BoxGeometry(0.22, 0.55, 0.9), m, sx*1.0, 0.32, 0));
+  return g;
+}
+function furnPlant(rng) {
+  const g = new THREE.Group();
+  g.add(posMesh(new THREE.CylinderGeometry(0.24, 0.3, 0.5, 12), new THREE.MeshLambertMaterial({ color: 0x2b2b30 }), 0, 0.25, 0));
+  const leaf = new THREE.MeshLambertMaterial({ color: 0x38613a });
+  g.add(posMesh(new THREE.ConeGeometry(0.55, 1.3, 9), leaf, 0, 1.15, 0));
+  g.add(posMesh(new THREE.ConeGeometry(0.4, 0.9, 9), leaf, 0, 1.55, 0));
+  return g;
+}
+function furnShelf(rng) {
+  const g = new THREE.Group();
+  const c = FURN_WOOD[(rng()*FURN_WOOD.length)|0];
+  g.add(posMesh(new THREE.BoxGeometry(1.6, 2.2, 0.4), new THREE.MeshLambertMaterial({ color: c }), 0, 1.1, 0));
+  for (let i = 1; i <= 4; i++)
+    g.add(posMesh(new THREE.BoxGeometry(1.5, 0.05, 0.42), new THREE.MeshLambertMaterial({ color: 0x15161a }), 0, i*0.44, 0));
+  return g;
+}
+function furnTable(rng) {
+  const g = new THREE.Group();
+  const c = FURN_WOOD[(rng()*FURN_WOOD.length)|0];
+  g.add(posMesh(new THREE.CylinderGeometry(0.7, 0.7, 0.06, 20), new THREE.MeshLambertMaterial({ color: c }), 0, 0.74, 0));
+  g.add(posMesh(new THREE.CylinderGeometry(0.08, 0.12, 0.74, 10), new THREE.MeshLambertMaterial({ color: 0x202024 }), 0, 0.37, 0));
+  return g;
+}
+function furnLamp(rng) {
+  const g = new THREE.Group();
+  g.add(posMesh(new THREE.CylinderGeometry(0.05, 0.09, 1.6, 10), new THREE.MeshLambertMaterial({ color: 0x202024 }), 0, 0.8, 0));
+  g.add(posMesh(new THREE.ConeGeometry(0.34, 0.4, 14, 1, true), new THREE.MeshLambertMaterial({ color: 0xe8d9ad, side: THREE.DoubleSide }), 0, 1.7, 0));
+  return g;
+}
+function furnCounter(rng) {
+  const g = new THREE.Group();
+  g.add(posMesh(new THREE.BoxGeometry(3.0, 1.05, 0.7), new THREE.MeshLambertMaterial({ color: 0x3a3c44 }), 0, 0.52, 0));
+  g.add(posMesh(new THREE.BoxGeometry(3.1, 0.08, 0.8), new THREE.MeshLambertMaterial({ color: 0x15161a }), 0, 1.07, 0));
+  return g;
+}
+const FURN = [furnDesk, furnChair, furnChair, furnSofa, furnPlant, furnPlant, furnShelf, furnTable, furnLamp, furnCounter];
+
+// window wall : solid spandrel + header + pillars, open glassless gap between
+function wallAlongEdge(g, A, B, rh, wallMat, frameMat) {
+  const dx = B[0]-A[0], dz = B[1]-A[1];
+  const len = Math.hypot(dx, dz);
+  if (len < 0.5) return;
+  const mx = (A[0]+B[0])/2, mz = (A[1]+B[1])/2;
+  const rot = Math.atan2(-dz, dx);
+  const SP = 1.0, TH = 0.34;
+  let m = new THREE.Mesh(new THREE.BoxGeometry(len, SP, TH), wallMat);
+  m.position.set(mx, SP/2, mz); m.rotation.y = rot; g.add(m);
+  m = new THREE.Mesh(new THREE.BoxGeometry(len, 0.55, TH), frameMat);
+  m.position.set(mx, rh - 0.28, mz); m.rotation.y = rot; g.add(m);
+  const bays = Math.max(1, Math.round(len/9));
+  for (let i = 0; i <= bays; i++) {
+    const t = i/bays;
+    const pm = new THREE.Mesh(new THREE.BoxGeometry(0.42, rh, 0.42), frameMat);
+    pm.position.set(A[0]+dx*t, rh/2, A[1]+dz*t); pm.rotation.y = rot;
+    g.add(pm);
+  }
+}
+
+function buildRoom(b, floor) {
+  const g = new THREE.Group();
+  g.position.set(b.cx, floor * FLOOR_H, b.cz);
+  const rng = mulberry32(floorSeed(b, floor));
+  const poly = b.poly;
+  const rh = FLOOR_H - 1.0;
+  const coreW = b.coreW, coreX = b.coreInfo.x, coreZ = b.coreInfo.z;
+
+  let minx = 1e9, maxx = -1e9, minz = 1e9, maxz = -1e9;
+  for (const p of poly) {
+    minx = Math.min(minx, p[0]); maxx = Math.max(maxx, p[0]);
+    minz = Math.min(minz, p[1]); maxz = Math.max(maxz, p[1]);
+  }
+
+  // floor & ceiling -- ShapeGeometry tracks the (possibly L / triangular) plan
+  const shape = polyShape(poly);
+  const fGeo = new THREE.ShapeGeometry(shape); fGeo.rotateX(Math.PI/2);
+  const fTex = floorTex.clone();
+  fTex.wrapS = fTex.wrapT = THREE.RepeatWrapping;
+  fTex.repeat.set(0.15, 0.15);
+  fTex.needsUpdate = true;
+  const floorM = new THREE.Mesh(fGeo,
+    new THREE.MeshLambertMaterial({ map: fTex, color: b.floorTint, side: THREE.DoubleSide }));
+  floorM.position.y = 0.02;
+  g.add(floorM);
+  const cGeo = new THREE.ShapeGeometry(shape); cGeo.rotateX(Math.PI/2);
+  const ceil = new THREE.Mesh(cGeo, new THREE.MeshLambertMaterial({ color: 0x191b20, side: THREE.DoubleSide }));
+  ceil.position.y = rh;
+  g.add(ceil);
+
+  // window walls along every footprint edge
+  const wallMat  = new THREE.MeshLambertMaterial({ color: b.wallColor });
+  const frameMat = new THREE.MeshLambertMaterial({ color: 0x101013 });
+  for (let i = 0; i < poly.length; i++)
+    wallAlongEdge(g, poly[i], poly[(i+1) % poly.length], rh, wallMat, frameMat);
+
+  // central core / elevator shaft
+  const core = new THREE.Mesh(new THREE.BoxGeometry(coreW, rh, coreW), M(0x24262e));
+  core.position.set(coreX, rh/2, coreZ);
+  g.add(core);
+  g.add(posMesh(new THREE.BoxGeometry(0.5, 1.6, 0.06), M(0x0c0d10), coreX + coreW/2 + 0.04, 1.3, coreZ));
+
+  // a procedural-art frame on each core face
+  const faces = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  faces.forEach((n, i) => {
+    const art = makeArtTexture(mulberry32(floorSeed(b, floor) ^ ((i + 7) * 0x85ebca6b)));
+    const fw = coreW - 1.0, fh = Math.min(rh - 1.5, fw * 0.72);
+    const px = coreX + n[0] * (coreW/2 + 0.05);
+    const pz = coreZ + n[1] * (coreW/2 + 0.05);
+    const cy = 0.9 + fh/2;
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(fw + 0.3, fh + 0.3, 0.1), M(0x141414));
+    frame.position.set(px, cy, pz);
+    frame.lookAt(px + n[0], cy, pz + n[1]);
+    g.add(frame);
+    const pic = new THREE.Mesh(new THREE.PlaneGeometry(fw, fh), new THREE.MeshBasicMaterial({ map: art }));
+    pic.position.set(px + n[0]*0.06, cy, pz + n[1]*0.06);
+    pic.lookAt(px + n[0]*2, cy, pz + n[1]*2);
+    g.add(pic);
+  });
+
+  // ceiling light fixtures + a soft room light
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    const lx = coreX + sx*(coreW*0.5 + 4), lz = coreZ + sz*(coreW*0.5 + 4);
+    if (pointInPoly(lx, lz, poly))
+      g.add(posMesh(new THREE.BoxGeometry(1.4, 0.08, 1.4),
+        new THREE.MeshBasicMaterial({ color: 0xfff0cf }), lx, rh - 0.06, lz));
+  }
+  const lamp = new THREE.PointLight(0xffe6c2, 0.55, Math.max(b.bw, b.bd) * 1.3, 2);
+  lamp.position.set(coreX, rh - 0.4, coreZ);
+  g.add(lamp);
+
+  // deterministic procedural furniture
+  const items = 6 + ((rng()*8)|0);
+  for (let i = 0; i < items; i++) {
+    const build = FURN[(rng()*FURN.length)|0];
+    let x = 0, z = 0, ok = false;
+    for (let t = 0; t < 16 && !ok; t++) {
+      x = minx + rng()*(maxx-minx);
+      z = minz + rng()*(maxz-minz);
+      ok = pointInPoly(x, z, poly) && edgeDist(x, z, poly) > 1.4 &&
+           Math.max(Math.abs(x-coreX), Math.abs(z-coreZ)) > coreW/2 + 1.3;
+    }
+    if (!ok) continue;
+    const item = build(rng);
+    item.position.set(x, 0, z);
+    item.rotation.y = ((rng()*4)|0) * Math.PI/2;
+    g.add(item);
+  }
+  // a rug
+  if (rng() < 0.8) {
+    let x = 0, z = 0, ok = false;
+    for (let t = 0; t < 16 && !ok; t++) {
+      x = minx + rng()*(maxx-minx);
+      z = minz + rng()*(maxz-minz);
+      ok = pointInPoly(x, z, poly) && edgeDist(x, z, poly) > 2.5 &&
+           Math.max(Math.abs(x-coreX), Math.abs(z-coreZ)) > coreW/2 + 2;
+    }
+    if (ok) {
+      const rug = new THREE.Mesh(
+        new THREE.PlaneGeometry(2.5 + rng()*2, 1.8 + rng()*1.6),
+        M([0x5a1f1f, 0x1f3a4a, 0x3a3a22, 0x402a44][(rng()*4)|0])
+      );
+      rug.rotation.x = -Math.PI/2;
+      rug.position.set(x, 0.03, z);
+      g.add(rug);
+    }
+  }
+  return g;
+}
+
+// ---------------------------------------------------------------------------
+// State + navigation
+// ---------------------------------------------------------------------------
+let currentBuilding = buildings.find(b => b.gx === 0 && b.gz === 0) || buildings[0];
+let currentFloor = 0;
+let hoverTarget = null;
+
+function rebuildRoom() {
+  if (roomGroup) { sceneNear.remove(roomGroup); disposeRoom(roomGroup); }
+  roomGroup = buildRoom(currentBuilding, currentFloor);
+  sceneNear.add(roomGroup);
+}
+function placeCamera(faceCore) {
+  const b = currentBuilding;
+  const baseY = currentFloor * FLOOR_H;
+  const ci = b.coreInfo;
+  cameraNear.position.set(
+    b.cx + ci.x + (b.coreW/2 + 5),
+    baseY + EYE,
+    b.cz + ci.z + (b.coreW/2 + 5)
+  );
+  clampToRoom();
+  if (faceCore) cameraNear.lookAt(b.cx + ci.x, baseY + 1.5, b.cz + ci.z);
+}
+function teleport(b, floor) {
+  currentBuilding = b;
+  currentFloor = Math.max(0, Math.min(b.floors - 1, floor));
+  rebuildRoom();
+  placeCamera(true);
+  hoverTarget = null;
+  highlight.visible = false;
+  updateHud();
+}
+function changeFloor(delta) {
+  const nf = Math.max(0, Math.min(currentBuilding.floors - 1, currentFloor + delta));
+  if (nf === currentFloor) return;
+  currentFloor = nf;
+  rebuildRoom();
+  cameraNear.position.y = currentFloor * FLOOR_H + EYE;
+  clampToRoom();
+  updateHud();
+}
+
+const hudTxt = document.getElementById('hudtxt');
+function updateHud() {
+  const b = currentBuilding;
+  hudTxt.innerHTML = `<b>${b.name}</b> &nbsp; floor <b>${currentFloor + 1}</b> / ${b.floors}` +
+    `<span class="dim"> &nbsp;&middot;&nbsp; Q/E change floor &middot; aim &amp; click a tower to travel</span>`;
+}
+
+teleport(currentBuilding, Math.floor(currentBuilding.floors / 2));
+
+// ---------------------------------------------------------------------------
+// Controls
+// ---------------------------------------------------------------------------
+const controls = new PointerLockControls(cameraNear, renderer.domElement);
+const blocker = document.getElementById('blocker');
+blocker.addEventListener('click', () => controls.lock());
+controls.addEventListener('lock',   () => blocker.classList.add('hidden'));
+controls.addEventListener('unlock', () => blocker.classList.remove('hidden'));
+
+const keys = {};
+addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (e.code === 'KeyE') changeFloor(1);
+  if (e.code === 'KeyQ') changeFloor(-1);
+});
+addEventListener('keyup', e => { keys[e.code] = false; });
+
+const dir = new THREE.Vector3();
+const clock = new THREE.Clock();
+
+function clampToRoom() {
+  const p = cameraNear.position;
+  const b = currentBuilding;
+  let lx = p.x - b.cx, lz = p.z - b.cz;
+  const cl = clampInsidePoly(lx, lz, b.poly, 0.7);
+  lx = cl[0]; lz = cl[1];
+  const c = b.coreW/2 + 0.45, kx = b.coreInfo.x, kz = b.coreInfo.z;
+  if (Math.abs(lx - kx) < c && Math.abs(lz - kz) < c) {
+    const ox = lx - kx, oz = lz - kz;
+    if (Math.abs(ox) > Math.abs(oz)) lx = kx + Math.sign(ox || 1)*c;
+    else                             lz = kz + Math.sign(oz || 1)*c;
+  }
+  p.x = b.cx + lx;
+  p.z = b.cz + lz;
+  p.y = currentFloor * FLOOR_H + EYE;
+}
+function updateMovement(dt) {
+  if (!controls.isLocked) return;
+  const sprint = keys['ShiftLeft'] || keys['ShiftRight'];
+  const speed = sprint ? 14 : 5.5;
+  dir.z = (keys['KeyW'] ? 1 : 0) - (keys['KeyS'] ? 1 : 0);
+  dir.x = (keys['KeyD'] ? 1 : 0) - (keys['KeyA'] ? 1 : 0);
+  if (dir.lengthSq() > 0) dir.normalize();
+  controls.moveRight(dir.x * speed * dt);
+  controls.moveForward(dir.z * speed * dt);
+  clampToRoom();
+}
+
+// ---------------------------------------------------------------------------
+// Picking : aim crosshair at a tower segment (only when near a window)
+// ---------------------------------------------------------------------------
+const raycaster = new THREE.Raycaster();
+const crossEl = document.getElementById('cross');
+const hintEl  = document.getElementById('hint');
+
+function findBuilding(obj) {
+  while (obj) { if (obj.userData && obj.userData.building) return obj.userData.building; obj = obj.parent; }
+  return null;
+}
+function nearWindow() {
+  const p = cameraNear.position, b = currentBuilding;
+  return edgeDist(p.x - b.cx, p.z - b.cz, b.poly) < 5.5;
+}
+function updatePicking() {
+  hoverTarget = null;
+  highlight.visible = false;
+  crossEl.classList.remove('target');
+  hintEl.style.display = 'none';
+  if (!controls.isLocked || !nearWindow()) return;
+
+  raycaster.setFromCamera({ x: 0, y: 0 }, cameraMid);
+  const hits = raycaster.intersectObject(sceneMid, true);
+  if (!hits.length) return;
+  const hit = hits[0];
+  const b = findBuilding(hit.object);
+  if (!b || b.type !== 'tower' || b === currentBuilding) return;
+
+  const floor = Math.max(0, Math.min(b.floors - 1, Math.floor(hit.point.y / FLOOR_H)));
+  highlight.position.set(b.cx + b.bcx, (floor + 0.5) * FLOOR_H, b.cz + b.bcz);
+  highlight.scale.set(b.bw + 0.6, FLOOR_H * 0.96, b.bd + 0.6);
+  highlight.visible = true;
+  crossEl.classList.add('target');
+  hintEl.style.display = 'block';
+  hintEl.textContent = `${b.name} — floor ${floor + 1} / ${b.floors}  ·  click to travel`;
+  hoverTarget = { building: b, floor };
+}
+
+document.addEventListener('click', () => {
+  if (controls.isLocked && hoverTarget) teleport(hoverTarget.building, hoverTarget.floor);
+});
+
+// ---------------------------------------------------------------------------
+// Resize
+// ---------------------------------------------------------------------------
+addEventListener('resize', () => {
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  for (const c of [cameraNear, cameraMid, cameraFar]) {
+    c.aspect = aspect();
+    c.updateProjectionMatrix();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Depth-partitioned render : far -> clearDepth -> mid -> clearDepth -> near
+// ---------------------------------------------------------------------------
+function syncCameras() {
+  cameraMid.position.copy(cameraNear.position);
+  cameraMid.quaternion.copy(cameraNear.quaternion);
+  cameraFar.position.copy(cameraNear.position);
+  cameraFar.quaternion.copy(cameraNear.quaternion);
+}
+function frame() {
+  const dt = Math.min(0.1, clock.getDelta());
+  updateMovement(dt);
+  syncCameras();
+  updatePicking();
+
+  renderer.clear(true, true, true);
+  renderer.render(sceneFar, cameraFar);
+  renderer.clearDepth();
+  renderer.render(sceneMid, cameraMid);
+  renderer.clearDepth();
+  renderer.render(sceneNear, cameraNear);
+
+  requestAnimationFrame(frame);
+}
+frame();
+</script>
+</body>
+</html>
