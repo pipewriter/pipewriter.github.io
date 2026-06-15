@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Drowned Trail Home — A Volumetric Ocean Memory Walk</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#01242c;font-family:'Georgia',serif;cursor:default;}
+  #c{display:block;width:100%;height:100%;}
+  #ui{position:fixed;inset:0;pointer-events:none;color:#dff7ff;}
+  #title{
+    position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+    text-align:center;width:90%;max-width:680px;pointer-events:auto;
+    background:rgba(2,30,38,0.55);padding:34px 30px;border-radius:14px;
+    border:1px solid rgba(120,220,255,0.25);box-shadow:0 0 60px rgba(0,40,60,0.6);
+    backdrop-filter:blur(3px);
+  }
+  #title h1{margin:0 0 10px;font-size:30px;font-weight:normal;letter-spacing:1px;
+    color:#bfefff;text-shadow:0 0 24px rgba(80,220,255,0.6);}
+  #title p{margin:8px 0;font-size:15px;line-height:1.5;color:#a9dfe9;}
+  #title .keys{font-size:13px;color:#7fc4d6;margin-top:14px;}
+  #begin{
+    margin-top:18px;display:inline-block;padding:12px 30px;font-size:17px;
+    font-family:inherit;color:#031820;background:linear-gradient(#9af0ff,#46c8e6);
+    border:none;border-radius:30px;cursor:pointer;letter-spacing:1px;
+    box-shadow:0 0 30px rgba(90,220,255,0.5);
+  }
+  #begin:hover{background:linear-gradient(#bdf6ff,#5fd6f0);}
+  #hud{position:absolute;left:0;right:0;bottom:26px;text-align:center;opacity:0;transition:opacity 1s;}
+  #bar{width:300px;height:6px;margin:0 auto;background:rgba(180,240,255,0.15);border-radius:4px;overflow:hidden;}
+  #fill{height:100%;width:0%;background:linear-gradient(90deg,#34d6c0,#9af0ff);box-shadow:0 0 12px #6fe6ff;}
+  #loc{font-size:15px;margin-top:9px;color:#cdeef7;letter-spacing:2px;min-height:20px;
+    text-shadow:0 0 16px rgba(70,200,255,0.7);transition:opacity .6s;}
+  #loc small{display:block;font-size:11px;letter-spacing:3px;color:#6fb8cc;margin-top:2px;}
+  #end{
+    position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    flex-direction:column;opacity:0;pointer-events:none;transition:opacity 2.5s;
+    background:radial-gradient(circle at center,rgba(120,240,255,0.12),rgba(2,30,40,0.85));
+  }
+  #end h1{font-size:42px;font-weight:normal;color:#eafdff;text-shadow:0 0 40px rgba(120,240,255,0.9);letter-spacing:3px;}
+  #end p{color:#bfeaf5;font-size:16px;max-width:560px;text-align:center;line-height:1.6;}
+  #vig{position:absolute;inset:0;pointer-events:none;
+    box-shadow:inset 0 0 220px 60px rgba(0,20,30,0.85);}
+  #tint{position:absolute;inset:0;pointer-events:none;background:rgba(10,80,90,0.04);mix-blend-mode:screen;}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div id="vig"></div>
+  <div id="tint"></div>
+  <div id="hud">
+    <div id="loc"></div>
+    <div id="bar"><div id="fill"></div></div>
+  </div>
+  <div id="title">
+    <h1>The Drowned Trail Home</h1>
+    <p>The sun is sinking and the tide is turning. You are far out along the reef, and
+       you must follow the old path home before the dark water closes in — no map, no star,
+       only the things you have learned to <em>remember</em>.</p>
+    <p>Walk past the eight markers your people have always used. Notice each one.
+       Burn its shape, its colour, its sound into your mind. One day you will need to find
+       your way back in the black.</p>
+    <p class="keys">▸ Move: <b>W A S D</b> &nbsp;·&nbsp; Look: <b>Mouse</b> &nbsp;·&nbsp; Follow the glowing pearls. The walk takes about one minute.</p>
+    <button id="begin">Wade In ▸</button>
+  </div>
+  <div id="end">
+    <h1>You Are Home.</h1>
+    <p>You followed the kelp gate, the drowned anchor, the ring of lights, the red arch,
+       the great ribs, the breathing clams, and the silver storm of fish — and the water brought you home.
+       <br><br>Close your eyes. Can you still walk it backward?</p>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* ============================================================
+   THE DROWNED TRAIL HOME
+   A first-person volumetric ocean memory-walk.
+   Technique: raymarched volumetric fog + god-ray light shafts
+   reconstructed from the scene depth buffer.
+   ============================================================ */
+
+const TRAIL_LEN = 230;          // walk runs from z=0 to z=-TRAIL_LEN
+const EYE_Y = 2.6;
+const SURFACE_Y = 26.0;
+const FOG_COLOR = new THREE.Color(0.018, 0.16, 0.21);
+const SUN_COLOR = new THREE.Color(0.72, 1.0, 0.9);
+const SUN_DIR = new THREE.Vector3(0.18, 1.0, 0.35).normalize();
+
+// ---- value noise (CPU, for terrain + scatter) ----
+function hash2(x, y){ const s = Math.sin(x*127.1 + y*311.7) * 43758.5453; return s - Math.floor(s); }
+function vnoise(x, y){
+  const ix=Math.floor(x), iy=Math.floor(y), fx=x-ix, fy=y-iy;
+  const a=hash2(ix,iy), b=hash2(ix+1,iy), c=hash2(ix,iy+1), d=hash2(ix+1,iy+1);
+  const ux=fx*fx*(3-2*fx), uy=fy*fy*(3-2*fy);
+  return a*(1-ux)*(1-uy)+b*ux*(1-uy)+c*(1-ux)*uy+d*ux*uy;
+}
+function terrainH(x, z){
+  return vnoise(x*0.03+9, z*0.03+4)*3.0 + vnoise(x*0.09, z*0.09)*1.0 - 1.0;
+}
+
+// ---- renderer / scene / camera ----
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+const scene = new THREE.Scene();
+scene.background = FOG_COLOR.clone();
+
+const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.1, 600);
+camera.rotation.order = 'YXZ';
+camera.position.set(0, EYE_Y, 4);
+
+// render target with depth texture (for the volumetric pass)
+function makeTarget(w,h){
+  const dt = new THREE.DepthTexture(w,h);
+  dt.type = THREE.UnsignedIntType;
+  return new THREE.WebGLRenderTarget(w,h,{
+    minFilter:THREE.LinearFilter, magFilter:THREE.LinearFilter,
+    depthTexture:dt, depthBuffer:true
+  });
+}
+let rt = makeTarget(innerWidth*renderer.getPixelRatio()|0, innerHeight*renderer.getPixelRatio()|0);
+
+// ---- lights ----
+scene.add(new THREE.HemisphereLight(0x9fe8ff, 0x06303a, 1.15));
+const sun = new THREE.DirectionalLight(0xcdfff0, 1.5);
+sun.position.copy(SUN_DIR).multiplyScalar(60);
+scene.add(sun);
+
+// ============================================================
+//  SEAFLOOR
+// ============================================================
+{
+  const g = new THREE.PlaneGeometry(420, 520, 140, 160);
+  const p = g.attributes.position;
+  for(let i=0;i<p.count;i++){
+    const x=p.getX(i), y=p.getY(i);          // y is world-Z after rotation
+    p.setZ(i, terrainH(x, -y));
+  }
+  g.computeVertexNormals();
+  const m = new THREE.MeshStandardMaterial({ color:0x244b4a, roughness:1, metalness:0, flatShading:false });
+  const floor = new THREE.Mesh(g, m);
+  floor.rotation.x = -Math.PI/2;
+  floor.position.z = -TRAIL_LEN/2;
+  scene.add(floor);
+}
+
+// scattered rocks
+for(let i=0;i<70;i++){
+  const x=(hash2(i,7)*2-1)*120, z=-hash2(i,3)*(TRAIL_LEN+60)+20;
+  if(Math.abs(x)<6) continue;
+  const s=0.6+hash2(i,11)*2.4;
+  const r=new THREE.Mesh(new THREE.DodecahedronGeometry(s,0),
+    new THREE.MeshStandardMaterial({color:0x2c4a4d,roughness:1,flatShading:true}));
+  r.position.set(x, terrainH(x,z)+s*0.4, z);
+  r.rotation.set(hash2(i,1)*6,hash2(i,2)*6,hash2(i,4)*6);
+  scene.add(r);
+}
+
+// ============================================================
+//  GUIDING PEARLS — a glowing path of stones on the seafloor
+// ============================================================
+const pearlMat = new THREE.MeshStandardMaterial({color:0xbff6ff,emissive:0x66e6ff,emissiveIntensity:1.6,roughness:0.3});
+const pearls=[];
+for(let z=2; z>-TRAIL_LEN-4; z-=4){
+  const wob=Math.sin(z*0.06)*2.4;            // gentle winding path
+  for(const side of [-1,1]){
+    const x=wob+side*1.7;
+    const pe=new THREE.Mesh(new THREE.SphereGeometry(0.22,10,8),pearlMat);
+    pe.position.set(x, terrainH(x,z)+0.4, z);
+    scene.add(pe); pearls.push(pe);
+  }
+}
+
+// ============================================================
+//  ANIMATED COLLECTIONS
+// ============================================================
+const swayers=[];      // {mesh, amp, freq, phase, axis}
+const jellies=[];
+const clams=[];
+let fishVortex=null, fishPivot=null;
+
+function registerSway(mesh,amp,freq,phase){ swayers.push({mesh,amp,freq,phase:phase||0}); }
+
+// ---- 1. KELP GATEWAY (green, towering, swaying) ----
+function kelpStrand(x,z,h,hue){
+  const grp=new THREE.Group();
+  const seg=10, geomH=h/seg;
+  const mat=new THREE.MeshStandardMaterial({color:hue,emissive:hue,emissiveIntensity:0.18,roughness:0.8,side:THREE.DoubleSide});
+  let prev=grp;
+  for(let i=0;i<seg;i++){
+    const w=0.5*(1-i/seg)+0.15;
+    const blade=new THREE.Mesh(new THREE.BoxGeometry(w,geomH,0.12),mat);
+    blade.position.y=geomH/2; blade.position.z=0;
+    const joint=new THREE.Group(); joint.position.y=(i===0?0:geomH);
+    joint.add(blade); prev.add(joint);
+    registerSway(joint,0.06+i*0.012,0.6+hash2(x+i,z)*0.4,i*0.5+x);
+    prev=joint;
+  }
+  grp.position.set(x,terrainH(x,z),z);
+  return grp;
+}
+function placeKelpGate(z){
+  for(const side of [-1,1]){
+    for(let k=0;k<6;k++){
+      const x=side*(5.5+k*0.6)+Math.sin(k)*0.5;
+      scene.add(kelpStrand(x, z+(hash2(k,side)*2-1)*2, 12+hash2(k,7)*6, side>0?0x2fae4f:0x3fc26a));
+    }
+  }
+}
+
+// ---- 2. DROWNED ANCHOR (rusty, huge, leaning) ----
+function placeAnchor(z){
+  const grp=new THREE.Group();
+  const rust=new THREE.MeshStandardMaterial({color:0x8a4a25,roughness:0.95,metalness:0.4,emissive:0x140602});
+  const shank=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.6,11,12),rust); shank.position.y=5.5; grp.add(shank);
+  const ring=new THREE.Mesh(new THREE.TorusGeometry(1.2,0.35,10,20),rust); ring.position.y=11; grp.add(ring);
+  const stock=new THREE.Mesh(new THREE.CylinderGeometry(0.35,0.35,7,10),rust); stock.rotation.z=Math.PI/2; stock.position.y=9.5; grp.add(stock);
+  const arm=new THREE.Mesh(new THREE.TorusGeometry(3.2,0.5,10,24,Math.PI),rust); arm.rotation.x=Math.PI/2; arm.rotation.z=Math.PI; arm.position.y=0.6; grp.add(arm);
+  for(const s of [-1,1]){
+    const fluke=new THREE.Mesh(new THREE.ConeGeometry(1.1,2.4,4),rust);
+    fluke.position.set(s*3.2,1.6,0); fluke.rotation.z=s*0.5; grp.add(fluke);
+  }
+  grp.position.set(-7, terrainH(-7,z), z);
+  grp.rotation.set(0.28, 0.5, 0.22);   // toppled into the sand
+  scene.add(grp);
+}
+
+// ---- 3. JELLYFISH RING (pulsing blue bioluminescence) ----
+function makeJelly(x,y,z,col){
+  const grp=new THREE.Group();
+  const bellMat=new THREE.MeshStandardMaterial({color:col,emissive:col,emissiveIntensity:1.3,transparent:true,opacity:0.55,roughness:0.2});
+  const bell=new THREE.Mesh(new THREE.SphereGeometry(1.1,16,12,0,Math.PI*2,0,Math.PI*0.6),bellMat);
+  grp.add(bell);
+  const tentMat=new THREE.MeshStandardMaterial({color:col,emissive:col,emissiveIntensity:0.7,transparent:true,opacity:0.4});
+  for(let i=0;i<8;i++){
+    const a=i/8*Math.PI*2;
+    const t=new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.01,2.4,5),tentMat);
+    t.position.set(Math.cos(a)*0.5,-1.2,Math.sin(a)*0.5); grp.add(t);
+  }
+  const lite=new THREE.PointLight(col,0.9,14); lite.position.y=-0.3; grp.add(lite);
+  grp.position.set(x,y,z);
+  grp.userData={baseY:y,phase:hash2(x,z)*6,light:lite,bell};
+  scene.add(grp); jellies.push(grp);
+}
+function placeJellyRing(z){
+  for(let i=0;i<11;i++){
+    const a=i/11*Math.PI*2;
+    makeJelly(Math.cos(a)*9, 5+Math.sin(a*2)*2.5, z+Math.sin(a)*5, 0x49b6ff);
+  }
+}
+
+// ---- 4. CORAL ARCH (red/pink, walk under it) ----
+function placeCoralArch(z){
+  const grp=new THREE.Group();
+  const mat=new THREE.MeshStandardMaterial({color:0xe0436b,emissive:0x4a0a1d,roughness:0.85,flatShading:true});
+  const arch=new THREE.Mesh(new THREE.TorusGeometry(7,1.3,12,28,Math.PI),mat);
+  arch.position.y=0.5; grp.add(arch);
+  // knobby coral growths
+  for(let i=0;i<60;i++){
+    const a=hash2(i,2)*Math.PI;
+    const r=7+(hash2(i,5)*2-1)*1.3;
+    const b=new THREE.Mesh(new THREE.SphereGeometry(0.5+hash2(i,9)*0.7,7,6),
+      new THREE.MeshStandardMaterial({color:i%3?0xff6b8a:0xffb24d,emissive:0x401015,roughness:0.9,flatShading:true}));
+    b.position.set(Math.cos(a)*r, 0.5+Math.sin(a)*r, (hash2(i,3)*2-1)*1.4);
+    grp.add(b);
+  }
+  grp.position.set(Math.sin(z*0.06)*2.4, terrainH(0,z), z);
+  scene.add(grp);
+}
+
+// ---- 5. WHALE RIBCAGE (pale bone, walk through) ----
+function placeRibcage(z){
+  const grp=new THREE.Group();
+  const bone=new THREE.MeshStandardMaterial({color:0xe9e4d0,emissive:0x1a1c12,roughness:0.7,flatShading:true});
+  // spine
+  for(let i=0;i<14;i++){
+    const v=new THREE.Mesh(new THREE.SphereGeometry(0.7,8,6),bone);
+    v.position.set(0,7,-i*2.6+8); grp.add(v);
+  }
+  // ribs
+  for(let i=0;i<12;i++){
+    const zz=-i*2.6+8, scale=1-Math.abs(i-6)/9;
+    for(const s of [-1,1]){
+      const rib=new THREE.Mesh(new THREE.TorusGeometry(5*scale+1.5,0.32,8,20,Math.PI*0.85),bone);
+      rib.position.set(0,7,zz);
+      rib.rotation.z=s>0?-0.15:Math.PI+0.15;
+      rib.rotation.y=Math.PI/2;
+      grp.add(rib);
+    }
+  }
+  // skull
+  const skull=new THREE.Mesh(new THREE.ConeGeometry(2.2,7,10),bone);
+  skull.rotation.x=-Math.PI/2; skull.position.set(0,6,12); grp.add(skull);
+  grp.position.set(Math.sin(z*0.06)*2.4, terrainH(0,z)-2, z);
+  scene.add(grp);
+}
+
+// ---- 6. GIANT CLAM FIELD (purple, breathing open/closed) ----
+function makeClam(x,z,col){
+  const grp=new THREE.Group();
+  const shellMat=new THREE.MeshStandardMaterial({color:0xb59a8a,roughness:0.9,flatShading:true,side:THREE.DoubleSide});
+  const top=new THREE.Mesh(new THREE.SphereGeometry(2,16,8,0,Math.PI*2,0,Math.PI*0.5),shellMat);
+  const bot=new THREE.Mesh(new THREE.SphereGeometry(2,16,8,0,Math.PI*2,0,Math.PI*0.5),shellMat);
+  bot.rotation.x=Math.PI;
+  const hingeT=new THREE.Group(), hingeB=new THREE.Group();
+  hingeT.add(top); hingeB.add(bot);
+  const mantle=new THREE.Mesh(new THREE.SphereGeometry(1.7,16,8,0,Math.PI*2,0,Math.PI*0.5),
+    new THREE.MeshStandardMaterial({color:col,emissive:col,emissiveIntensity:1.4,roughness:0.4}));
+  grp.add(mantle); grp.add(hingeT); grp.add(hingeB);
+  const lite=new THREE.PointLight(col,0.0,10); lite.position.y=1; grp.add(lite);
+  grp.position.set(x,terrainH(x,z)+1.4,z);
+  grp.rotation.y=hash2(x,z)*6;
+  grp.userData={hingeT,hingeB,phase:hash2(x,z+3)*6,light:lite};
+  scene.add(grp); clams.push(grp);
+}
+function placeClams(z){
+  for(let i=0;i<9;i++){
+    const x=(hash2(i,21)*2-1)*11;
+    if(Math.abs(x)<2.5) continue;
+    makeClam(x, z+(hash2(i,8)*2-1)*6, [0xb14dff,0xff4dd2,0x6a4dff][i%3]);
+  }
+}
+
+// ---- 7. SILVER FISH VORTEX (spinning school) ----
+function placeFishVortex(z){
+  fishPivot=new THREE.Group();
+  fishPivot.position.set(Math.sin(z*0.06)*2.4, 9, z);
+  const N=420;
+  const geo=new THREE.ConeGeometry(0.18,0.9,5);
+  const mat=new THREE.MeshStandardMaterial({color:0xcfe9ff,emissive:0x2a4a66,metalness:0.6,roughness:0.3});
+  fishVortex=new THREE.InstancedMesh(geo,mat,N);
+  const dummy=new THREE.Object3D();
+  fishVortex.userData.params=[];
+  for(let i=0;i<N;i++){
+    const ring=Math.floor(i/60);
+    const r=4+ring*0.6+Math.sin(i)*0.4;
+    const a=i*0.39;
+    const y=(hash2(i,2)-0.5)*9;
+    fishVortex.userData.params.push({r,a,y,spd:0.6+hash2(i,5)*0.5});
+    dummy.position.set(Math.cos(a)*r,y,Math.sin(a)*r);
+    dummy.lookAt(Math.cos(a+0.1)*r,y,Math.sin(a+0.1)*r);
+    dummy.updateMatrix(); fishVortex.setMatrixAt(i,dummy.matrix);
+  }
+  fishPivot.add(fishVortex); scene.add(fishPivot);
+}
+
+// ---- 8. HOME REEF / CAIRN (bright welcoming column) ----
+function placeHome(z){
+  const grp=new THREE.Group();
+  const stoneMat=new THREE.MeshStandardMaterial({color:0x6fd8c0,emissive:0x1c4a44,roughness:0.8,flatShading:true});
+  let y=0;
+  for(let i=0;i<7;i++){ // a stacked cairn — the universal "home / here" marker
+    const s=2.2-i*0.26;
+    const st=new THREE.Mesh(new THREE.DodecahedronGeometry(s,0),stoneMat);
+    st.position.y=y+s*0.6; st.rotation.set(hash2(i,1)*6,hash2(i,2)*6,0);
+    grp.add(st); y+=s*1.1;
+  }
+  const beacon=new THREE.Mesh(new THREE.SphereGeometry(1.1,18,14),
+    new THREE.MeshStandardMaterial({color:0xfff4c2,emissive:0xffe9a0,emissiveIntensity:2.2}));
+  beacon.position.y=y+1.4; grp.add(beacon);
+  const bl=new THREE.PointLight(0xfff0c0,3,40); bl.position.y=y+1.4; grp.add(bl);
+  grp.userData={beacon};
+  grp.position.set(Math.sin(z*0.06)*2.4, terrainH(0,z), z);
+  scene.add(grp);
+  return grp;
+}
+
+// ============================================================
+//  PLACE ALL LOCI
+// ============================================================
+const LOCI=[
+  {z:-15,  name:'THE KELP GATE',     sub:'green towers swaying',   freq:196.0},
+  {z:-48,  name:'THE DROWNED ANCHOR',sub:'rust, fallen, half-buried',freq:146.8},
+  {z:-82,  name:'THE RING OF LIGHTS',sub:'eleven blue jellyfish',   freq:261.6},
+  {z:-114, name:'THE RED ARCH',      sub:'walk beneath the coral',  freq:329.6},
+  {z:-146, name:'THE GREAT RIBS',    sub:'a whale, long dead',      freq:174.6},
+  {z:-178, name:'THE BREATHING CLAMS',sub:'purple, opening, closing',freq:392.0},
+  {z:-208, name:'THE SILVER STORM',  sub:'a thousand fish, turning',freq:493.9},
+  {z:-228, name:'HOME',              sub:'the cairn, the warm light',freq:523.3},
+];
+placeKelpGate(LOCI[0].z);
+placeAnchor(LOCI[1].z);
+placeJellyRing(LOCI[2].z);
+placeCoralArch(LOCI[3].z);
+placeRibcage(LOCI[4].z);
+placeClams(LOCI[5].z);
+placeFishVortex(LOCI[6].z);
+const homeGrp=placeHome(LOCI[7].z);
+
+// ============================================================
+//  MARINE SNOW (drifting particles add volume cues)
+// ============================================================
+const SNOW=1400;
+const snowGeo=new THREE.BufferGeometry();
+const snowPos=new Float32Array(SNOW*3);
+for(let i=0;i<SNOW;i++){
+  snowPos[i*3]=(Math.random()*2-1)*80;
+  snowPos[i*3+1]=Math.random()*30;
+  snowPos[i*3+2]=-Math.random()*(TRAIL_LEN+40)+10;
+}
+snowGeo.setAttribute('position',new THREE.BufferAttribute(snowPos,3));
+const snow=new THREE.Points(snowGeo,new THREE.PointsMaterial({color:0xcdeef7,size:0.12,transparent:true,opacity:0.55,depthWrite:false}));
+scene.add(snow);
+
+// ============================================================
+//  VOLUMETRIC RENDERING PASS
+//  Fullscreen raymarch through fog using reconstructed world
+//  position from the depth buffer + vertical god-ray shafts.
+// ============================================================
+const volUniforms={
+  tColor:{value:rt.texture},
+  tDepth:{value:rt.depthTexture},
+  invViewProj:{value:new THREE.Matrix4()},
+  camPos:{value:new THREE.Vector3()},
+  time:{value:0},
+  resolution:{value:new THREE.Vector2(innerWidth,innerHeight)},
+  fogColor:{value:FOG_COLOR},
+  sunColor:{value:SUN_COLOR},
+  surfaceY:{value:SURFACE_Y},
+};
+const volMat=new THREE.ShaderMaterial({
+  uniforms:volUniforms,
+  vertexShader:`varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position.xy,0.0,1.0);} `,
+  fragmentShader:`
+    precision highp float;
+    varying vec2 vUv;
+    uniform sampler2D tColor, tDepth;
+    uniform mat4 invViewProj;
+    uniform vec3 camPos, fogColor, sunColor;
+    uniform float time, surfaceY;
+    uniform vec2 resolution;
+
+    float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+    float noise(vec2 p){
+      vec2 i=floor(p), f=fract(p);
+      float a=hash(i),b=hash(i+vec2(1,0)),c=hash(i+vec2(0,1)),d=hash(i+vec2(1,1));
+      vec2 u=f*f*(3.-2.*f);
+      return mix(mix(a,b,u.x),mix(c,d,u.x),u.y);
+    }
+    vec3 worldFromDepth(vec2 uv,float depth){
+      vec4 ndc=vec4(uv*2.-1.,depth*2.-1.,1.0);
+      vec4 w=invViewProj*ndc;
+      return w.xyz/w.w;
+    }
+    void main(){
+      vec3 color=texture2D(tColor,vUv).rgb;
+      float depth=texture2D(tDepth,vUv).x;
+      vec3 wp=worldFromDepth(vUv,depth);
+      vec3 dir=normalize(wp-camPos);
+      float sceneDist=(depth>=0.9999)?420.0:length(wp-camPos);
+      float maxD=min(sceneDist,200.0);
+
+      const int STEPS=48;
+      float stepSize=maxD/float(STEPS);
+      float jitter=hash(vUv*resolution.xy+time);
+      float t=stepSize*jitter;
+      vec3 accum=vec3(0.0);
+      float transmittance=1.0;
+
+      for(int i=0;i<STEPS;i++){
+        if(t>maxD) break;
+        vec3 p=camPos+dir*t;
+        // base water density, denser deeper / with drifting noise
+        float dens=0.020*(1.0+0.7*noise(p.xz*0.05+time*0.04));
+        // vertical god-ray shafts: sharp beams in xz, fading with depth
+        float beam=noise(p.xz*0.05+vec2(time*0.03,time*0.05));
+        beam=pow(beam,4.0)*1.6;
+        beam+=pow(noise(p.xz*0.13-vec2(time*0.06,0.0)),6.0)*1.2;
+        float below=clamp((surfaceY-p.y)/surfaceY,0.0,1.0);
+        float shaft=beam*exp(-below*1.7);
+        vec3 inscat=fogColor*0.55 + sunColor*shaft*2.6;
+        float dT=exp(-dens*stepSize);
+        accum+=transmittance*(1.0-dT)*inscat;
+        transmittance*=dT;
+        t+=stepSize;
+      }
+      vec3 outc=color*transmittance+accum;
+      // subtle depth blue-shift
+      outc=mix(outc,fogColor,(1.0-transmittance)*0.15);
+      gl_FragColor=vec4(outc,1.0);
+    }
+  `
+});
+const volScene=new THREE.Scene();
+const volCam=new THREE.OrthographicCamera(-1,1,1,-1,0,1);
+volScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2,2),volMat));
+
+// ============================================================
+//  CONTROLS (manual pointer-lock first person)
+// ============================================================
+let yaw=0, pitch=0, started=false, finished=false;
+const keys={};
+addEventListener('keydown',e=>keys[e.code]=true);
+addEventListener('keyup',e=>keys[e.code]=false);
+document.addEventListener('mousemove',e=>{
+  if(document.pointerLockElement!==canvas) return;
+  yaw-=e.movementX*0.0022;
+  pitch-=e.movementY*0.0022;
+  pitch=Math.max(-1.2,Math.min(1.2,pitch));
+});
+
+// ============================================================
+//  AUDIO — ambient drone + a unique tone for each locus
+//  (multisensory cues dramatically aid spatial memory)
+// ============================================================
+let audioCtx=null, master=null;
+function initAudio(){
+  audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+  master=audioCtx.createGain(); master.gain.value=0.5; master.connect(audioCtx.destination);
+  // deep ocean drone
+  [55,55.5,82].forEach((f,i)=>{
+    const o=audioCtx.createOscillator(); o.type='sine'; o.frequency.value=f;
+    const g=audioCtx.createGain(); g.gain.value=i===2?0.04:0.06;
+    o.connect(g); g.connect(master); o.start();
+  });
+  // filtered noise "water"
+  const buf=audioCtx.createBuffer(1,audioCtx.sampleRate*2,audioCtx.sampleRate);
+  const d=buf.getChannelData(0); for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1;
+  const src=audioCtx.createBufferSource(); src.buffer=buf; src.loop=true;
+  const flt=audioCtx.createBiquadFilter(); flt.type='lowpass'; flt.frequency.value=420;
+  const ng=audioCtx.createGain(); ng.gain.value=0.05;
+  src.connect(flt); flt.connect(ng); ng.connect(master); src.start();
+}
+function chime(freq){
+  if(!audioCtx) return;
+  const o=audioCtx.createOscillator(); o.type='triangle';
+  const o2=audioCtx.createOscillator(); o2.type='sine'; o2.frequency.value=freq*2;
+  const g=audioCtx.createGain();
+  o.frequency.value=freq; g.gain.value=0;
+  const now=audioCtx.currentTime;
+  g.gain.linearRampToValueAtTime(0.22,now+0.04);
+  g.gain.exponentialRampToValueAtTime(0.0001,now+2.2);
+  o.connect(g); o2.connect(g); g.connect(master);
+  o.start(now); o2.start(now); o.stop(now+2.3); o2.stop(now+2.3);
+}
+
+// ============================================================
+//  UI / FLOW
+// ============================================================
+const elTitle=document.getElementById('title');
+const elHud=document.getElementById('hud');
+const elFill=document.getElementById('fill');
+const elLoc=document.getElementById('loc');
+const elEnd=document.getElementById('end');
+let triggered=new Array(LOCI.length).fill(false);
+
+document.getElementById('begin').addEventListener('click',()=>{
+  initAudio();
+  elTitle.style.display='none';
+  elHud.style.opacity='1';
+  started=true;
+  canvas.requestPointerLock();
+});
+canvas.addEventListener('click',()=>{ if(started&&!finished) canvas.requestPointerLock(); });
+
+function showLocus(i){
+  elLoc.style.opacity='0';
+  setTimeout(()=>{
+    elLoc.innerHTML=LOCI[i].name+'<small>'+LOCI[i].sub+'</small>';
+    elLoc.style.opacity='1';
+  },300);
+  chime(LOCI[i].freq);
+}
+
+// ============================================================
+//  MAIN LOOP
+// ============================================================
+const clock=new THREE.Clock();
+const fwd=new THREE.Vector3(), right=new THREE.Vector3();
+const tmpVP=new THREE.Matrix4();
+
+function resize(){
+  const w=innerWidth,h=innerHeight,pr=renderer.getPixelRatio();
+  renderer.setSize(w,h);
+  camera.aspect=w/h; camera.updateProjectionMatrix();
+  rt.setSize(w*pr|0,h*pr|0);
+  volUniforms.resolution.value.set(w*pr,h*pr);
+}
+addEventListener('resize',resize);
+
+function animate(){
+  requestAnimationFrame(animate);
+  const dt=Math.min(clock.getDelta(),0.05);
+  const t=clock.elapsedTime;
+
+  // --- movement ---
+  if(started&&!finished){
+    camera.rotation.y=yaw; camera.rotation.x=pitch;
+    fwd.set(-Math.sin(yaw),0,-Math.cos(yaw));
+    right.set(Math.cos(yaw),0,-Math.sin(yaw));
+    const sp=6.2*dt;
+    if(keys['KeyW']) camera.position.addScaledVector(fwd,sp);
+    if(keys['KeyS']) camera.position.addScaledVector(fwd,-sp*0.7);
+    if(keys['KeyA']) camera.position.addScaledVector(right,-sp*0.8);
+    if(keys['KeyD']) camera.position.addScaledVector(right,sp*0.8);
+    // constrain to the trail corridor
+    camera.position.x=Math.max(-22,Math.min(22,camera.position.x));
+    camera.position.z=Math.max(-TRAIL_LEN-2,Math.min(8,camera.position.z));
+    // bob + float along seafloor
+    const floorY=terrainH(camera.position.x,camera.position.z)+EYE_Y;
+    camera.position.y+=(floorY-camera.position.y)*0.1 + Math.sin(t*2.0)*0.004;
+
+    // progress + locus triggers
+    const prog=Math.max(0,Math.min(1,(-camera.position.z)/TRAIL_LEN));
+    elFill.style.width=(prog*100).toFixed(1)+'%';
+    for(let i=0;i<LOCI.length;i++){
+      if(!triggered[i] && camera.position.z < LOCI[i].z+9){ triggered[i]=true; showLocus(i); }
+    }
+    if(camera.position.z < LOCI[LOCI.length-1].z+3 && !finished){
+      finished=true;
+      elEnd.style.opacity='1';
+      document.exitPointerLock();
+      if(audioCtx){ chime(523.3); setTimeout(()=>chime(659.3),250); setTimeout(()=>chime(784.0),550); }
+    }
+  }
+
+  // --- animate features ---
+  for(const s of swayers){
+    s.mesh.rotation.z=Math.sin(t*s.freq+s.phase)*s.amp;
+    s.mesh.rotation.x=Math.cos(t*s.freq*0.7+s.phase)*s.amp*0.5;
+  }
+  for(const j of jellies){
+    const u=j.userData;
+    const pulse=0.5+0.5*Math.sin(t*1.4+u.phase);
+    j.position.y=u.baseY+Math.sin(t*0.6+u.phase)*0.8;
+    j.scale.y=0.85+pulse*0.3; j.scale.x=j.scale.z=1.1-pulse*0.18;
+    u.light.intensity=0.5+pulse*1.1;
+    u.bell.material.emissiveIntensity=0.8+pulse*1.2;
+  }
+  for(const c of clams){
+    const u=c.userData;
+    const open=(Math.sin(t*0.8+u.phase)*0.5+0.5);
+    u.hingeT.rotation.x=-open*0.5; u.hingeB.rotation.x=open*0.5;
+    u.light.intensity=open*1.6;
+  }
+  if(fishVortex){
+    fishPivot.rotation.y=t*0.18;
+    const dummy=new THREE.Object3D(), P=fishVortex.userData.params;
+    for(let i=0;i<P.length;i++){
+      const p=P[i]; const a=p.a+t*p.spd;
+      const y=p.y+Math.sin(t*0.8+i)*0.5;
+      const x=Math.cos(a)*p.r, z=Math.sin(a)*p.r;
+      dummy.position.set(x,y,z);
+      dummy.lookAt(Math.cos(a+0.08)*p.r,y,Math.sin(a+0.08)*p.r);
+      dummy.updateMatrix(); fishVortex.setMatrixAt(i,dummy.matrix);
+    }
+    fishVortex.instanceMatrix.needsUpdate=true;
+  }
+  homeGrp.userData.beacon.material.emissiveIntensity=1.8+Math.sin(t*2.0)*0.6;
+  // marine snow drift
+  const sp2=snow.geometry.attributes.position;
+  for(let i=0;i<SNOW;i++){
+    let y=sp2.getY(i)-dt*0.4;
+    if(y<0) y=30;
+    sp2.setY(i,y+Math.sin(t+i)*0.002);
+  }
+  sp2.needsUpdate=true;
+  pearlMat.emissiveIntensity=1.2+Math.sin(t*1.5)*0.5;
+
+  // --- render scene to target ---
+  renderer.setRenderTarget(rt);
+  renderer.render(scene,camera);
+
+  // --- volumetric pass to screen ---
+  camera.updateMatrixWorld();
+  tmpVP.multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse);
+  volUniforms.invViewProj.value.copy(tmpVP).invert();
+  volUniforms.camPos.value.copy(camera.position);
+  volUniforms.time.value=t;
+  renderer.setRenderTarget(null);
+  renderer.render(volScene,volCam);
+}
+animate();
+</script>
+</body>
+</html>

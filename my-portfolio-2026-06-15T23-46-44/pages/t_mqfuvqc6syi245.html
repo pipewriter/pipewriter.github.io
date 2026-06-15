@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Vivid Swamp Trail — A Walk Home</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#06120f;font-family:'Georgia',serif;color:#dff5ea;}
+  #c{display:block;width:100vw;height:100vh;}
+  .hud{position:fixed;pointer-events:none;user-select:none;}
+
+  /* Progress bar */
+  #progWrap{left:50%;top:18px;transform:translateX(-50%);width:min(560px,70vw);}
+  #progBar{height:7px;border-radius:6px;background:rgba(0,0,0,.45);box-shadow:0 0 0 1px rgba(120,200,170,.25);overflow:hidden;}
+  #progFill{height:100%;width:0%;background:linear-gradient(90deg,#3fd7a0,#a6ff6e);box-shadow:0 0 12px #6effb0;transition:width .15s linear;}
+  #progTxt{font-size:12px;letter-spacing:2px;text-align:center;margin-top:6px;opacity:.7;text-transform:uppercase;}
+
+  /* Landmark caption */
+  #cap{left:50%;bottom:13%;transform:translate(-50%,10px);text-align:center;max-width:80vw;opacity:0;transition:opacity .8s,transform .8s;}
+  #cap.show{opacity:1;transform:translate(-50%,0);}
+  #capName{font-size:30px;letter-spacing:1px;text-shadow:0 2px 18px #000,0 0 26px rgba(110,255,176,.4);}
+  #capNote{font-size:15px;opacity:.82;margin-top:6px;font-style:italic;text-shadow:0 2px 10px #000;}
+
+  /* Crosshair-ish vignette */
+  #vig{inset:0;box-shadow:inset 0 0 220px 40px rgba(0,12,9,.85);}
+
+  /* Overlays (start / end) */
+  .panel{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:radial-gradient(ellipse at center,rgba(6,20,16,.72),rgba(2,8,6,.96));backdrop-filter:blur(3px);text-align:center;z-index:10;transition:opacity 1s;}
+  .panel .box{max-width:640px;padding:30px 34px;}
+  .panel h1{font-size:38px;margin:0 0 6px;text-shadow:0 0 30px rgba(110,255,176,.45);}
+  .panel h2{font-size:20px;font-weight:normal;opacity:.85;margin:0 0 18px;font-style:italic;color:#bfe6d4;}
+  .panel p{font-size:15px;line-height:1.6;opacity:.85;}
+  .keys{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin:18px 0 8px;}
+  .key{border:1px solid rgba(150,230,195,.35);border-radius:7px;padding:7px 12px;font-size:13px;letter-spacing:1px;background:rgba(20,50,40,.4);}
+  .btn{margin-top:20px;display:inline-block;cursor:pointer;pointer-events:auto;border:1px solid rgba(150,255,200,.5);border-radius:30px;padding:13px 30px;font-size:17px;letter-spacing:2px;background:rgba(30,80,60,.45);box-shadow:0 0 24px rgba(80,255,170,.25);transition:.2s;}
+  .btn:hover{background:rgba(50,130,95,.6);box-shadow:0 0 36px rgba(110,255,190,.5);}
+  #recap{list-style:none;padding:0;margin:14px auto;max-width:430px;text-align:left;}
+  #recap li{padding:5px 0;font-size:15px;opacity:.9;border-bottom:1px dashed rgba(120,200,170,.2);}
+  #recap li b{color:#a6ff6e;}
+  .hide{opacity:0;pointer-events:none;}
+  .smallhint{position:fixed;left:16px;bottom:14px;font-size:12px;opacity:.5;letter-spacing:1px;}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div class="hud" id="progWrap"><div id="progBar"><div id="progFill"></div></div><div id="progTxt">The Trail Home</div></div>
+<div class="hud" id="cap"><div id="capName"></div><div id="capNote"></div></div>
+<div class="hud" id="vig"></div>
+<div class="smallhint">WASD move · mouse look · hold Shift jog · G auto-walk</div>
+
+<div class="panel" id="startPanel">
+  <div class="box">
+    <h1>The Vivid Swamp Trail</h1>
+    <h2>A walk you are meant to remember</h2>
+    <p>Long before maps, a person found their way home by the <i>shape of the land</i> — a glowing grove, a fallen log, the ring of standing stones. Walk the trail. Notice each landmark. Let it print itself into your mind. The path is about one minute long, and it is not endless: it leads <b>home</b>.</p>
+    <div class="keys">
+      <div class="key">W A S D — walk</div>
+      <div class="key">MOUSE — look</div>
+      <div class="key">SHIFT — jog</div>
+      <div class="key">G — auto-walk</div>
+    </div>
+    <div class="btn" id="startBtn">Begin the Walk</div>
+  </div>
+</div>
+
+<div class="panel hide" id="endPanel">
+  <div class="box">
+    <h1>You made it home.</h1>
+    <h2>The trail you will remember</h2>
+    <ul id="recap"></ul>
+    <p>You followed the loci in order — the way the old ones did, the way the mind still does.</p>
+    <div class="btn" id="againBtn">Walk it again</div>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* ============================================================
+   THE VIVID SWAMP TRAIL — single-file Three.js mind-palace walk
+   Graphics highlight: custom Subsurface-Scattering (SSS) shader
+   ============================================================ */
+
+// ---------- tiny helpers ----------
+const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+const smoothstep=(a,b,x)=>{x=clamp((x-a)/(b-a),0,1);return x*x*(3-2*x);};
+const lerp=(a,b,t)=>a+(b-a)*t;
+function fract(x){return x-Math.floor(x);}
+function hash(x,z){return fract(Math.sin(x*127.1+z*311.7)*43758.5453);}
+function noise2(x,z){
+  const xi=Math.floor(x),zi=Math.floor(z),xf=x-xi,zf=z-zi;
+  const u=xf*xf*(3-2*xf),v=zf*zf*(3-2*zf);
+  const a=hash(xi,zi),b=hash(xi+1,zi),c=hash(xi,zi+1),d=hash(xi+1,zi+1);
+  return a+(b-a)*u+(c-a)*v+(a-b-c+d)*u*v;
+}
+
+// ---------- renderer / scene ----------
+const canvas=document.getElementById('c');
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+renderer.outputColorSpace=THREE.SRGBColorSpace;
+renderer.toneMapping=THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure=1.05;
+
+const scene=new THREE.Scene();
+const FOG_COL=new THREE.Color(0x14352b);
+const FOG_NEAR=7, FOG_FAR=78;
+scene.fog=new THREE.Fog(FOG_COL,FOG_NEAR,FOG_FAR);
+
+const camera=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,0.1,800);
+camera.rotation.order='YXZ';
+
+// Moon = fixed orientation cue. Direction *to* the moon (light vector).
+const MOON_DIR=new THREE.Vector3(-0.32,0.5,-0.78).normalize();
+const MOON_COL=new THREE.Color(0x9fd6ff);
+
+// ---------- shared SSS light uniforms (one object, referenced by all SSS mats) ----------
+const MAXL=8;
+const Lpos=[],Lcol=[],Lint=new Float32Array(MAXL);
+for(let i=0;i<MAXL;i++){Lpos.push(new THREE.Vector3());Lcol.push(new THREE.Color());}
+const SHARED={
+  uTime:{value:0},
+  uNumLights:{value:0},
+  uLightPos:{value:Lpos},
+  uLightColor:{value:Lcol},
+  uLightInt:{value:Lint},
+  uMoonDir:{value:MOON_DIR},
+  uMoonColor:{value:MOON_COL.clone().multiplyScalar(0.55)},
+  uFogColor:{value:FOG_COL},
+  uFogNear:{value:FOG_NEAR},
+  uFogFar:{value:FOG_FAR},
+};
+const glowLights=[]; // {pos:Vector3,color:Color,intensity}
+
+// ---------- the Subsurface Scattering shader material ----------
+const SSS_VERT=`
+varying vec3 vWorld; varying vec3 vNrmW; varying vec3 vView;
+void main(){
+  vec4 wp=modelMatrix*vec4(position,1.0);
+  vWorld=wp.xyz;
+  vNrmW=normalize(mat3(modelMatrix)*normal);
+  vView=cameraPosition-wp.xyz;
+  gl_Position=projectionMatrix*viewMatrix*wp;
+}`;
+const SSS_FRAG=`
+precision highp float;
+#define NL ${MAXL}
+uniform float uTime; uniform int uNumLights;
+uniform vec3 uLightPos[NL]; uniform vec3 uLightColor[NL]; uniform float uLightInt[NL];
+uniform vec3 uMoonDir; uniform vec3 uMoonColor;
+uniform vec3 uAmbient, uBaseColor, uSubColor, uEmissive;
+uniform float uThickness,uPower,uScale,uDistort,uOpacity,uPulse;
+uniform vec3 uFogColor; uniform float uFogNear,uFogFar;
+varying vec3 vWorld; varying vec3 vNrmW; varying vec3 vView;
+void main(){
+  vec3 N=normalize(vNrmW); vec3 V=normalize(vView);
+  vec3 diff=vec3(0.0); vec3 sss=vec3(0.0);
+  // moon (directional)
+  {
+    vec3 L=normalize(uMoonDir);
+    diff+=uMoonColor*max(dot(N,L),0.0);
+    vec3 tL=normalize(L+N*uDistort);
+    sss+=uMoonColor*pow(clamp(dot(V,-tL),0.0,1.0),uPower)*uScale;
+  }
+  for(int i=0;i<NL;i++){
+    if(i>=uNumLights) break;
+    vec3 toL=uLightPos[i]-vWorld; float d=length(toL);
+    vec3 L=toL/max(d,0.001);
+    float at=uLightInt[i]/(1.0+0.05*d*d);
+    diff+=uLightColor[i]*max(dot(N,L),0.0)*at;
+    vec3 tL=normalize(L+N*uDistort);
+    sss+=uLightColor[i]*pow(clamp(dot(V,-tL),0.0,1.0),uPower)*uScale*at;
+  }
+  float pulse=1.0+uPulse*0.18*sin(uTime*1.7+vWorld.x*0.4+vWorld.z*0.4);
+  vec3 col=uBaseColor*(uAmbient+diff)+uSubColor*sss*uThickness+uEmissive*pulse;
+  float fog=clamp((length(vView)-uFogNear)/(uFogFar-uFogNear),0.0,1.0);
+  col=mix(col,uFogColor,fog);
+  gl_FragColor=vec4(col,uOpacity);
+}`;
+
+function makeSSS(o={}){
+  const u=Object.assign({
+    uAmbient:{value:new THREE.Color(o.ambient||0x10231d)},
+    uBaseColor:{value:new THREE.Color(o.base??0x2f6b4a)},
+    uSubColor:{value:new THREE.Color(o.sub??0x9bff6e)},
+    uEmissive:{value:new THREE.Color(o.emissive??0x000000)},
+    uThickness:{value:o.thickness??1.0},
+    uPower:{value:o.power??3.0},
+    uScale:{value:o.scale??1.4},
+    uDistort:{value:o.distort??0.35},
+    uOpacity:{value:o.opacity??1.0},
+    uPulse:{value:o.pulse??0.0},
+  },SHARED);
+  return new THREE.ShaderMaterial({
+    uniforms:u,vertexShader:SSS_VERT,fragmentShader:SSS_FRAG,
+    transparent:(o.opacity??1.0)<1.0,
+    side:o.side??THREE.DoubleSide,
+    depthWrite:(o.opacity??1.0)>=1.0,
+  });
+}
+
+// ---------- sky dome ----------
+{
+  const g=new THREE.SphereGeometry(500,32,16);
+  const m=new THREE.ShaderMaterial({
+    side:THREE.BackSide,depthWrite:false,
+    uniforms:{top:{value:new THREE.Color(0x081a18)},mid:{value:new THREE.Color(0x16352b)},glow:{value:new THREE.Color(0x37715a)}},
+    vertexShader:`varying vec3 vp; void main(){vp=position; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
+    fragmentShader:`varying vec3 vp; uniform vec3 top,mid,glow;
+      void main(){ float h=normalize(vp).y; vec3 c=mix(glow,mid,smoothstep(-0.05,0.35,h)); c=mix(c,top,smoothstep(0.25,0.9,h)); gl_FragColor=vec4(c,1.0);} `
+  });
+  scene.add(new THREE.Mesh(g,m));
+}
+// Moon disc (fixed wayfinding beacon)
+{
+  const moon=new THREE.Mesh(new THREE.CircleGeometry(13,40),new THREE.MeshBasicMaterial({color:0xd8ecff,fog:false}));
+  moon.position.copy(MOON_DIR.clone().multiplyScalar(360));
+  moon.lookAt(0,moon.position.y,0); moon.lookAt(0,0,0);
+  const halo=new THREE.Mesh(new THREE.CircleGeometry(30,40),new THREE.MeshBasicMaterial({color:0x6fa8d8,transparent:true,opacity:0.18,fog:false,blending:THREE.AdditiveBlending,depthWrite:false}));
+  halo.position.copy(moon.position); halo.lookAt(0,0,0);
+  scene.add(moon,halo);
+}
+
+// ---------- THREE lights for standard materials ----------
+scene.add(new THREE.HemisphereLight(0x2a5546,0x0a1a14,0.55));
+const moonLight=new THREE.DirectionalLight(MOON_COL,0.5);
+moonLight.position.copy(MOON_DIR.clone().multiplyScalar(50));
+scene.add(moonLight);
+
+// ---------- THE TRAIL (waypoints -> CatmullRom) ----------
+const WP=[[0,0],[6,-22],[-8,-44],[5,-70],[13,-95],[-6,-118],[-15,-143],[-2,-168],[11,-192],[2,-218],[-5,-244]];
+const curve=new THREE.CatmullRomCurve3(WP.map(p=>new THREE.Vector3(p[0],0,p[1])),false,'catmullrom',0.5);
+const SAMPLES=320;
+const pathPts=curve.getSpacedPoints(SAMPLES); // Vector3 (y=0)
+const pathXZ=pathPts.map(p=>({x:p.x,z:p.z}));
+
+function nearestPathDist(x,z){
+  let best=1e9;
+  for(let i=0;i<pathXZ.length;i++){const dx=x-pathXZ[i].x,dz=z-pathXZ[i].z;const d=dx*dx+dz*dz;if(d<best)best=d;}
+  return Math.sqrt(best);
+}
+function nearestPathFrac(x,z){
+  let best=1e9,bi=0;
+  for(let i=0;i<pathXZ.length;i++){const dx=x-pathXZ[i].x,dz=z-pathXZ[i].z;const d=dx*dx+dz*dz;if(d<best){best=d;bi=i;}}
+  return bi/(pathXZ.length-1);
+}
+function terrainBase(x,z){
+  return (noise2(x*0.06,z*0.06)-0.5)*1.7+(noise2(x*0.19,z*0.19)-0.5)*0.5-0.35;
+}
+function groundHeight(x,z){
+  const pd=nearestPathDist(x,z);
+  const raise=0.95*(1.0-smoothstep(0.0,6.0,pd));
+  const flat=smoothstep(1.5,7.0,pd);
+  return terrainBase(x,z)*(0.22+0.78*flat)+raise;
+}
+
+// ---------- terrain mesh ----------
+{
+  const W=110,H=300,SW=120,SH=170;
+  const g=new THREE.PlaneGeometry(W,H,SW,SH);
+  g.rotateX(-Math.PI/2);
+  const pos=g.attributes.position;
+  for(let i=0;i<pos.count;i++){
+    const x=pos.getX(i), z=pos.getZ(i)-110; // shift so it spans the trail (z 0..-244)
+    pos.setZ(i,z);
+    pos.setY(i,groundHeight(x,z));
+  }
+  g.computeVertexNormals();
+  // vertex colors: mud, mossy near path, dark in water
+  const cols=[];
+  const mud=new THREE.Color(0x3a3326),moss=new THREE.Color(0x33502f),wet=new THREE.Color(0x14241c);
+  for(let i=0;i<pos.count;i++){
+    const x=pos.getX(i),z=pos.getZ(i),y=pos.getY(i);
+    const pd=nearestPathDist(x,z);
+    const c=new THREE.Color().copy(y<-0.1?wet:mud).lerp(moss,clamp(1-pd/5,0,1)*0.7+noise2(x*0.5,z*0.5)*0.25);
+    cols.push(c.r,c.g,c.b);
+  }
+  g.setAttribute('color',new THREE.Float32BufferAttribute(cols,3));
+  const m=new THREE.MeshStandardMaterial({vertexColors:true,roughness:0.95,metalness:0.0});
+  const t=new THREE.Mesh(g,m); scene.add(t);
+}
+
+// ---------- water plane (custom dark translucent shader w/ ripples & glow) ----------
+const waterUniforms={
+  uTime:{value:0},
+  uLightPos:{value:Lpos},uLightColor:{value:Lcol},uLightInt:{value:Lint},uNumLights:{value:0},
+  uFogColor:{value:FOG_COL},uFogNear:{value:FOG_NEAR},uFogFar:{value:FOG_FAR},
+  uMoonDir:{value:MOON_DIR},
+};
+{
+  const g=new THREE.PlaneGeometry(180,320,1,1); g.rotateX(-Math.PI/2);
+  g.translate(0,0.0,-110);
+  const m=new THREE.ShaderMaterial({
+    transparent:true,depthWrite:false,
+    uniforms:waterUniforms,
+    vertexShader:`varying vec3 vW; varying vec3 vView;
+      void main(){vec4 wp=modelMatrix*vec4(position,1.0); vW=wp.xyz; vView=cameraPosition-wp.xyz; gl_Position=projectionMatrix*viewMatrix*wp;}`,
+    fragmentShader:`precision highp float; #define NL ${MAXL}
+      uniform float uTime; uniform vec3 uLightPos[NL],uLightColor[NL]; uniform float uLightInt[NL]; uniform int uNumLights;
+      uniform vec3 uFogColor; uniform float uFogNear,uFogFar; uniform vec3 uMoonDir;
+      varying vec3 vW; varying vec3 vView;
+      void main(){
+        vec3 V=normalize(vView);
+        float r=sin(vW.x*0.7+uTime*0.8)*0.5+sin(vW.z*0.9-uTime*0.6)*0.5+sin((vW.x+vW.z)*1.7+uTime*1.3)*0.25;
+        vec3 N=normalize(vec3(r*0.12,1.0,r*0.1));
+        float fres=pow(1.0-clamp(dot(N,V),0.0,1.0),3.0);
+        vec3 col=mix(vec3(0.02,0.06,0.05),vec3(0.05,0.13,0.12),fres);
+        // glow reflections from landmark lights
+        for(int i=0;i<NL;i++){ if(i>=uNumLights)break;
+          vec3 toL=uLightPos[i]-vW; float d=length(toL); vec3 L=toL/max(d,0.001);
+          float spec=pow(max(dot(reflect(-L,N),V),0.0),40.0);
+          float at=uLightInt[i]/(1.0+0.04*d*d);
+          col+=uLightColor[i]*(spec*1.6+0.08)*at;
+        }
+        float mspec=pow(max(dot(reflect(-normalize(uMoonDir),N),V),0.0),80.0);
+        col+=vec3(0.6,0.75,0.95)*mspec*0.7;
+        float fog=clamp((length(vView)-uFogNear)/(uFogFar-uFogNear),0.0,1.0);
+        col=mix(col,uFogColor,fog);
+        gl_FragColor=vec4(col,0.92);
+      }`
+  });
+  scene.add(new THREE.Mesh(g,m));
+}
+
+// ---------- glow texture for particles ----------
+function glowTex(){
+  const c=document.createElement('canvas');c.width=c.height=64;
+  const x=c.getContext('2d');const grd=x.createRadialGradient(32,32,0,32,32,32);
+  grd.addColorStop(0,'rgba(255,255,255,1)');grd.addColorStop(0.3,'rgba(255,255,255,0.6)');grd.addColorStop(1,'rgba(255,255,255,0)');
+  x.fillStyle=grd;x.fillRect(0,0,64,64);
+  const t=new THREE.CanvasTexture(c);return t;
+}
+const GLOW=glowTex();
+
+// ---------- updatables ----------
+const updatables=[];
+
+// firefly / particle swarm around a center
+function swarm(center,count,color,size,radius,height,speed){
+  const geo=new THREE.BufferGeometry();
+  const pos=new Float32Array(count*3);
+  const seed=[];
+  for(let i=0;i<count;i++){
+    const a=Math.random()*Math.PI*2,r=Math.random()*radius;
+    seed.push({a,r,y:Math.random()*height,ph:Math.random()*Math.PI*2,sp:0.4+Math.random()});
+    pos[i*3]=center.x+Math.cos(a)*r;pos[i*3+1]=center.y+seed[i].y;pos[i*3+2]=center.z+Math.sin(a)*r;
+  }
+  geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  const mat=new THREE.PointsMaterial({map:GLOW,color,size,transparent:true,blending:THREE.AdditiveBlending,depthWrite:false,sizeAttenuation:true});
+  const pts=new THREE.Points(geo,mat); scene.add(pts);
+  updatables.push((t)=>{
+    const p=geo.attributes.position.array;
+    for(let i=0;i<count;i++){
+      const s=seed[i];const ang=s.a+t*speed*s.sp;
+      p[i*3]=center.x+Math.cos(ang)*s.r;
+      p[i*3+1]=center.y+s.y+Math.sin(t*1.6*s.sp+s.ph)*0.5;
+      p[i*3+2]=center.z+Math.sin(ang)*s.r;
+    }
+    geo.attributes.position.needsUpdate=true;
+    mat.opacity=0.7+0.3*Math.sin(t*3+center.x);
+  });
+  return pts;
+}
+
+// drifting mist sprites
+{
+  const mat=new THREE.SpriteMaterial({map:GLOW,color:0x9fc4b4,transparent:true,opacity:0.05,blending:THREE.AdditiveBlending,depthWrite:false});
+  for(let i=0;i<34;i++){
+    const s=new THREE.Sprite(mat.clone());
+    const z=-Math.random()*250, x=(Math.random()-0.5)*60;
+    s.position.set(x,0.4+Math.random()*1.2,z);
+    const sc=8+Math.random()*10; s.scale.set(sc,sc*0.5,1);
+    scene.add(s);
+    const dx=(Math.random()-0.5)*0.3,base=s.position.x;
+    updatables.push((t)=>{s.position.x=base+Math.sin(t*0.1+i)*4;s.material.opacity=0.03+0.04*(0.5+0.5*Math.sin(t*0.2+i));});
+  }
+}
+
+// ---------- reeds (instanced, swaying) ----------
+const windU={value:0};
+{
+  const blade=new THREE.PlaneGeometry(0.09,1,1,3); blade.translate(0,0.5,0);
+  const mat=new THREE.MeshStandardMaterial({color:0x3c5a2e,roughness:1,emissive:0x0a1505,emissiveIntensity:0.4,side:THREE.DoubleSide});
+  mat.onBeforeCompile=(sh)=>{
+    sh.uniforms.uWind=windU;
+    sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nuniform float uWind;');
+    sh.vertexShader=sh.vertexShader.replace('#include <begin_vertex>',
+      `#include <begin_vertex>\n float ph=instanceMatrix[3].x*0.6+instanceMatrix[3].z*0.6;\n float sway=transformed.y*transformed.y*0.14;\n transformed.x+=sin(uWind+ph)*sway;\n transformed.z+=cos(uWind*0.8+ph)*sway*0.7;`);
+  };
+  const N=1700;
+  const im=new THREE.InstancedMesh(blade,mat,N);
+  const dummy=new THREE.Object3D(); let n=0;
+  for(let i=0;i<N*3 && n<N;i++){
+    const x=(Math.random()-0.5)*70, z=-Math.random()*255;
+    const pd=nearestPathDist(x,z);
+    if(pd<2.4||pd>17) continue;
+    const y=groundHeight(x,z); if(y<-1.3) continue;
+    dummy.position.set(x,Math.max(y,-0.3),z);
+    dummy.rotation.y=Math.random()*Math.PI;
+    const h=0.7+Math.random()*1.7; dummy.scale.set(1,h,1);
+    dummy.updateMatrix(); im.setMatrixAt(n++,dummy.matrix);
+  }
+  im.count=n; im.instanceMatrix.needsUpdate=true; scene.add(im);
+  updatables.push((t)=>{windU.value=t*1.1;});
+}
+
+// ---------- builder primitives ----------
+function place(obj,x,z,yoff=0){obj.position.set(x,groundHeight(x,z)+yoff,z);scene.add(obj);return obj;}
+function addGlow(x,y,z,color,intensity){
+  const c=new THREE.Color(color);
+  glowLights.push({pos:new THREE.Vector3(x,y,z),color:c,intensity});
+  const pl=new THREE.PointLight(color,intensity*1.2,55,2.0); pl.position.set(x,y,z); scene.add(pl);
+  return glowLights[glowLights.length-1];
+}
+
+function mushroom(scale,capColor,subColor){
+  const g=new THREE.Group();
+  const stemMat=makeSSS({base:0xb9c2a8,sub:0xfff0cf,thickness:1.2,power:2.0,scale:1.0,emissive:0x0a0c06});
+  const stem=new THREE.Mesh(new THREE.CylinderGeometry(0.12*scale,0.2*scale,1.1*scale,10),stemMat);
+  stem.position.y=0.55*scale; g.add(stem);
+  const capMat=makeSSS({base:capColor,sub:subColor,thickness:1.6,power:2.5,scale:1.8,distort:0.5,emissive:new THREE.Color(subColor).multiplyScalar(0.5).getHex(),pulse:1.0});
+  const cap=new THREE.Mesh(new THREE.SphereGeometry(0.55*scale,18,14,0,Math.PI*2,0,Math.PI*0.55),capMat);
+  cap.position.y=1.05*scale; cap.scale.y=0.7; g.add(cap);
+  const gills=new THREE.Mesh(new THREE.ConeGeometry(0.52*scale,0.18*scale,18,1,true),makeSSS({base:subColor,sub:0xffffff,emissive:new THREE.Color(subColor).multiplyScalar(0.7).getHex(),scale:0.6}));
+  gills.position.y=0.95*scale; gills.rotation.x=Math.PI; g.add(gills);
+  return g;
+}
+
+function twistTrunk(h,r0,r1,col,bend){
+  // a slightly bent trunk made of stacked cylinders
+  const g=new THREE.Group();
+  const mat=new THREE.MeshStandardMaterial({color:col,roughness:1,metalness:0});
+  const seg=6; let py=0,px=0,pz=0;
+  for(let i=0;i<seg;i++){
+    const t=i/seg, r=lerp(r0,r1,t);
+    const m=new THREE.Mesh(new THREE.CylinderGeometry(r*0.92,r,h/seg+0.05,8),mat);
+    px+=Math.sin(t*3+bend)*0.12*bend; pz+=Math.cos(t*2)*0.08*bend;
+    m.position.set(px,py+h/(2*seg),pz);
+    m.rotation.z=Math.sin(t*2+bend)*0.12; g.add(m); py+=h/seg;
+  }
+  g.userData.top=new THREE.Vector3(px,py,pz);
+  return g;
+}
+
+// ============================================================
+//  LANDMARKS (the loci) — one per waypoint, each unique
+// ============================================================
+const LM=[
+ {name:'The Root Gate',     note:'Twisted mangrove roots arch over the path — the threshold of the swamp.'},
+ {name:'The Glowing Grove', note:'A cluster of luminous mushrooms breathing soft green light.'},
+ {name:'The Log Bridge',    note:'A great fallen log spans the black water.'},
+ {name:'The Standing Stones',note:'Ancient stones in a silent ring, one lit from within.'},
+ {name:'The Whispering Willow',note:'Curtains of glowing vines sway and hush.'},
+ {name:'The Bone Field',    note:'The ribs of some old giant rise from the mud.'},
+ {name:'The Spirit Lights', note:'Fireflies swirl around a lightning-split tree.'},
+ {name:'The Sunken Idol',   note:'A vast stone face watches with violet eyes.'},
+ {name:'The Lily Pool',     note:'Giant lilies glow pink over still black water.'},
+ {name:'The Watcher Totem', note:'A carved totem marks the last bend toward home.'},
+ {name:'Home',              note:'Firelight, woodsmoke, and a familiar hut. You made it back.'},
+];
+// attach world position to each landmark from its waypoint
+LM.forEach((l,i)=>{const w=WP[i]; l.x=w[0]; l.z=w[1]; l.y=groundHeight(w[0],w[1]);});
+
+function buildLandmark(i){
+  const [x,z]=WP[i]; const gy=groundHeight(x,z);
+  switch(i){
+  case 0:{ // Root Gate — twin arching trunks meeting overhead
+    const matB=new THREE.MeshStandardMaterial({color:0x2c211a,roughness:1});
+    for(const s of [-1,1]){
+      const g=new THREE.Group();
+      const pts=[];
+      for(let k=0;k<=8;k++){const t=k/8;pts.push(new THREE.Vector3(s*lerp(2.6,0.2,t),lerp(0,4.6,t)-Math.pow(t,2)*0.4,lerp(0,-1.0,t)*s*0.0));}
+      const crv=new THREE.CatmullRomCurve3(pts);
+      const tube=new THREE.Mesh(new THREE.TubeGeometry(crv,18,lerp(0.4,0.18,0.5),7),matB);
+      g.add(tube);
+      // dangling SSS moss
+      for(let m=0;m<5;m++){const mo=new THREE.Mesh(new THREE.SphereGeometry(0.18,8,6),makeSSS({base:0x3a6e3a,sub:0xa9ff7a,emissive:0x152a10,scale:1.2}));mo.position.set(s*lerp(2.2,0.6,m/5),lerp(0.6,4.0,m/5)-0.4,0.0);mo.scale.y=1.8;g.add(mo);}
+      place(g,x,z); g.position.x=x; // keep base at trail
+    }
+    const arch=new THREE.Mesh(new THREE.TorusGeometry(2.6,0.22,8,16,Math.PI),new THREE.MeshStandardMaterial({color:0x241a14,roughness:1}));
+    arch.position.set(x,gy+3.2,z); arch.rotation.x=Math.PI; scene.add(arch);
+    addGlow(x,gy+2.4,z,0x6fcf8a,0.6);
+    break;}
+  case 1:{ // Glowing Grove
+    const colors=[[0x244,0x6effc8],[0x143,0x9bff6e],[0x224,0x7ad0ff]];
+    for(let m=0;m<9;m++){
+      const a=Math.random()*Math.PI*2,r=0.5+Math.random()*3.2;
+      const sc=0.7+Math.random()*1.7;
+      const cc=colors[m%3];
+      const mush=mushroom(sc,cc[0]|0x103020,cc[1]);
+      const mx=x+Math.cos(a)*r,mz=z+Math.sin(a)*r;
+      place(mush,mx,mz);
+    }
+    addGlow(x,gy+1.2,z,0x4dffb0,1.5);
+    swarm(new THREE.Vector3(x,gy+1.5,z),60,0x9bffce,0.5,3.5,2.5,0.5);
+    break;}
+  case 2:{ // Log Bridge across deep water (path dips low here visually)
+    const log=new THREE.Mesh(new THREE.CylinderGeometry(0.55,0.62,11,12),new THREE.MeshStandardMaterial({color:0x3a2c20,roughness:1}));
+    log.rotation.z=Math.PI/2; log.rotation.y=0.25; log.position.set(x,gy+0.3,z); scene.add(log);
+    // moss strip on top (SSS)
+    const moss=new THREE.Mesh(new THREE.BoxGeometry(10,0.06,0.7),makeSSS({base:0x2f5a2c,sub:0x9bff6e,emissive:0x0e2009,scale:1.0}));
+    moss.position.set(x,gy+0.85,z); moss.rotation.y=0.0; scene.add(moss);
+    // broken branch stubs
+    for(let b=0;b<5;b++){const st=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.1,0.8,6),log.material);st.position.set(x-4+b*2,gy+0.7,z+0.5);st.rotation.z=0.7;scene.add(st);}
+    addGlow(x,gy+0.9,z,0x6a8f70,0.4);
+    break;}
+  case 3:{ // Standing Stones — ring + central glowing crystal
+    const stoneMat=new THREE.MeshStandardMaterial({color:0x4a4a52,roughness:0.9,flatShading:true});
+    for(let s=0;s<7;s++){
+      const a=s/7*Math.PI*2, r=3.2;
+      const sx=x+Math.cos(a)*r, sz=z+Math.sin(a)*r;
+      const h=2.2+Math.random()*1.6;
+      const st=new THREE.Mesh(new THREE.DodecahedronGeometry(0.9,0),stoneMat);
+      st.scale.set(0.7+Math.random()*0.3,h/1.8,0.6+Math.random()*0.3);
+      st.rotation.set(Math.random()*0.3,Math.random()*Math.PI,Math.random()*0.2);
+      place(st,sx,sz,h*0.6);
+    }
+    const crystal=new THREE.Mesh(new THREE.OctahedronGeometry(0.9,0),makeSSS({base:0x224488,sub:0x88ccff,emissive:0x2a4a88,thickness:2.0,scale:2.4,power:2.0,pulse:1.0,opacity:0.92}));
+    place(crystal,x,z,1.3);
+    updatables.push((t)=>{crystal.rotation.y=t*0.3;});
+    addGlow(x,gy+1.3,z,0x6fb6ff,1.6);
+    break;}
+  case 4:{ // Whispering Willow — trunk + many hanging SSS vines that sway
+    const trunk=twistTrunk(4.2,0.55,0.18,0x3a2c1f,1.2); place(trunk,x,z);
+    const top=trunk.userData.top;
+    const vineMat=makeSSS({base:0x4f7a3a,sub:0xbaff7e,emissive:0x16280c,thickness:1.4,scale:1.6,distort:0.5});
+    const vineGroup=new THREE.Group(); vineGroup.position.set(x+top.x,gy+top.y,z+top.z); scene.add(vineGroup);
+    const vines=[];
+    for(let v=0;v<26;v++){
+      const a=Math.random()*Math.PI*2,r=0.6+Math.random()*3.0;
+      const len=1.6+Math.random()*2.6;
+      const vine=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.05,len,5),vineMat);
+      vine.position.set(Math.cos(a)*r,-len/2,Math.sin(a)*r);
+      vineGroup.add(vine); vines.push({m:vine,ph:Math.random()*6,len});
+      // leaf tip
+      const leaf=new THREE.Mesh(new THREE.SphereGeometry(0.13,8,6),vineMat); leaf.position.set(Math.cos(a)*r,-len,Math.sin(a)*r); leaf.scale.set(1,1.6,1); vineGroup.add(leaf);
+    }
+    updatables.push((t)=>{for(const v of vines){v.m.rotation.z=Math.sin(t*0.9+v.ph)*0.12;v.m.rotation.x=Math.cos(t*0.7+v.ph)*0.1;}});
+    addGlow(x,gy+3.0,z,0x9bff7a,0.9);
+    swarm(new THREE.Vector3(x,gy+1.0,z),30,0xd8ffae,0.4,3.0,2.0,0.4);
+    break;}
+  case 5:{ // Bone Field — giant ribcage + skull
+    const boneMat=makeSSS({base:0xd8d2c0,sub:0xffd9c0,ambient:0x2a2620,thickness:0.8,power:2.5,scale:0.9,emissive:0x100c08});
+    for(let r=0;r<6;r++){
+      const off=(r-2.5)*1.1;
+      for(const s of[-1,1]){
+        const pts=[];for(let k=0;k<=6;k++){const t=k/6;pts.push(new THREE.Vector3(s*Math.sin(t*Math.PI*0.9)*2.2,t*3.0,off));}
+        const rib=new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts),12,0.13,6),boneMat);
+        place(rib,x,z);
+      }
+    }
+    const spine=new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.18,7,8),boneMat); spine.rotation.x=Math.PI/2; place(spine,x,z,0.2);
+    const skull=new THREE.Mesh(new THREE.SphereGeometry(0.9,16,14),boneMat); place(skull,x,z-4.0,0.9);
+    skull.scale.set(1,1.1,1.25);
+    for(const s of[-1,1]){const eye=new THREE.Mesh(new THREE.SphereGeometry(0.26,10,10),new THREE.MeshBasicMaterial({color:0x050505}));eye.position.set(x+s*0.32,gy+1.0,z-4.6);scene.add(eye);}
+    addGlow(x,gy+1.6,z,0xe8d0b0,0.5);
+    break;}
+  case 6:{ // Spirit Lights — lightning-split dead tree + fireflies
+    const trunk=twistTrunk(5.0,0.5,0.08,0x191510,1.6); place(trunk,x,z);
+    const matB=new THREE.MeshStandardMaterial({color:0x16110c,roughness:1});
+    const top=trunk.userData.top;
+    for(let b=0;b<6;b++){const len=1.2+Math.random()*1.8;const br=new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.1,len,5),matB);br.position.set(x+top.x,gy+top.y-0.5-b*0.3,z+top.z);br.rotation.z=(Math.random()-0.5)*2;br.rotation.x=(Math.random()-0.5)*2;scene.add(br);}
+    swarm(new THREE.Vector3(x,gy+2.4,z),140,0xffd27a,0.55,3.6,4.0,0.7);
+    addGlow(x,gy+2.5,z,0xffb454,1.3);
+    break;}
+  case 7:{ // Sunken Idol — huge stone face with violet SSS eyes
+    const stone=new THREE.MeshStandardMaterial({color:0x4d4a4f,roughness:0.95,flatShading:true});
+    const head=new THREE.Mesh(new THREE.BoxGeometry(3.4,4.2,2.8,2,3,2),stone);
+    // jitter verts for carved feel
+    const pa=head.geometry.attributes.position;for(let k=0;k<pa.count;k++){pa.setXYZ(k,pa.getX(k)+(Math.random()-0.5)*0.18,pa.getY(k),pa.getZ(k)+(Math.random()-0.5)*0.18);}head.geometry.computeVertexNormals();
+    place(head,x,z,1.5); head.rotation.y=Math.atan2(0-x,-2-z)*0.3;
+    // brow + nose
+    const brow=new THREE.Mesh(new THREE.BoxGeometry(3.0,0.4,0.5),stone); brow.position.set(x,gy+2.7,z+1.3); scene.add(brow);
+    const nose=new THREE.Mesh(new THREE.ConeGeometry(0.4,1.4,4),stone); nose.position.set(x,gy+1.8,z+1.6); nose.rotation.x=Math.PI*0.5; scene.add(nose);
+    for(const s of[-1,1]){
+      const eye=new THREE.Mesh(new THREE.SphereGeometry(0.4,14,12),makeSSS({base:0x4422aa,sub:0xc59bff,emissive:0x6633cc,thickness:2.2,scale:2.6,pulse:1.0}));
+      eye.position.set(x+s*0.85,gy+2.4,z+1.45); scene.add(eye);
+    }
+    addGlow(x,gy+2.4,z+1.5,0x9b6bff,1.5);
+    break;}
+  case 8:{ // Lily Pool — giant pads + glowing pink flowers + pollen
+    for(let p=0;p<12;p++){
+      const a=Math.random()*Math.PI*2,r=1.0+Math.random()*4.5;
+      const px=x+Math.cos(a)*r,pz=z+Math.sin(a)*r;
+      const pad=new THREE.Mesh(new THREE.CircleGeometry(0.7+Math.random()*0.6,18,0,Math.PI*1.85),makeSSS({base:0x2f6b3a,sub:0x9bff8e,emissive:0x0e2010,scale:1.0,side:THREE.DoubleSide}));
+      pad.rotation.x=-Math.PI/2; pad.position.set(px,0.05,pz); scene.add(pad);
+      if(Math.random()<0.55){
+        const fl=new THREE.Group();
+        const fmat=makeSSS({base:0xaa3366,sub:0xff9ecf,emissive:0x661a3a,thickness:1.8,scale:2.0,pulse:1.0});
+        for(let pe=0;pe<6;pe++){const petal=new THREE.Mesh(new THREE.SphereGeometry(0.2,8,6),fmat);petal.scale.set(0.5,1.4,0.9);const pa2=pe/6*Math.PI*2;petal.position.set(Math.cos(pa2)*0.18,0.2,Math.sin(pa2)*0.18);petal.rotation.z=Math.cos(pa2)*0.5;petal.rotation.x=Math.sin(pa2)*0.5;fl.add(petal);}
+        fl.position.set(px,0.18,pz); scene.add(fl);
+      }
+    }
+    addGlow(x,gy+0.6,z,0xff7ec2,1.3);
+    swarm(new THREE.Vector3(x,gy+0.8,z),50,0xffc0e6,0.4,4.0,1.5,0.3);
+    break;}
+  case 9:{ // Watcher Totem — stacked carved faces, glowing eyes
+    const cols=[0x6b3a2a,0x3a5a6b,0x6b5a2a,0x4a2a5a];
+    let yy=0;
+    for(let b=0;b<4;b++){
+      const blk=new THREE.Mesh(new THREE.BoxGeometry(1.4,1.2,1.4),new THREE.MeshStandardMaterial({color:cols[b],roughness:0.9,flatShading:true}));
+      place(blk,x,z,yy+0.6);
+      // eyes
+      for(const s of[-1,1]){const eye=new THREE.Mesh(new THREE.SphereGeometry(0.16,10,8),makeSSS({base:0xffcc55,sub:0xfff0a0,emissive:0xffaa33,scale:2.0,pulse:1.0}));eye.position.set(x+s*0.32,gy+yy+0.7,z+0.72);scene.add(eye);}
+      // nose/beak
+      const beak=new THREE.Mesh(new THREE.ConeGeometry(0.18,0.5,4),new THREE.MeshStandardMaterial({color:0x222,roughness:1}));beak.position.set(x,gy+yy+0.45,z+0.8);beak.rotation.x=Math.PI/2;scene.add(beak);
+      yy+=1.2;
+    }
+    const wing=new THREE.Mesh(new THREE.BoxGeometry(3.6,0.2,0.7),new THREE.MeshStandardMaterial({color:0x5a3a2a,roughness:1}));place(wing,x,z,yy+0.2);
+    addGlow(x,gy+1.5,z,0xffc24d,1.0);
+    break;}
+  case 10:{ // Home — hut + campfire
+    const hutMat=new THREE.MeshStandardMaterial({color:0x4a3826,roughness:1});
+    const wall=new THREE.Mesh(new THREE.CylinderGeometry(2.0,2.2,2.0,9),hutMat); place(wall,x-3.5,z-3,1.0);
+    const roof=new THREE.Mesh(new THREE.ConeGeometry(2.6,2.2,9),new THREE.MeshStandardMaterial({color:0x2f3a22,roughness:1})); place(roof,x-3.5,z-3,3.0);
+    const door=new THREE.Mesh(new THREE.BoxGeometry(0.9,1.4,0.2),new THREE.MeshBasicMaterial({color:0x1a0f06})); door.position.set(x-3.5,gy+0.7,z-3+2.1); scene.add(door);
+    // campfire
+    const stoneMat=new THREE.MeshStandardMaterial({color:0x555,roughness:1,flatShading:true});
+    for(let s=0;s<8;s++){const a=s/8*Math.PI*2;const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(0.28,0),stoneMat);place(rock,x+Math.cos(a)*1.0,z+Math.sin(a)*1.0,0.2);}
+    // logs
+    for(let l=0;l<3;l++){const log=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.14,1.4,6),new THREE.MeshStandardMaterial({color:0x2a1c10,roughness:1}));log.rotation.z=Math.PI/2;log.rotation.y=l/3*Math.PI;place(log,x,z,0.3);}
+    // flames (additive cones, flicker)
+    const flames=[];
+    const fmat=new THREE.MeshBasicMaterial({color:0xff8a2a,transparent:true,opacity:0.9,blending:THREE.AdditiveBlending,depthWrite:false,fog:false});
+    for(let f=0;f<5;f++){const fl=new THREE.Mesh(new THREE.ConeGeometry(0.25-f*0.03,0.9,8),fmat.clone());fl.material.color.setHSL(0.07-f*0.01,1,0.55);fl.position.set(x+(Math.random()-0.5)*0.2,gy+0.5+f*0.18,z+(Math.random()-0.5)*0.2);scene.add(fl);flames.push(fl);}
+    const fireGlow=addGlow(x,gy+0.8,z,0xff7a22,2.2);
+    swarm(new THREE.Vector3(x,gy+1.2,z),40,0xffcaa0,0.35,0.5,2.2,0.6); // embers
+    updatables.push((t)=>{
+      const flick=0.8+0.4*Math.sin(t*13)+0.2*Math.sin(t*27);
+      flames.forEach((fl,i)=>{fl.scale.y=0.7+0.5*Math.abs(Math.sin(t*9+i))*flick;fl.material.opacity=0.6+0.4*Math.sin(t*11+i);});
+      fireGlow.intensity=2.0+0.8*flick;
+    });
+    break;}
+  }
+}
+for(let i=0;i<WP.length;i++) buildLandmark(i);
+
+// ---------- glowing cairn markers along the trail (wayfinding) ----------
+{
+  const mat=makeSSS({base:0x224, sub:0x6effc0, emissive:0x1a4030, thickness:1.6, scale:1.6, pulse:1.0, power:2.0});
+  for(let i=4;i<pathPts.length-4;i+=11){
+    const p=pathPts[i];
+    const side=(i%22<11)?1:-1;
+    // offset to side of path
+    const np=pathPts[i+1]||p; const dx=np.x-p.x,dz=np.z-p.z; const len=Math.hypot(dx,dz)||1;
+    const ox=-dz/len*1.8*side, oz=dx/len*1.8*side;
+    const x=p.x+ox, z=p.z+oz;
+    const stone=new THREE.Mesh(new THREE.IcosahedronGeometry(0.22,0),mat);
+    place(stone,x,z,0.22);
+  }
+}
+
+// ============================================================
+//  PLAYER / CONTROLS
+// ============================================================
+const EYE=1.65;
+const player={x:0,z:3,yaw:Math.PI,pitch:0,bob:0,done:false,auto:false};
+camera.position.set(player.x,groundHeight(player.x,player.z)+EYE,player.z);
+
+const keys={};
+addEventListener('keydown',e=>{keys[e.code]=true; if(e.code==='KeyG')player.auto=!player.auto;});
+addEventListener('keyup',e=>{keys[e.code]=false;});
+
+let pointerLocked=false;
+canvas.addEventListener('click',()=>{if(started)canvas.requestPointerLock();});
+document.addEventListener('pointerlockchange',()=>{pointerLocked=document.pointerLockElement===canvas;});
+document.addEventListener('mousemove',e=>{
+  if(!pointerLocked)return;
+  player.yaw-=e.movementX*0.0024;
+  player.pitch=clamp(player.pitch-e.movementY*0.0024,-1.3,1.3);
+});
+
+// ============================================================
+//  AUDIO (procedural swamp ambience — multisensory memory)
+// ============================================================
+let actx,master,started=false,audioOn=false;
+function startAudio(){
+  try{
+    actx=new (window.AudioContext||window.webkitAudioContext)();
+    master=actx.createGain(); master.gain.value=0.0; master.connect(actx.destination);
+    master.gain.linearRampToValueAtTime(0.28,actx.currentTime+2);
+    // water/wind bed: brown noise -> lowpass
+    const buf=actx.createBuffer(1,actx.sampleRate*2,actx.sampleRate);
+    const d=buf.getChannelData(0); let last=0;
+    for(let i=0;i<d.length;i++){const w=Math.random()*2-1;last=(last+0.02*w)/1.02;d[i]=last*3.2;}
+    const noise=actx.createBufferSource(); noise.buffer=buf; noise.loop=true;
+    const lp=actx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=420;
+    const ng=actx.createGain(); ng.gain.value=0.5; noise.connect(lp); lp.connect(ng); ng.connect(master); noise.start();
+    // low drone
+    const dr=actx.createOscillator(); dr.type='sine'; dr.frequency.value=58;
+    const dg=actx.createGain(); dg.gain.value=0.08; dr.connect(dg); dg.connect(master); dr.start();
+    audioOn=true;
+    scheduleFrog(); scheduleCricket();
+  }catch(e){console.warn('audio',e);}
+}
+function scheduleFrog(){
+  if(!audioOn)return;
+  const t=actx.currentTime;
+  const o=actx.createOscillator(); o.type='sawtooth';
+  const g=actx.createGain(); g.gain.value=0;
+  const f=actx.createBiquadFilter(); f.type='lowpass'; f.frequency.value=700;
+  o.connect(f); f.connect(g); g.connect(master);
+  o.frequency.setValueAtTime(150,t); o.frequency.linearRampToValueAtTime(95,t+0.4);
+  // croak = amplitude pulses
+  for(let k=0;k<5;k++){const tt=t+k*0.06;g.gain.setValueAtTime(0.0,tt);g.gain.linearRampToValueAtTime(0.16,tt+0.02);g.gain.linearRampToValueAtTime(0.0,tt+0.05);}
+  o.start(t); o.stop(t+0.45);
+  setTimeout(scheduleFrog,2000+Math.random()*6000);
+}
+function scheduleCricket(){
+  if(!audioOn)return;
+  const t=actx.currentTime;
+  const o=actx.createOscillator(); o.type='triangle'; o.frequency.value=4200+Math.random()*1200;
+  const g=actx.createGain(); g.gain.value=0; o.connect(g); g.connect(master);
+  for(let k=0;k<6;k++){const tt=t+k*0.03;g.gain.setValueAtTime(0,tt);g.gain.linearRampToValueAtTime(0.03,tt+0.008);g.gain.linearRampToValueAtTime(0,tt+0.02);}
+  o.start(t); o.stop(t+0.25);
+  setTimeout(scheduleCricket,1500+Math.random()*3500);
+}
+function footstep(){
+  if(!audioOn)return;
+  const t=actx.currentTime;
+  const buf=actx.createBuffer(1,actx.sampleRate*0.18,actx.sampleRate);
+  const d=buf.getChannelData(0);for(let i=0;i<d.length;i++){d[i]=(Math.random()*2-1)*Math.pow(1-i/d.length,2);}
+  const s=actx.createBufferSource(); s.buffer=buf;
+  const f=actx.createBiquadFilter(); f.type='bandpass'; f.frequency.value=300+Math.random()*200; f.Q.value=1.2;
+  const g=actx.createGain(); g.gain.value=0.22; s.connect(f); f.connect(g); g.connect(master); s.start(t);
+}
+function chime(){
+  if(!audioOn)return;
+  const t=actx.currentTime; const freqs=[523.25,659.25,783.99];
+  freqs.forEach((fr,i)=>{const o=actx.createOscillator();o.type='sine';o.frequency.value=fr;const g=actx.createGain();g.gain.value=0;o.connect(g);g.connect(master);const tt=t+i*0.08;g.gain.setValueAtTime(0,tt);g.gain.linearRampToValueAtTime(0.12,tt+0.04);g.gain.exponentialRampToValueAtTime(0.001,tt+1.4);o.start(tt);o.stop(tt+1.5);});
+}
+
+// ============================================================
+//  UI / captions
+// ============================================================
+const progFill=document.getElementById('progFill');
+const capEl=document.getElementById('cap'),capName=document.getElementById('capName'),capNote=document.getElementById('capNote');
+const visited=new Set(); const visitedOrder=[];
+let capHideAt=0;
+function showCaption(l){
+  capName.textContent=l.name; capNote.textContent=l.note;
+  capEl.classList.add('show'); capHideAt=clockT+5.5;
+}
+function checkLandmarks(){
+  for(let i=0;i<LM.length;i++){
+    const l=LM[i]; const d=Math.hypot(player.x-l.x,player.z-l.z);
+    if(d<11 && !visited.has(i)){
+      visited.add(i); visitedOrder.push(i); showCaption(l); chime();
+      if(i===LM.length-1) finish();
+    }
+  }
+  if(clockT>capHideAt) capEl.classList.remove('show');
+}
+function finish(){
+  if(player.done)return; player.done=true;
+  const ul=document.getElementById('recap'); ul.innerHTML='';
+  visitedOrder.forEach((idx,n)=>{const li=document.createElement('li');li.innerHTML=`<b>${n+1}.</b> ${LM[idx].name}`;ul.appendChild(li);});
+  setTimeout(()=>{document.getElementById('endPanel').classList.remove('hide');document.exitPointerLock&&document.exitPointerLock();},1400);
+}
+
+// ============================================================
+//  MAIN LOOP
+// ============================================================
+let clockT=0,prev=performance.now();
+function tick(now){
+  requestAnimationFrame(tick);
+  let dt=Math.min((now-prev)/1000,0.05); prev=now; clockT+=dt;
+  SHARED.uTime.value=clockT; waterUniforms.uTime.value=clockT;
+
+  // sync the nearest glow lights -> uniforms (both SSS + water) so local SSS is correct everywhere
+  const sorted=glowLights.slice().sort((a,b)=>
+    a.pos.distanceToSquared(camera.position)-b.pos.distanceToSquared(camera.position));
+  const n=Math.min(sorted.length,MAXL);
+  for(let i=0;i<n;i++){Lpos[i].copy(sorted[i].pos);Lcol[i].copy(sorted[i].color);Lint[i]=sorted[i].intensity;}
+  SHARED.uNumLights.value=n; waterUniforms.uNumLights.value=n;
+
+  for(const u of updatables) u(clockT,dt);
+
+  if(started && !player.done){
+    // movement
+    const jog=keys['ShiftLeft']||keys['ShiftRight'];
+    const sp=(jog?7.0:4.3)*dt;
+    let mx=0,mz=0;
+    const fx=-Math.sin(player.yaw),fz=-Math.cos(player.yaw);
+    const rx=Math.cos(player.yaw),rz=-Math.sin(player.yaw);
+    if(player.auto){
+      // walk along path toward end
+      const f=nearestPathFrac(player.x,player.z);
+      const tgt=pathPts[Math.min(Math.floor(f*(pathPts.length-1))+6,pathPts.length-1)];
+      const dx=tgt.x-player.x,dz=tgt.z-player.z,dl=Math.hypot(dx,dz)||1;
+      mx=dx/dl; mz=dz/dl;
+      player.yaw=Math.atan2(-mx,-mz);
+    }else{
+      if(keys['KeyW']){mx+=fx;mz+=fz;} if(keys['KeyS']){mx-=fx;mz-=fz;}
+      if(keys['KeyD']){mx+=rx;mz+=rz;} if(keys['KeyA']){mx-=rx;mz-=rz;}
+    }
+    const ml=Math.hypot(mx,mz);
+    if(ml>0.001){
+      mx/=ml;mz/=ml;
+      const nx=player.x+mx*sp, nz=player.z+mz*sp;
+      // keep player near the trail (soft wall)
+      if(nearestPathDist(nx,nz)<20){player.x=nx;player.z=nz;}
+      else{ // slide along: try axis-separated
+        if(nearestPathDist(player.x+mx*sp,player.z)<20)player.x+=mx*sp;
+        if(nearestPathDist(player.x,player.z+mz*sp)<20)player.z+=mz*sp;
+      }
+      // head bob + footsteps
+      const prevBob=player.bob;
+      player.bob+=sp*2.2;
+      if(Math.floor(prevBob/Math.PI)!==Math.floor(player.bob/Math.PI)) footstep();
+    }
+    // camera
+    const gy=groundHeight(player.x,player.z);
+    camera.position.set(player.x,gy+EYE+Math.sin(player.bob)*0.06,player.z);
+    camera.rotation.set(player.pitch,player.yaw,0);
+
+    // progress + landmarks
+    const frac=nearestPathFrac(player.x,player.z);
+    progFill.style.width=(frac*100).toFixed(1)+'%';
+    checkLandmarks();
+    if(frac>0.985) finish();
+  }
+  renderer.render(scene,camera);
+}
+requestAnimationFrame(tick);
+
+// ---------- start / restart ----------
+document.getElementById('startBtn').addEventListener('click',()=>{
+  started=true;
+  document.getElementById('startPanel').classList.add('hide');
+  startAudio();
+  canvas.requestPointerLock();
+});
+document.getElementById('againBtn').addEventListener('click',()=>{
+  // reset
+  player.x=0;player.z=3;player.yaw=Math.PI;player.pitch=0;player.bob=0;player.done=false;
+  visited.clear(); visitedOrder.length=0;
+  progFill.style.width='0%';
+  document.getElementById('endPanel').classList.add('hide');
+  canvas.requestPointerLock();
+});
+
+addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+});
+</script>
+</body>
+</html>

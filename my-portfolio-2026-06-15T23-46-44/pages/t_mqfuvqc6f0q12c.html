@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>The Ember Road — A Memory Walk (Volcano)</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; background: #0a0503; font-family: "Georgia", serif; color: #f3e0c8; }
+  #app { position: fixed; inset: 0; }
+  canvas { display: block; }
+
+  .overlay {
+    position: fixed; inset: 0; z-index: 10;
+    display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(ellipse at center, rgba(60,18,6,0.92), rgba(8,4,2,0.97));
+    text-align: center; padding: 6vh 6vw; transition: opacity .6s ease;
+  }
+  .card { max-width: 720px; }
+  h1 { font-size: clamp(28px, 5vw, 52px); letter-spacing: 2px; color: #ffb347;
+       text-shadow: 0 0 24px rgba(255,90,20,0.6); margin-bottom: 18px; }
+  h2 { font-size: clamp(20px,3vw,30px); color: #ffd9a0; margin-bottom: 14px; }
+  p  { font-size: clamp(15px,2vw,19px); line-height: 1.6; color: #e9cfae; margin: 10px 0; }
+  .keys { margin: 22px 0; font-size: 16px; color: #ffcf9b; }
+  .keys b { display:inline-block; min-width: 64px; padding: 4px 10px; margin: 4px;
+            border: 1px solid #a8500f; border-radius: 6px; background: rgba(120,40,8,.35); color:#ffe; }
+  .btn { display:inline-block; margin-top: 18px; padding: 14px 34px; cursor: pointer;
+         font-size: 19px; letter-spacing: 1px; color:#1a0d05; font-weight:bold;
+         background: linear-gradient(#ffd27a,#ff8a2b); border-radius: 40px;
+         box-shadow: 0 0 30px rgba(255,120,30,.6); border:none; }
+  .btn:hover { filter: brightness(1.1); }
+  .hidden { opacity: 0; pointer-events: none; }
+  ul.recap { text-align:left; display:inline-block; margin: 14px auto; }
+  ul.recap li { margin: 7px 0; font-size: 16px; color:#f0d6b0; list-style:none; }
+  ul.recap li b { color:#ffb869; }
+
+  /* HUD */
+  #hud { position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; pointer-events: none;
+         display: flex; flex-direction: column; align-items: center; padding-bottom: 20px; }
+  #marker { font-size: 22px; letter-spacing:1px; color:#ffd9a0; text-shadow:0 2px 10px #000, 0 0 20px rgba(255,80,20,.6);
+            min-height: 30px; transition: opacity .4s; opacity:0; margin-bottom:10px; }
+  #bar { width: min(60vw, 520px); height: 8px; border-radius: 8px; background: rgba(255,255,255,0.12);
+         overflow: hidden; box-shadow: inset 0 0 6px #000; }
+  #fill { height: 100%; width: 0%; background: linear-gradient(90deg,#ff5a1e,#ffd27a); transition: width .25s; }
+  #dist { margin-top:6px; font-size:13px; color:#caa; letter-spacing:1px; }
+  #crosshair { position: fixed; left:50%; top:50%; width:6px; height:6px; margin:-3px 0 0 -3px; z-index:4;
+               border-radius:50%; background: rgba(255,220,180,.7); box-shadow:0 0 6px #000; }
+  #compass { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index:5;
+             font-size: 14px; letter-spacing: 3px; color:#ffcf9b; text-shadow:0 0 10px #000; opacity:.85;}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<div id="crosshair"></div>
+<div id="compass">↑ HOME LIES NORTH ALONG THE EMBER ROAD ↑</div>
+<div id="hud">
+  <div id="marker"></div>
+  <div id="bar"><div id="fill"></div></div>
+  <div id="dist">THE EMBER ROAD</div>
+</div>
+
+<!-- START -->
+<div id="start" class="overlay">
+  <div class="card">
+    <h1>THE EMBER ROAD</h1>
+    <p>Night has fallen on the volcano. You are far from the hearth, and there is no map, no star you trust, no voice to call.
+       There is only the trail — and the things along it your mind must <i>never</i> let you forget.</p>
+    <p>Walk it once. Burn each landmark into memory. Find your way <b>home</b> before the fires die.</p>
+    <div class="keys">
+      <span><b>W A S D</b> walk</span>
+      <span><b>MOUSE</b> look</span>
+      <span><b>SHIFT</b> hurry</span>
+    </div>
+    <p style="font-size:14px;color:#c9a">The road takes about a minute. Stay on the glowing stones.</p>
+    <button class="btn" id="beginBtn">CLICK TO ENTER THE TRAIL</button>
+  </div>
+</div>
+
+<!-- END -->
+<div id="end" class="overlay hidden">
+  <div class="card">
+    <h1>YOU ARE HOME</h1>
+    <h2 id="endTime"></h2>
+    <p>Now close your eyes. Can you walk the Ember Road again, in your mind, in order?</p>
+    <ul class="recap" id="recapList"></ul>
+    <button class="btn" id="againBtn">WALK IT AGAIN</button>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+}}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+
+// ---------------------------------------------------------------------------
+// THE EMBER ROAD — a finite, ~1-minute first-person memory walk through a
+// volcanic biome. Graphics technique on display: SHADOW MAPPING (a low warm
+// sun casts long, crisp, dynamic shadows that follow the walker).
+//
+// Mnemonic design: ten bizarre, emotionally-charged, spatially-sequenced
+// landmarks ("stations"), each with a distinct silhouette, signature color,
+// and its own sound cue — multisensory encoding for a strong mind palace.
+// ---------------------------------------------------------------------------
+
+const app = document.getElementById('app');
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+
+// ---- SHADOW MAPPING: the headline technique --------------------------------
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+app.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a0a06);
+scene.fog = new THREE.FogExp2(0x3a1206, 0.012);
+
+const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.1, 700);
+
+// ---- Lighting --------------------------------------------------------------
+// Warm volcanic ambient + ground bounce.
+const hemi = new THREE.HemisphereLight(0xff7a33, 0x140503, 0.55);
+scene.add(hemi);
+const ambient = new THREE.AmbientLight(0x4a1c0a, 0.35);
+scene.add(ambient);
+
+// The SUN — low, deep-orange, the single shadow-casting light. Its shadow
+// camera is kept tight and re-centered on the walker each frame so the shadow
+// map stays high-resolution everywhere along the long trail.
+const sun = new THREE.DirectionalLight(0xffb066, 2.1);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.near = 1;
+sun.shadow.camera.far = 160;
+const S = 60;
+sun.shadow.camera.left = -S; sun.shadow.camera.right = S;
+sun.shadow.camera.top = S;   sun.shadow.camera.bottom = -S;
+sun.shadow.bias = -0.0006;
+sun.shadow.normalBias = 0.04;
+scene.add(sun);
+scene.add(sun.target);
+
+// ---------------------------------------------------------------------------
+// TERRAIN — undulating basalt. Analytic height so the walker can sample it.
+// ---------------------------------------------------------------------------
+function terrainHeight(x, z) {
+  let h = 0;
+  h += Math.sin(x * 0.05) * Math.cos(z * 0.045) * 3.2;
+  h += Math.sin(x * 0.11 + z * 0.07) * 1.4;
+  h += Math.cos(z * 0.03) * 2.0;
+  // flatten a corridor around the trail so the road is walkable
+  return h;
+}
+
+const TERRAIN_W = 180, TERRAIN_L = 360, SEGW = 180, SEGL = 240;
+const terraGeo = new THREE.PlaneGeometry(TERRAIN_W, TERRAIN_L, SEGW, SEGL);
+terraGeo.rotateX(-Math.PI / 2);
+{
+  const pos = terraGeo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), z = pos.getZ(i);
+    pos.setY(i, terrainHeight(x, z));
+  }
+  terraGeo.computeVertexNormals();
+}
+const terraMat = new THREE.MeshStandardMaterial({ color: 0x241310, roughness: 0.97, metalness: 0.0 });
+const terrain = new THREE.Mesh(terraGeo, terraMat);
+terrain.position.z = -150;
+terrain.receiveShadow = true;
+scene.add(terrain);
+
+// A vast dark ash plain underneath, so edges never reveal the void.
+const plainMat = new THREE.MeshStandardMaterial({ color: 0x140805, roughness: 1 });
+const plain = new THREE.Mesh(new THREE.PlaneGeometry(1400, 1400), plainMat);
+plain.rotation.x = -Math.PI / 2;
+plain.position.y = -4;
+plain.receiveShadow = true;
+scene.add(plain);
+
+// Distant volcano cone silhouette ahead (the thing you are walking away from).
+{
+  const cone = new THREE.Mesh(
+    new THREE.ConeGeometry(120, 110, 32, 1, true),
+    new THREE.MeshStandardMaterial({ color: 0x1c0c08, roughness: 1, side: THREE.DoubleSide })
+  );
+  cone.position.set(10, 40, 130);
+  scene.add(cone);
+  // glowing crater rim
+  const rim = new THREE.Mesh(
+    new THREE.TorusGeometry(28, 6, 12, 40),
+    new THREE.MeshStandardMaterial({ color: 0xff3b00, emissive: 0xff3000, emissiveIntensity: 2.4, roughness: 1 })
+  );
+  rim.rotation.x = Math.PI / 2;
+  rim.position.set(10, 92, 130);
+  scene.add(rim);
+  const craterLight = new THREE.PointLight(0xff4400, 60, 220, 2);
+  craterLight.position.set(10, 95, 130);
+  scene.add(craterLight);
+}
+
+// ---------------------------------------------------------------------------
+// THE PATH — a finite winding curve. Walk from start (z≈0) to home (z≈-300).
+// ---------------------------------------------------------------------------
+const waypoints = [
+  [  0,   2], [  4, -26], [ -6, -52], [  3, -78], [ 10, -104],
+  [  0, -130], [-10, -156], [ -4, -182], [  7, -208], [ 12, -234],
+  [  5, -260], [ -2, -286], [  0, -300]
+].map(([x, z]) => new THREE.Vector3(x, 0, z));
+const path = new THREE.CatmullRomCurve3(waypoints, false, 'catmullrom', 0.5);
+const PATH_LEN = path.getLength();
+
+// Lay glowing trail stones along the path.
+const stoneGeo = new THREE.DodecahedronGeometry(0.55, 0);
+const stoneMat = new THREE.MeshStandardMaterial({ color: 0x2b1410, emissive: 0xff5a14, emissiveIntensity: 0.5, roughness: 0.8 });
+const STONE_COUNT = 220;
+for (let i = 0; i < STONE_COUNT; i++) {
+  const t = i / (STONE_COUNT - 1);
+  const p = path.getPointAt(t);
+  const tan = path.getTangentAt(t);
+  const side = new THREE.Vector3(-tan.z, 0, tan.x).normalize();
+  const off = (i % 2 === 0 ? 1 : -1) * 1.7;
+  const x = p.x + side.x * off, z = p.z + side.z * off;
+  const s = new THREE.Mesh(stoneGeo, stoneMat);
+  s.position.set(x, terrainHeight(x, z) + 0.15, z);
+  s.rotation.set(Math.random(), Math.random(), Math.random());
+  s.scale.setScalar(0.7 + Math.random() * 0.5);
+  s.castShadow = true; s.receiveShadow = true;
+  scene.add(s);
+}
+
+// ---------------------------------------------------------------------------
+// Shared geometry/material builders
+// ---------------------------------------------------------------------------
+const rockMat = (c = 0x2a1813) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.95 });
+const lavaMat = (c = 0xff4a12) => new THREE.MeshStandardMaterial({ color: 0x110402, emissive: c, emissiveIntensity: 2.2, roughness: 0.6 });
+function emissive(c, i = 2) { return new THREE.MeshStandardMaterial({ color: 0x100302, emissive: c, emissiveIntensity: i, roughness: 0.7 }); }
+
+function setShadows(obj) {
+  obj.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  return obj;
+}
+
+// Local glow light (no shadow — keeps the SUN the sole shadow caster & fast).
+const glowLights = [];
+function addGlow(x, y, z, color, intensity = 30, dist = 40) {
+  const l = new THREE.PointLight(color, intensity, dist, 2);
+  l.position.set(x, y, z);
+  scene.add(l);
+  glowLights.push(l);
+  return l;
+}
+
+// ---------------------------------------------------------------------------
+// LANDMARK / STATION BUILDERS — each bizarre, each its own color & sound note.
+// ---------------------------------------------------------------------------
+const animated = []; // objects with per-frame update(dt, t)
+
+// 1. THE OBSIDIAN GATE — two black glass pillars and a burning lintel.
+function gate(x, y, z) {
+  const g = new THREE.Group();
+  for (const sx of [-2.6, 2.6]) {
+    const p = new THREE.Mesh(new THREE.BoxGeometry(1.4, 8, 1.4),
+      new THREE.MeshStandardMaterial({ color: 0x050507, roughness: 0.15, metalness: 0.4 }));
+    p.position.set(sx, 4, 0); g.add(p);
+  }
+  const lintel = new THREE.Mesh(new THREE.BoxGeometry(7.2, 1.2, 1.6), emissive(0xffae00, 2.6));
+  lintel.position.y = 8.2; g.add(lintel);
+  g.position.set(x, y, z);
+  addGlow(x, y + 8, z, 0xffae00, 26, 30);
+  return setShadows(g);
+}
+
+// 2. THE BOILING LAKE — a sunken pool of churning magma with rising blobs.
+function boilingLake(x, y, z) {
+  const g = new THREE.Group();
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(6, 1.3, 8, 28), rockMat(0x1d0d09));
+  ring.rotation.x = Math.PI / 2; ring.position.y = 0.2; g.add(ring);
+  const pool = new THREE.Mesh(new THREE.CircleGeometry(6, 36), lavaMat(0xff6a1c));
+  pool.rotation.x = -Math.PI / 2; pool.position.y = -0.4; g.add(pool);
+  const blobs = [];
+  for (let i = 0; i < 7; i++) {
+    const b = new THREE.Mesh(new THREE.SphereGeometry(0.4 + Math.random() * 0.4, 10, 8), lavaMat(0xffb030));
+    b.userData.base = -0.5; b.userData.phase = Math.random() * Math.PI * 2;
+    b.userData.r = Math.random() * 4; b.userData.a = Math.random() * Math.PI * 2;
+    b.position.set(Math.cos(b.userData.a) * b.userData.r, -0.5, Math.sin(b.userData.a) * b.userData.r);
+    g.add(b); blobs.push(b);
+  }
+  g.position.set(x, y, z);
+  addGlow(x, y + 1.5, z, 0xff6a1c, 40, 36);
+  animated.push((dt, t) => {
+    for (const b of blobs) {
+      const u = (Math.sin(t * 1.4 + b.userData.phase) + 1) / 2;
+      b.position.y = b.userData.base + u * 1.6;
+      b.scale.setScalar(0.7 + u * 0.6);
+    }
+  });
+  return setShadows(g);
+}
+
+// 3. THE BONE GIANT — a colossal skull half-sunk in ash, hollow eyes aglow.
+function boneGiant(x, y, z) {
+  const g = new THREE.Group();
+  const bone = new THREE.MeshStandardMaterial({ color: 0xddccae, roughness: 0.85 });
+  const skull = new THREE.Mesh(new THREE.SphereGeometry(3.4, 18, 14), bone);
+  skull.scale.set(1, 1.05, 1.25); skull.position.y = 2.6; g.add(skull);
+  const jaw = new THREE.Mesh(new THREE.BoxGeometry(4.2, 1.4, 3), bone);
+  jaw.position.set(0, 0.8, 1.4); g.add(jaw);
+  for (const ex of [-1.3, 1.3]) {
+    const socket = new THREE.Mesh(new THREE.SphereGeometry(0.95, 12, 10), emissive(0xff2a00, 2.8));
+    socket.position.set(ex, 3.1, 2.4); g.add(socket);
+  }
+  // a few scattered ribs
+  for (let i = 0; i < 5; i++) {
+    const rib = new THREE.Mesh(new THREE.TorusGeometry(1.4 + i * 0.3, 0.18, 6, 14, Math.PI), bone);
+    rib.position.set(-6 - i * 0.9, 0.3, 2 - i * 0.6); rib.rotation.z = Math.PI; rib.rotation.y = 0.4; g.add(rib);
+  }
+  g.position.set(x, y, z);
+  addGlow(x, y + 3, z + 2.4, 0xff2a00, 14, 22);
+  return setShadows(g);
+}
+
+// 4. THE GEYSER FIELD — three vents that erupt steam on staggered rhythms.
+function geyserField(x, y, z) {
+  const g = new THREE.Group();
+  const vents = [[-4, 0, 1], [3, 0, -2], [0, 0, 3]];
+  const systems = [];
+  for (const [vx, , vz] of vents) {
+    const cone = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 1.6, 1.6, 12), rockMat(0x231510));
+    cone.position.set(vx, 0.6, vz); g.add(cone);
+    const lip = new THREE.Mesh(new THREE.CircleGeometry(0.5, 12), emissive(0xffd070, 2));
+    lip.rotation.x = -Math.PI / 2; lip.position.set(vx, 1.41, vz); g.add(lip);
+    // steam particles
+    const N = 60;
+    const geo = new THREE.BufferGeometry();
+    const arr = new Float32Array(N * 3);
+    const life = new Float32Array(N);
+    for (let i = 0; i < N; i++) { life[i] = Math.random(); arr[i*3]=vx; arr[i*3+1]=1.4; arr[i*3+2]=vz; }
+    geo.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+    const mat = new THREE.PointsMaterial({ color: 0xd8c4b0, size: 0.7, transparent: true, opacity: 0.5, depthWrite: false });
+    const pts = new THREE.Points(geo, mat);
+    g.add(pts);
+    systems.push({ vx, vz, geo, life, N, phase: Math.random() * Math.PI * 2 });
+  }
+  g.position.set(x, y, z);
+  animated.push((dt, t) => {
+    for (const s of systems) {
+      const burst = (Math.sin(t * 0.7 + s.phase) + 1) / 2; // 0..1 eruption strength
+      const p = s.geo.attributes.position.array;
+      for (let i = 0; i < s.N; i++) {
+        s.life[i] += dt * (0.3 + burst * 0.9);
+        if (s.life[i] > 1) { s.life[i] = 0; p[i*3]=s.vx; p[i*3+1]=1.4; p[i*3+2]=s.vz; }
+        p[i*3+1] = 1.4 + s.life[i] * (4 + burst * 6);
+        p[i*3]   = s.vx + Math.sin(s.life[i]*6 + i) * s.life[i] * 1.2;
+        p[i*3+2] = s.vz + Math.cos(s.life[i]*5 + i) * s.life[i] * 1.2;
+      }
+      s.geo.attributes.position.needsUpdate = true;
+    }
+  });
+  return setShadows(g);
+}
+
+// 5. THE TWISTED SENTINEL — a charred, gnarled dead tree, branches like claws.
+function twistedTree(x, y, z) {
+  const g = new THREE.Group();
+  const wood = new THREE.MeshStandardMaterial({ color: 0x0e0705, roughness: 1 });
+  function branch(origin, dir, len, rad, depth) {
+    if (depth > 4 || len < 0.5) return;
+    const end = origin.clone().add(dir.clone().multiplyScalar(len));
+    const mid = origin.clone().add(end).multiplyScalar(0.5);
+    const cyl = new THREE.Mesh(new THREE.CylinderGeometry(rad * 0.6, rad, len, 6), wood);
+    cyl.position.copy(mid);
+    cyl.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+    g.add(cyl);
+    const branches = depth < 2 ? 3 : 2;
+    for (let i = 0; i < branches; i++) {
+      const nd = dir.clone();
+      nd.x += (Math.random() - 0.5) * 1.3;
+      nd.z += (Math.random() - 0.5) * 1.3;
+      nd.y += 0.2 + Math.random() * 0.4;
+      branch(end, nd.normalize(), len * (0.62 + Math.random() * 0.15), rad * 0.62, depth + 1);
+    }
+  }
+  branch(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0.1, 1, 0.05), 4.2, 0.7, 0);
+  // one ember caught in the branches
+  const ember = new THREE.Mesh(new THREE.SphereGeometry(0.35, 8, 8), emissive(0xff7a20, 3));
+  ember.position.set(1.4, 6.5, 0.6); g.add(ember);
+  addGlow(x + 1.4, y + 6.5, z + 0.6, 0xff7a20, 10, 16);
+  g.position.set(x, y, z);
+  return setShadows(g);
+}
+
+// 6. THE LAVA BRIDGE — a narrow basalt span over a glowing chasm.
+function lavaBridge(x, y, z, tangent) {
+  const g = new THREE.Group();
+  // chasm crack glowing far below, perpendicular to path
+  const crack = new THREE.Mesh(new THREE.PlaneGeometry(40, 6), lavaMat(0xff5512));
+  crack.rotation.x = -Math.PI / 2; crack.position.y = -3.5; g.add(crack);
+  const deck = new THREE.Mesh(new THREE.BoxGeometry(3, 0.5, 9), rockMat(0x191010));
+  deck.position.y = 0.1; g.add(deck);
+  for (const sx of [-1.5, 1.5]) for (const sz of [-3.8, 0, 3.8]) {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 1.4, 6), emissive(0xffb000, 1.6));
+    post.position.set(sx, 0.9, sz); g.add(post);
+  }
+  // orient the chasm across the path
+  g.position.set(x, y, z);
+  const ang = Math.atan2(tangent.x, tangent.z);
+  g.rotation.y = ang;
+  addGlow(x, y - 1, z, 0xff5512, 34, 40);
+  return setShadows(g);
+}
+
+// 7. THE CRYSTAL GROVE — a cluster of tall glowing magma-crystals (cool blue-white
+//    against all the orange: a deliberate color shock for memory).
+function crystalGrove(x, y, z) {
+  const g = new THREE.Group();
+  for (let i = 0; i < 9; i++) {
+    const h = 2 + Math.random() * 4;
+    const c = new THREE.Mesh(new THREE.ConeGeometry(0.4 + Math.random() * 0.4, h, 5),
+      emissive(0x6fd6ff, 2.2));
+    const a = (i / 9) * Math.PI * 2, r = 1 + Math.random() * 3;
+    c.position.set(Math.cos(a) * r, h / 2, Math.sin(a) * r);
+    c.rotation.z = (Math.random() - 0.5) * 0.5;
+    c.rotation.x = (Math.random() - 0.5) * 0.5;
+    g.add(c);
+  }
+  g.position.set(x, y, z);
+  const gl = addGlow(x, y + 3, z, 0x6fd6ff, 28, 34);
+  animated.push((dt, t) => { gl.intensity = 22 + Math.sin(t * 3) * 8; });
+  return setShadows(g);
+}
+
+// 8. THE WEEPING WALL — a cliff face with ribbons of lava trickling down.
+function weepingWall(x, y, z) {
+  const g = new THREE.Group();
+  const wall = new THREE.Mesh(new THREE.BoxGeometry(16, 14, 2.5), rockMat(0x1a0f0c));
+  wall.position.y = 7; g.add(wall);
+  const streaks = [];
+  for (let i = 0; i < 6; i++) {
+    const sx = -6 + i * 2.4 + (Math.random() - 0.5);
+    const streak = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 13), lavaMat(0xff7a1e));
+    streak.position.set(sx, 7, 1.3); g.add(streak);
+    streaks.push({ m: streak, phase: Math.random() * Math.PI * 2 });
+  }
+  // molten pool at the base
+  const pool = new THREE.Mesh(new THREE.PlaneGeometry(16, 4), lavaMat(0xff5010));
+  pool.rotation.x = -Math.PI / 2; pool.position.set(0, 0.1, 2); g.add(pool);
+  g.position.set(x, y, z);
+  addGlow(x, y + 3, z + 3, 0xff5010, 30, 40);
+  animated.push((dt, t) => {
+    for (const s of streaks) s.m.material.emissiveIntensity = 1.6 + Math.sin(t * 4 + s.phase) * 0.9;
+  });
+  return setShadows(g);
+}
+
+// 9. THE MAW — a cave mouth in a mound, two huge glowing eyes peering out.
+function theMaw(x, y, z) {
+  const g = new THREE.Group();
+  const mound = new THREE.Mesh(new THREE.SphereGeometry(7, 20, 16, 0, Math.PI * 2, 0, Math.PI / 2), rockMat(0x150b08));
+  mound.position.y = 0; g.add(mound);
+  const mouth = new THREE.Mesh(new THREE.CircleGeometry(2.6, 24), new THREE.MeshBasicMaterial({ color: 0x000000 }));
+  mouth.position.set(0, 2.2, 6.6); g.add(mouth);
+  const teeth = new THREE.Mesh(new THREE.TorusGeometry(2.6, 0.35, 6, 18), new THREE.MeshStandardMaterial({ color: 0xc9b89a, roughness: 0.8 }));
+  teeth.position.set(0, 2.2, 6.6); g.add(teeth);
+  const eyes = [];
+  for (const ex of [-3.2, 3.2]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.7, 12, 10), emissive(0xeaff3a, 3));
+    eye.position.set(ex, 4.6, 5.4); g.add(eye); eyes.push(eye);
+  }
+  g.position.set(x, y, z);
+  const gl = addGlow(x, y + 4.6, z + 5.4, 0xeaff3a, 16, 24);
+  animated.push((dt, t) => {
+    const blink = (Math.sin(t * 0.9) > 0.97) ? 0.05 : 1;
+    for (const e of eyes) e.scale.y = blink;
+    gl.intensity = 10 + (blink > 0.5 ? 8 : 0);
+  });
+  return setShadows(g);
+}
+
+// 10. THE HOME HEARTH — a hide shelter ringed by stones, a living campfire. HOME.
+function homeHearth(x, y, z) {
+  const g = new THREE.Group();
+  // tent / shelter
+  const tent = new THREE.Mesh(new THREE.ConeGeometry(3.2, 5, 10), new THREE.MeshStandardMaterial({ color: 0x4a2a18, roughness: 1 }));
+  tent.position.set(-4, 2.5, -1); g.add(tent);
+  // ring of stones
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * Math.PI * 2;
+    const st = new THREE.Mesh(new THREE.DodecahedronGeometry(0.5, 0), rockMat(0x2a1c14));
+    st.position.set(Math.cos(a) * 2.2, 0.3, Math.sin(a) * 2.2); g.add(st);
+  }
+  // logs + fire
+  for (let i = 0; i < 3; i++) {
+    const log = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 2, 6), new THREE.MeshStandardMaterial({ color: 0x1d0f08, roughness: 1 }));
+    log.position.set(0, 0.2, 0); log.rotation.z = Math.PI / 2; log.rotation.y = (i / 3) * Math.PI; g.add(log);
+  }
+  const flames = [];
+  for (let i = 0; i < 5; i++) {
+    const f = new THREE.Mesh(new THREE.ConeGeometry(0.4, 1.4, 6), emissive(i % 2 ? 0xffd23a : 0xff6a10, 3));
+    f.position.set((Math.random()-0.5)*0.8, 0.9, (Math.random()-0.5)*0.8); g.add(f);
+    flames.push({ m: f, p: Math.random() * Math.PI * 2, base: f.position.y });
+  }
+  g.position.set(x, y, z);
+  const fl = addGlow(x, y + 1.4, z, 0xff8a2a, 50, 40);
+  animated.push((dt, t) => {
+    fl.intensity = 40 + Math.sin(t * 12) * 12 + Math.sin(t * 7.3) * 8;
+    for (const f of flames) {
+      f.m.scale.y = 0.7 + (Math.sin(t * 9 + f.p) + 1) * 0.5;
+      f.m.position.y = f.base + Math.sin(t * 6 + f.p) * 0.1;
+      f.m.rotation.y += dt * 2;
+    }
+  });
+  return setShadows(g);
+}
+
+// ---------------------------------------------------------------------------
+// Place the stations along the path at chosen parameters.
+// Each entry: name, t (0..1 along path), builder, side offset, sound note (Hz).
+// ---------------------------------------------------------------------------
+const STATIONS = [
+  { name: 'THE OBSIDIAN GATE',  t: 0.03, build: gate,         off: 0,    note: 196.00, hint: 'Two pillars of black glass and a burning beam.' },
+  { name: 'THE BOILING LAKE',   t: 0.12, build: boilingLake,  off: 9,    note: 146.83, hint: 'A churning pool spitting molten blobs.' },
+  { name: 'THE BONE GIANT',     t: 0.23, build: boneGiant,    off: -9,   note: 110.00, hint: 'A colossal skull with red-glowing eyes.' },
+  { name: 'THE GEYSER FIELD',   t: 0.34, build: geyserField,  off: 8,    note: 261.63, hint: 'Three vents breathing pillars of steam.' },
+  { name: 'THE TWISTED SENTINEL',t:0.45, build: twistedTree,  off: -8,   note: 174.61, hint: 'A charred dead tree clawing at the sky.' },
+  { name: 'THE LAVA BRIDGE',    t: 0.55, build: lavaBridge,   off: 0,    note: 220.00, hint: 'A narrow span over a glowing chasm.', useTangent: true },
+  { name: 'THE CRYSTAL GROVE',  t: 0.66, build: crystalGrove, off: 8.5,  note: 329.63, hint: 'Cold blue crystals — the one cool place.' },
+  { name: 'THE WEEPING WALL',   t: 0.77, build: weepingWall,  off: -10,  note: 130.81, hint: 'A cliff weeping ribbons of lava.' },
+  { name: 'THE MAW',            t: 0.87, build: theMaw,        off: 9,    note: 246.94, hint: 'A cave mouth with two yellow eyes.' },
+  { name: 'THE HOME HEARTH',    t: 0.985,build: homeHearth,   off: 0,    note: 392.00, hint: 'Your shelter and the living fire. HOME.' },
+];
+
+const stationData = [];
+for (const st of STATIONS) {
+  const p = path.getPointAt(st.t);
+  const tan = path.getTangentAt(st.t);
+  const sideV = new THREE.Vector3(-tan.z, 0, tan.x).normalize();
+  const px = p.x + sideV.x * st.off;
+  const pz = p.z + sideV.z * st.off;
+  const py = terrainHeight(px, pz);
+  const obj = st.useTangent ? st.build(px, py, pz, tan) : st.build(px, py, pz);
+  scene.add(obj);
+  stationData.push({ ...st, pos: new THREE.Vector3(px, py, pz), triggered: false });
+}
+
+// ---------------------------------------------------------------------------
+// Atmosphere — floating embers drifting across the whole scene.
+// ---------------------------------------------------------------------------
+{
+  const N = 800;
+  const geo = new THREE.BufferGeometry();
+  const arr = new Float32Array(N * 3);
+  const vel = new Float32Array(N);
+  for (let i = 0; i < N; i++) {
+    arr[i*3]   = (Math.random() - 0.5) * 160;
+    arr[i*3+1] = Math.random() * 30;
+    arr[i*3+2] = -Math.random() * 320;
+    vel[i] = 1 + Math.random() * 3;
+  }
+  geo.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+  const mat = new THREE.PointsMaterial({ color: 0xff8a3a, size: 0.35, transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending });
+  const embers = new THREE.Points(geo, mat);
+  scene.add(embers);
+  animated.push((dt, t) => {
+    const p = geo.attributes.position.array;
+    for (let i = 0; i < N; i++) {
+      p[i*3+1] += vel[i] * dt;
+      p[i*3]   += Math.sin(t + i) * dt * 0.4;
+      if (p[i*3+1] > 32) { p[i*3+1] = 0; p[i*3] = (Math.random()-0.5)*160; p[i*3+2] = -Math.random()*320; }
+    }
+    geo.attributes.position.needsUpdate = true;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// First-person controls (PointerLock) + walking physics on the terrain.
+// ---------------------------------------------------------------------------
+const controls = new PointerLockControls(camera, renderer.domElement);
+const player = controls.getObject();
+const EYE = 1.7;
+const startPt = path.getPointAt(0);
+player.position.set(startPt.x, terrainHeight(startPt.x, startPt.z) + EYE, startPt.z + 4);
+camera.lookAt(startPt.x, EYE, startPt.z - 10);
+scene.add(player);
+
+const keys = {};
+addEventListener('keydown', e => keys[e.code] = true);
+addEventListener('keyup', e => keys[e.code] = false);
+
+const velocity = new THREE.Vector3();
+let started = false, finished = false, startTime = 0;
+
+// ---------------------------------------------------------------------------
+// Audio — a low volcanic rumble bed + distinct musical note per station.
+// ---------------------------------------------------------------------------
+let actx = null, rumbleGain = null;
+function initAudio() {
+  if (actx) return;
+  actx = new (window.AudioContext || window.webkitAudioContext)();
+  // rumble bed
+  const o1 = actx.createOscillator(); o1.type = 'sine'; o1.frequency.value = 42;
+  const o2 = actx.createOscillator(); o2.type = 'sine'; o2.frequency.value = 55;
+  const lp = actx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 120;
+  rumbleGain = actx.createGain(); rumbleGain.gain.value = 0.18;
+  o1.connect(lp); o2.connect(lp); lp.connect(rumbleGain); rumbleGain.connect(actx.destination);
+  o1.start(); o2.start();
+  // slow LFO on rumble for a "breathing" volcano
+  const lfo = actx.createOscillator(); lfo.frequency.value = 0.15;
+  const lfoGain = actx.createGain(); lfoGain.gain.value = 0.08;
+  lfo.connect(lfoGain); lfoGain.connect(rumbleGain.gain); lfo.start();
+}
+function playNote(freq) {
+  if (!actx) return;
+  const now = actx.currentTime;
+  const o = actx.createOscillator(); o.type = 'triangle'; o.frequency.value = freq;
+  const g = actx.createGain(); g.gain.setValueAtTime(0.0001, now);
+  g.gain.exponentialRampToValueAtTime(0.25, now + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, now + 1.6);
+  o.connect(g); g.connect(actx.destination);
+  o.start(now); o.stop(now + 1.7);
+  // soft fifth above for a memorable chime
+  const o2 = actx.createOscillator(); o2.type = 'sine'; o2.frequency.value = freq * 1.5;
+  const g2 = actx.createGain(); g2.gain.setValueAtTime(0.0001, now);
+  g2.gain.exponentialRampToValueAtTime(0.12, now + 0.04);
+  g2.gain.exponentialRampToValueAtTime(0.0001, now + 1.2);
+  o2.connect(g2); g2.connect(actx.destination);
+  o2.start(now); o2.stop(now + 1.3);
+}
+
+// ---------------------------------------------------------------------------
+// HUD + overlay wiring
+// ---------------------------------------------------------------------------
+const startOverlay = document.getElementById('start');
+const endOverlay = document.getElementById('end');
+const markerEl = document.getElementById('marker');
+const fillEl = document.getElementById('fill');
+const distEl = document.getElementById('dist');
+
+document.getElementById('beginBtn').addEventListener('click', () => {
+  initAudio();
+  controls.lock();
+});
+controls.addEventListener('lock', () => {
+  startOverlay.classList.add('hidden');
+  if (!started) { started = true; startTime = performance.now(); }
+});
+document.getElementById('againBtn').addEventListener('click', () => location.reload());
+
+let markerTimer = 0;
+function showMarker(text) {
+  markerEl.textContent = text;
+  markerEl.style.opacity = '1';
+  markerTimer = 4;
+}
+
+function finish() {
+  finished = true;
+  controls.unlock();
+  const secs = ((performance.now() - startTime) / 1000).toFixed(1);
+  document.getElementById('endTime').textContent = `You walked the Ember Road in ${secs} seconds.`;
+  const ul = document.getElementById('recapList');
+  ul.innerHTML = '';
+  STATIONS.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<b>${i + 1}. ${s.name}</b> — ${s.hint}`;
+    ul.appendChild(li);
+  });
+  endOverlay.classList.remove('hidden');
+}
+
+// ---------------------------------------------------------------------------
+// Main loop
+// ---------------------------------------------------------------------------
+const clock = new THREE.Clock();
+function tick() {
+  requestAnimationFrame(tick);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t = clock.elapsedTime;
+
+  // run all animated landmark systems
+  for (const fn of animated) fn(dt, t);
+
+  if (controls.isLocked && !finished) {
+    // movement
+    const speed = (keys['ShiftLeft'] || keys['ShiftRight']) ? 11 : 6;
+    velocity.x -= velocity.x * 10 * dt;
+    velocity.z -= velocity.z * 10 * dt;
+    const f = (keys['KeyW'] ? 1 : 0) - (keys['KeyS'] ? 1 : 0);
+    const s = (keys['KeyD'] ? 1 : 0) - (keys['KeyA'] ? 1 : 0);
+    if (f) velocity.z -= f * speed * 10 * dt;
+    if (s) velocity.x -= s * speed * 10 * dt;
+    controls.moveRight(-velocity.x * dt);
+    controls.moveForward(-velocity.z * dt);
+
+    // stick to terrain
+    const px = player.position.x, pz = player.position.z;
+    player.position.y = terrainHeight(px, pz) + EYE;
+
+    // keep roughly within the world bounds
+    player.position.x = THREE.MathUtils.clamp(px, -80, 80);
+    player.position.z = THREE.MathUtils.clamp(pz, -310, 12);
+
+    // station proximity → marker + sound cue
+    for (const sd of stationData) {
+      const d = sd.pos.distanceTo(player.position);
+      if (d < 14 && !sd.triggered) {
+        sd.triggered = true;
+        showMarker(sd.name);
+        playNote(sd.note);
+      }
+    }
+
+    // progress along the path (nearest sampled point)
+    let best = Infinity, bestT = 0;
+    for (let i = 0; i <= 60; i++) {
+      const pt = path.getPointAt(i / 60);
+      const dd = (pt.x - px) ** 2 + (pt.z - pz) ** 2;
+      if (dd < best) { best = dd; bestT = i / 60; }
+    }
+    fillEl.style.width = (bestT * 100).toFixed(0) + '%';
+    const remaining = Math.max(0, PATH_LEN * (1 - bestT));
+    distEl.textContent = `${Math.round(remaining)} STEPS TO HOME`;
+
+    // reached home
+    const homePos = stationData[stationData.length - 1].pos;
+    if (player.position.distanceTo(homePos) < 6) finish();
+  }
+
+  // SHADOW MAPPING: re-center the sun's shadow frustum on the walker so the
+  // shadow map stays tight & high-resolution across the long trail.
+  sun.position.set(player.position.x - 28, player.position.y + 42, player.position.z + 26);
+  sun.target.position.set(player.position.x + 6, 0, player.position.z - 10);
+  sun.target.updateMatrixWorld();
+
+  // fade marker
+  if (markerTimer > 0) { markerTimer -= dt; if (markerTimer <= 0) markerEl.style.opacity = '0'; }
+
+  renderer.render(scene, camera);
+}
+tick();
+
+addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>

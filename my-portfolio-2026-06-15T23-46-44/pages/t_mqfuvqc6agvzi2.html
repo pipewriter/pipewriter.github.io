@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>The Savanna Trail Home — A Walk to Remember</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:'Trebuchet MS',system-ui,sans-serif;color:#fff;cursor:crosshair}
+  #c{display:block;width:100vw;height:100vh}
+  .ui{position:fixed;left:0;right:0;pointer-events:none;text-shadow:0 2px 8px rgba(0,0,0,.8)}
+  #caption{top:64px;text-align:center;font-size:30px;letter-spacing:3px;font-weight:bold;opacity:0;transition:opacity .6s;color:#ffe9c2}
+  #sub{top:104px;text-align:center;font-size:15px;opacity:0;transition:opacity .6s;color:#cfe2ff;letter-spacing:1px}
+  #bar{position:fixed;left:8%;right:8%;bottom:30px;height:6px;background:rgba(255,255,255,.15);border-radius:4px;overflow:hidden}
+  #fill{height:100%;width:0;background:linear-gradient(90deg,#ffd27a,#ff7a3c);border-radius:4px;transition:width .1s linear}
+  #hint{bottom:46px;text-align:center;font-size:13px;color:#ffd9a0;opacity:.85}
+  #overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;
+           background:radial-gradient(circle at 50% 40%,rgba(40,20,8,.6),rgba(0,0,0,.92));text-align:center;padding:24px;z-index:10}
+  #overlay h1{font-size:40px;margin:.1em;color:#ffd98a;letter-spacing:2px}
+  #overlay p{max-width:640px;line-height:1.6;color:#e8dcc6;font-size:16px}
+  #overlay .k{color:#ffd27a;font-weight:bold}
+  #go{margin-top:18px;pointer-events:auto;cursor:pointer;border:2px solid #ffb347;background:rgba(255,140,40,.18);
+      color:#ffe;padding:14px 38px;font-size:18px;border-radius:40px;letter-spacing:2px;transition:.2s}
+  #go:hover{background:rgba(255,140,40,.42);transform:scale(1.04)}
+  #done{display:none}
+  .small{font-size:13px;opacity:.7;margin-top:14px}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="caption" class="ui"></div>
+<div id="sub" class="ui"></div>
+<div id="hint" class="ui">walk: auto &nbsp;•&nbsp; <b>W</b> hurry &nbsp;•&nbsp; <b>S</b> linger &nbsp;•&nbsp; mouse / arrows: look around</div>
+<div id="bar"><div id="fill"></div></div>
+
+<div id="overlay">
+  <div id="start">
+    <h1>THE TRAIL HOME</h1>
+    <p>The sun hangs low over the savanna. You are far from camp, and there is no map, no star you trust yet — only
+       the land itself. Walk the trail and <b>let each place burn into memory</b>: the swollen tree, the red spires,
+       the water that mirrors the sky, the gate of stone. One day you will need to find your way back in the dark.</p>
+    <p class="small">A one-minute first-person walk through ten vivid, deliberately memorable places.<br>
+       Rendered with a <span class="k">deferred shading</span> pipeline (G-buffer + many lights).</p>
+    <button id="go">▶ &nbsp;BEGIN THE WALK</button>
+    <p class="small">Click grants mouse-look (pointer lock). Press <b>Esc</b> anytime.</p>
+  </div>
+  <div id="done">
+    <h1>YOU ARE HOME</h1>
+    <p id="donetxt"></p>
+    <p>Close your eyes. Can you still walk it backward? The fire, the bones, the elephants, the arch…</p>
+    <button id="go2">↺ &nbsp;WALK IT AGAIN</button>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.164.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.164.0/examples/jsm/"
+}}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+
+THREE.ColorManagement.enabled = true;
+
+/* ============================== seeded RNG ============================== */
+let _s = 1337;
+function rnd(){ _s = (_s*1664525 + 1013904223) >>> 0; return _s/4294967296; }
+const rr = (a,b)=> a + (b-a)*rnd();
+
+/* ============================== renderer ============================== */
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({canvas, antialias:false});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth, innerHeight);
+if(!renderer.capabilities.isWebGL2){ alert('WebGL2 required for deferred shading.'); }
+
+const camera = new THREE.PerspectiveCamera(68, innerWidth/innerHeight, 0.1, 600);
+const propsScene = new THREE.Scene();   // geometry rendered into the G-buffer
+const labelScene = new THREE.Scene();   // forward overlay captions
+
+/* ============================== G-buffer material ============================== */
+const GV = `precision highp float;
+in vec3 position; in vec3 normal; in vec3 color; in float emissive;
+uniform mat4 modelMatrix, modelViewMatrix, projectionMatrix;
+out vec3 vWorldPos; out vec3 vNormal; out vec3 vColor; out float vEmis;
+void main(){
+  vec4 wp = modelMatrix*vec4(position,1.0);
+  vWorldPos = wp.xyz;
+  vNormal   = mat3(modelMatrix)*normal;
+  vColor    = color; vEmis = emissive;
+  gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0);
+}`;
+const GF = `precision highp float;
+in vec3 vWorldPos; in vec3 vNormal; in vec3 vColor; in float vEmis;
+layout(location=0) out vec4 gColor;
+layout(location=1) out vec4 gNormal;
+layout(location=2) out vec4 gPosition;
+void main(){
+  vec3 n = normalize(vNormal); if(!gl_FrontFacing) n = -n;
+  gColor    = vec4(vColor, vEmis);
+  gNormal   = vec4(n, 1.0);
+  gPosition = vec4(vWorldPos, 1.0);
+}`;
+const gbufMat = new THREE.RawShaderMaterial({glslVersion:THREE.GLSL3, vertexShader:GV, fragmentShader:GF, side:THREE.DoubleSide});
+
+/* ============================== geometry helpers ============================== */
+const parts = [];
+const _q = new THREE.Quaternion(), _e = new THREE.Euler(), _m = new THREE.Matrix4();
+const C = (hex)=> new THREE.Color(hex); // sRGB hex -> linear working color
+
+function prep(geo, col, em, matrix){
+  geo.deleteAttribute('uv'); geo.deleteAttribute('uv1'); geo.deleteAttribute('uv2');
+  if(matrix) geo.applyMatrix4(matrix);
+  const n = geo.attributes.position.count;
+  const ca = new Float32Array(n*3);
+  for(let i=0;i<n;i++){ ca[i*3]=col.r; ca[i*3+1]=col.g; ca[i*3+2]=col.b; }
+  geo.setAttribute('color', new THREE.BufferAttribute(ca,3));
+  const ea = new Float32Array(n); ea.fill(em);
+  geo.setAttribute('emissive', new THREE.BufferAttribute(ea,1));
+  return geo;
+}
+// add a primitive into the merged static world
+function add(geo, x,y,z, hex, o={}){
+  const {rx=0,ry=0,rz=0,sx=1,sy=1,sz=1,em=0} = o;
+  _e.set(rx,ry,rz); _q.setFromEuler(_e);
+  _m.compose(new THREE.Vector3(x,y,z), _q, new THREE.Vector3(sx,sy,sz));
+  parts.push(prep(geo, (hex instanceof THREE.Color)?hex:C(hex), em, _m));
+}
+const box  = (w,h,d)=> new THREE.BoxGeometry(w,h,d);
+const cyl  = (rt,rb,h,s=8)=> new THREE.CylinderGeometry(rt,rb,h,s);
+const cone = (r,h,s=8)=> new THREE.ConeGeometry(r,h,s);
+const sph  = (r,s=10)=> new THREE.SphereGeometry(r,s,Math.max(6,s-2));
+const ico  = (r,d=0)=> new THREE.IcosahedronGeometry(r,d);
+const tor  = (r,t,s=10)=> new THREE.TorusGeometry(r,t,6,s);
+
+/* ============================== lights (deferred) ============================== */
+const lights = [];            // {pos:Vector3, base:Color, range, intensity, kind}
+function addLight(pos, hex, range, intensity=1, kind='steady'){
+  lights.push({pos:pos.clone(), base:C(hex), range, intensity, kind});
+}
+// glowing waypoint orb + matching point light: the colour-coded "loci" markers
+function marker(x,z, hex, range=16, inten=1.4){
+  add(sph(0.42,14), x, 2.3, z, hex, {em:1});
+  add(tor(0.7,0.07,16), x, 2.3, z, hex, {em:0.8, rx:Math.PI/2});
+  addLight(new THREE.Vector3(x,2.4,z), hex, range, inten);
+}
+
+/* ============================== the winding trail ============================== */
+const ctrl = [
+  [0,0,4],[3,0,-9],[-3.5,0,-22],[3,0,-35],[11,0,-48],
+  [5,0,-62],[-6.5,0,-76],[-2,0,-90],[3,0,-104],[0,0,-119]
+].map(p=> new THREE.Vector3(p[0],p[1],p[2]));
+const curve = new THREE.CatmullRomCurve3(ctrl, false, 'catmullrom', 0.5);
+const TRAIL_LEN = curve.getLength();
+
+/* ============================== landmark builders ============================== */
+function baobab(x,z){
+  add(cyl(1.0,2.1,7,10), x,3.5,z, '#7c5a3a');                       // swollen trunk
+  add(sph(2.0,10), x,7.1,z, '#6b4d33', {sy:0.55});                  // knot
+  for(let i=0;i<6;i++){ const a=i/6*6.283; add(cyl(0.12,0.32,2.6,5), x+Math.cos(a)*1.4,7.6,z+Math.sin(a)*1.4,'#6b4d33',{rz:Math.cos(a)*1.1,rx:Math.sin(a)*1.1}); }
+  for(let i=0;i<10;i++){ const a=rr(0,6.3),r=rr(0.6,2.4); add(ico(rr(0.7,1.3),0), x+Math.cos(a)*r,8.0+rr(-.3,.8),z+Math.sin(a)*r,'#3f5a23'); }
+}
+function termites(x,z){
+  const cols=['#b5481f','#c2562a','#9c3c18'];
+  for(let i=0;i<6;i++){ const a=i/6*6.283, r=rr(0.8,2.6), h=rr(2.4,4.6);
+    add(cone(rr(0.45,0.8),h,7), x+Math.cos(a)*r,h/2,z+Math.sin(a)*r, cols[i%3]); }
+}
+function waterhole(x,z){
+  add(cyl(5.2,5.6,0.25,28), x,-0.05,z, '#6b4a2c');                  // mud bank
+  add(cyl(4.4,4.4,0.12,28), x,0.10,z, '#2f7fa6', {em:0.18});        // water (cool emissive)
+  for(let i=0;i<22;i++){ const a=rr(0,6.3),r=rr(4.3,5.1); add(cyl(0.02,0.06,rr(0.8,1.8),4), x+Math.cos(a)*r,0.9,z+Math.sin(a)*r,'#5f7d2a',{rx:rr(-.2,.2)}); }
+  add(sph(0.6,8), x-2.5,0.4,z-3.6, '#dfe7ee', {em:0.05, sy:0.5});   // reflection stone
+  addLight(new THREE.Vector3(x,0.6,z), '#67c6ff', 14, 0.9);
+}
+function arch(x,z){
+  // a gate of stone the trail passes THROUGH (opening straddles the path)
+  for(let s=-1;s<=1;s+=2){ const px=x+s*2.6;
+    for(let j=0;j<3;j++) add(ico(rr(1.0,1.5),0), px+rr(-.3,.3), 0.8+j*1.5, z+rr(-.3,.3), '#8d8577', {sy:1.1}); }
+  for(let j=-2;j<=2;j++) add(ico(rr(1.0,1.4),0), x+j*1.1, 5.3+Math.abs(j)*-0.2+0.4, z, '#9a9284');
+  add(ico(1.6,0), x+5.5,1.3,z+2, '#7d756a'); add(ico(1.2,0), x-5.2,1.0,z-2.2,'#7d756a');
+}
+function acacia(x,z,sc=1){
+  add(cyl(0.18*sc,0.32*sc,3.4*sc,6), x,1.7*sc,z, '#6e5236');
+  add(cyl(3.0*sc,1.4*sc,0.5*sc,12), x,3.5*sc,z, '#566f2a');         // flat umbrella canopy
+  add(cyl(2.2*sc,2.8*sc,0.35*sc,12), x,3.15*sc,z, '#3f5520');
+}
+function elephant(x,z,r){
+  add(sph(1.5,10), x,2.0,z, '#8a8b90', {sx:1.7,sy:1.0,sz:1.0, ry:r});         // body
+  add(sph(0.9,10), x+Math.cos(r)*2.0,2.3,z-Math.sin(r)*2.0, '#94959a');       // head
+  add(cyl(0.12,0.22,1.6,6), x+Math.cos(r)*2.7,1.1,z-Math.sin(r)*2.7,'#86878c',{rx:0.5,ry:r}); // trunk
+  for(let s=-1;s<=1;s+=2) for(let f=-1;f<=1;f+=2)
+    add(cyl(0.3,0.35,1.8,6), x+f*0.9*Math.cos(r)+s*0.7*Math.sin(r),0.9,z-f*0.9*Math.sin(r)+s*0.7*Math.cos(r),'#7c7d82');
+  add(sph(0.5,8), x-Math.cos(r)*1.9,2.2,z+Math.sin(r)*1.9,'#94959a',{sx:0.6,sz:0.9}); // ears-ish
+}
+function elephants(x,z){ elephant(x,z,0.4); elephant(x+4,z-3,1.2); elephant(x-3.5,z-1.5,2.4); }
+function bones(x,z){
+  add(sph(1.3,12), x,1.0,z, '#ece6d5', {sy:0.9});                   // skull
+  for(let s=-1;s<=1;s+=2) add(cone(0.25,2.2,6), x+s*0.9,2.2,z+0.6,'#ece6d5',{rz:s*1.0,rx:-0.5}); // horns
+  add(box(0.5,0.5,0.5), x+0.5,0.6,z+0.9,'#1c140e'); add(box(0.5,0.5,0.5), x-0.5,0.6,z+0.9,'#1c140e'); // eye sockets
+  for(let i=0;i<5;i++) add(tor(0.6+i*0.18,0.07,10), x-4-i*0.7,0.4,z-2,'#ddd6c4',{rx:0.2,rz:1.55}); // ribcage
+  add(cyl(0.12,0.12,2.6,6), x-7.5,0.2,z-2.4,'#d8d0bd',{rz:1.4});
+}
+function redgrass(x,z){
+  const cols=['#c23a22','#d8542b','#e07a2c','#b53018'];
+  for(let i=0;i<140;i++){ const a=rr(0,6.3),r=rr(0,5.5);
+    add(cone(rr(0.04,0.09), rr(1.6,3.2), 4), x+Math.cos(a)*r,1.2,z+Math.sin(a)*r*0.7, cols[i%4],{rx:rr(-.18,.18),rz:rr(-.18,.18), em:0.06}); }
+}
+function fallenlog(x,z){
+  add(cyl(0.7,0.85,9,12), x,0.8,z, '#5a4129', {rz:Math.PI/2, ry:0.3});
+  add(cyl(0.72,0.72,0.2,12), x+4.4,0.8,z+1.3,'#caa36b',{rz:Math.PI/2,ry:0.3});
+  for(let i=0;i<7;i++){ const t=rr(-3.5,3.5); add(sph(rr(0.14,0.26),8), x+t,1.45,z+t*0.31+rr(-.3,.3),'#e23c2c',{em:0.5,sy:0.6}); } // mushrooms pop
+  for(let i=0;i<6;i++){ const t=rr(-3,3); add(cyl(0.02,0.02,0.4,4), x+t,1.5,z+t*0.31,'#efe2c2'); }
+}
+function home(x,z){
+  // the destination: warm fire, hearth stones, huts, totem — "safety"
+  for(let i=0;i<12;i++){ const a=i/12*6.283; add(ico(0.4,0), x+Math.cos(a)*1.5,0.25,z+Math.sin(a)*1.5,'#6b6b6b'); }
+  add(cone(0.7,1.4,8), x,0.7,z, '#ff7a1e', {em:1.0});
+  add(cone(0.4,0.9,8), x,0.9,z, '#ffe04a', {em:1.0});
+  for(let i=0;i<5;i++){ const a=rr(0,6.3); add(cyl(0.06,0.09,1.2,5), x+Math.cos(a)*0.5,0.5,z+Math.sin(a)*0.5,'#3a2a1c',{rz:Math.cos(a)*0.7,rx:Math.sin(a)*0.7}); }
+  for(let s=-1;s<=1;s+=2){ const hx=x+s*5, hz=z-3.5;
+    add(cone(2.0,3.2,10), hx,1.6,hz, '#b9874f'); add(cyl(0.05,0.05,2.6,4), hx,2.0,hz,'#5a4026'); }
+  add(box(0.35,4,0.35), x-3,2,z+2,'#4a3220'); add(box(1.2,0.4,0.4), x-3,3.6,z+2,'#caa84a',{em:0.15}); // totem
+  add(sph(0.5,8), x-3,4.3,z+2,'#d8453a',{em:0.3});
+  addLight(new THREE.Vector3(x,1.0,z), '#ff7b22', 22, 2.6, 'fire');
+}
+
+/* ---- place stations along the trail ---- */
+const stations = [];
+function station(name, sub, hex, pos, builder){
+  builder(pos.x, pos.z);
+  marker(pos.x, pos.z, hex);
+  stations.push({name, sub, hex, x:pos.x, z:pos.z, t:0});
+}
+const P = i => curve.getPointAt(i);
+station('THE SWOLLEN TREE','baobab — your starting mark','#ffcf4d', P(0.00), (x,z)=>baobab(x-5,z+2));
+station('THE RED SPIRES','termite cathedrals','#ff7a2a',           P(0.13), (x,z)=>termites(x-4,z));
+station('THE SKY-WATER','the watering hole','#56c8ff',              P(0.27), (x,z)=>waterhole(x+6,z));
+station('THE STONE GATE','arch you walk through','#ff5cc8',         P(0.40), (x,z)=>arch(x,z));
+station('THE UMBRELLA GROVE','acacia shade','#5dff7a',              P(0.53), (x,z)=>{acacia(x+5,z,1.3);acacia(x+9,z-4,1.0);acacia(x-6,z-2,1.1);});
+station('THE GREY GIANTS','elephant herd','#5a8bff',                P(0.66), (x,z)=>elephants(x-9,z-2));
+station('THE WHITE BONES','remember the fallen','#f4f0e6',          P(0.78), (x,z)=>bones(x+7,z));
+station('THE CRIMSON FIELD','blood-red grass','#ff3030',           P(0.86), (x,z)=>redgrass(x,z-2));
+station('THE FALLEN BRIDGE','log over the path','#c07bff',          P(0.93), (x,z)=>fallenlog(x,z));
+station('HOME','the fire is lit','#ff9a3c',                         P(1.00), (x,z)=>home(x,z-3));
+// resolve each station's normalized position along the trail (for captions)
+for(const s of stations){
+  let best=1e9,bt=0; const p=new THREE.Vector3(s.x,0,s.z);
+  for(let i=0;i<=240;i++){ const t=i/240, q=curve.getPointAt(t); q.y=0; const d=q.distanceTo(p); if(d<best){best=d;bt=t;} }
+  s.t=bt;
+}
+
+/* ---- scatter life across the plain (parallax, depth, "living world") ---- */
+for(let i=0;i<22;i++){ const x=rr(-90,90),z=rr(-150,20); if(Math.abs(x)<14&&z>-125)continue; acacia(x,z,rr(0.7,1.6)); }
+for(let i=0;i<40;i++){ const x=rr(-95,95),z=rr(-150,15); add(ico(rr(0.6,1.6),0), x,rr(0.2,0.7),z, i%3?'#7e7468':'#8d8377'); }
+for(let i=0;i<70;i++){ const x=rr(-95,95),z=rr(-150,15); add(ico(rr(0.5,1.1),1), x,rr(0.3,0.6),z, rnd()<.5?'#637032':'#7a8a3d'); } // bushes
+for(let i=0;i<260;i++){ const x=rr(-70,70),z=rr(-140,12); add(cone(rr(0.05,0.1),rr(0.4,1.0),4), x,0.4,z, rnd()<.5?'#9aa04a':'#b1a04a'); }
+for(let i=0;i<7;i++){ const x=rr(-180,180),z=rr(-260,-90); add(sph(rr(14,28),12), x,-rr(8,16),z, '#86813f', {sy:0.5}); } // distant hills
+// a far herd for life
+for(let i=0;i<8;i++){ elephant(rr(40,80), rr(-120,-40), rr(0,6.3)); }
+// scattered fireflies / spirit lights near the crimson field & water for deferred flair
+addLight(new THREE.Vector3(P(0.86).x+2,1.2,P(0.86).z-2), '#ff6a2a', 9, 0.7);
+addLight(new THREE.Vector3(P(0.27).x+6,1.0,P(0.27).z-4), '#39e0ff', 9, 0.6);
+addLight(new THREE.Vector3(P(0.40).x,3.0,P(0.40).z), '#ff7adf', 10, 0.8);
+
+/* ============================== build merged world mesh ============================== */
+const worldGeo = mergeGeometries(parts, false);
+propsScene.add(new THREE.Mesh(worldGeo, gbufMat));
+
+/* ground (its own mesh, colour-varied) */
+{
+  const g = new THREE.PlaneGeometry(620,620,140,140);
+  g.rotateX(-Math.PI/2);
+  const n=g.attributes.position.count, pos=g.attributes.position, ca=new Float32Array(n*3);
+  const base=C('#b5963f'), dry=C('#9c8a3a'), grn=C('#7e8a3a');
+  for(let i=0;i<n;i++){
+    const px=pos.getX(i),pz=pos.getZ(i);
+    const v=(Math.sin(px*0.12)*Math.cos(pz*0.13)+Math.sin(px*0.03+pz*0.05))*0.5+0.5;
+    const c=base.clone().lerp(rnd()<0.5?dry:grn, v*0.6);
+    ca[i*3]=c.r; ca[i*3+1]=c.g; ca[i*3+2]=c.b;
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(ca,3));
+  g.setAttribute('emissive', new THREE.BufferAttribute(new Float32Array(n),1));
+  g.deleteAttribute('uv');
+  propsScene.add(new THREE.Mesh(g, gbufMat));
+}
+
+/* trail ribbon (worn dirt path that follows the spline) */
+{
+  const N=260, half=0.95, up=new THREE.Vector3(0,1,0);
+  const verts=[], cols=[], norm=[], emis=[];
+  const dirt=C('#7a5a38'), dark=C('#5f4126');
+  let prev=null;
+  for(let i=0;i<=N;i++){
+    const t=i/N, p=curve.getPointAt(t), tan=curve.getTangentAt(t);
+    const side=new THREE.Vector3().crossVectors(tan,up).normalize().multiplyScalar(half + 0.25*Math.sin(t*40));
+    const L=p.clone().add(side), R=p.clone().sub(side); L.y=0.04; R.y=0.04;
+    if(prev){
+      const [pl,prr]=prev;
+      const quad=[pl,prr,L, prr,R,L];
+      for(const q of quad){ verts.push(q.x,q.y,q.z); norm.push(0,1,0);
+        const c = (Math.abs(q.x-p.x)+Math.abs(q.z-p.z))>half? dark:dirt;
+        const cc=c.clone().lerp(dark, rnd()*0.4); cols.push(cc.r,cc.g,cc.b); emis.push(0); }
+    }
+    prev=[L,R];
+  }
+  const rg=new THREE.BufferGeometry();
+  rg.setAttribute('position', new THREE.Float32BufferAttribute(verts,3));
+  rg.setAttribute('normal', new THREE.Float32BufferAttribute(norm,3));
+  rg.setAttribute('color', new THREE.Float32BufferAttribute(cols,3));
+  rg.setAttribute('emissive', new THREE.Float32BufferAttribute(emis,1));
+  propsScene.add(new THREE.Mesh(rg, gbufMat));
+}
+
+/* ============================== floating name labels ============================== */
+function makeLabel(text, hex){
+  const cv=document.createElement('canvas'); cv.width=512; cv.height=128;
+  const x=cv.getContext('2d');
+  x.font='bold 54px Trebuchet MS, sans-serif'; x.textAlign='center'; x.textBaseline='middle';
+  x.shadowColor='rgba(0,0,0,.9)'; x.shadowBlur=12;
+  x.fillStyle=hex; x.fillText(text,256,64);
+  const tex=new THREE.CanvasTexture(cv); tex.colorSpace=THREE.SRGBColorSpace;
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex, depthTest:false, transparent:true}));
+  sp.scale.set(7,1.75,1);
+  return sp;
+}
+for(const s of stations){
+  const sp=makeLabel(s.name, '#fff4d8');
+  sp.position.set(s.x, 3.5, s.z);
+  labelScene.add(sp);
+}
+
+/* ============================== deferred MRT + lighting pass ============================== */
+function makeMRT(){
+  const sz=new THREE.Vector2(); renderer.getDrawingBufferSize(sz);
+  const rt=new THREE.WebGLRenderTarget(sz.x, sz.y, {
+    count:3, type:THREE.HalfFloatType, minFilter:THREE.NearestFilter, magFilter:THREE.NearestFilter, depthBuffer:true
+  });
+  return rt;
+}
+let mrt = makeMRT();
+
+const NUM = lights.length;
+const LV = `precision highp float;
+in vec3 position; in vec2 uv; out vec2 vUv;
+void main(){ vUv=uv; gl_Position=vec4(position.xy,0.0,1.0); }`;
+const LF = `precision highp float;
+in vec2 vUv;
+uniform sampler2D tColor, tNormal, tPosition;
+uniform mat4 uInvVP; uniform vec3 uCameraPos;
+uniform vec3 uSunDir, uSunColor, uAmbSky, uAmbGround, uHorizon, uZenith;
+uniform float uFog;
+uniform vec3 uLPos[${NUM}]; uniform vec3 uLCol[${NUM}]; uniform float uLRange[${NUM}];
+out vec4 outColor;
+
+vec3 sky(vec3 d){
+  float h = clamp(d.y*0.5+0.5,0.0,1.0);
+  vec3 col = mix(uHorizon, uZenith, smoothstep(0.0,0.55,d.y));
+  float s = max(dot(d, uSunDir),0.0);
+  col += uSunColor * pow(s, 350.0) * 6.0;          // sun disc
+  col += uSunColor * 0.5 * pow(s, 6.0);            // warm glow
+  col = mix(col, vec3(0.18,0.13,0.09), smoothstep(0.02,-0.18,d.y)); // below horizon
+  return col;
+}
+vec3 aces(vec3 x){ return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14),0.0,1.0); }
+
+void main(){
+  vec2 ndc = vUv*2.0-1.0;
+  vec4 wp4 = uInvVP*vec4(ndc,1.0,1.0);
+  vec3 rayDir = normalize(wp4.xyz/wp4.w - uCameraPos);
+
+  vec4 nrm = texture(tNormal, vUv);
+  if(nrm.w < 0.5){ outColor = vec4(pow(aces(sky(rayDir)), vec3(1.0/2.2)),1.0); return; }
+
+  vec4 cd = texture(tColor, vUv);
+  vec3 albedo = cd.rgb; float emis = cd.a;
+  vec3 N = normalize(nrm.xyz);
+  vec3 wp = texture(tPosition, vUv).xyz;
+
+  vec3 amb = mix(uAmbGround, uAmbSky, clamp(N.y*0.5+0.5,0.0,1.0));
+  float ndl = max(dot(N, uSunDir),0.0);
+  vec3 lit = albedo*(amb + uSunColor*ndl);
+
+  for(int i=0;i<${NUM};i++){
+    vec3 d = uLPos[i]-wp; float dist=length(d); vec3 L=d/max(dist,0.001);
+    float att=clamp(1.0-dist/uLRange[i],0.0,1.0); att*=att;
+    lit += albedo*uLCol[i]*max(dot(N,L),0.0)*att;
+  }
+  lit += albedo*emis*3.2;
+
+  float dist = length(wp-uCameraPos);
+  vec3 vdir = normalize(wp-uCameraPos);
+  float fog = 1.0-exp(-dist*uFog);
+  vec3 col = mix(lit, sky(vdir), fog);
+
+  // gentle vignette
+  vec2 q=vUv-0.5; col *= 1.0 - dot(q,q)*0.6;
+
+  outColor = vec4(pow(aces(col), vec3(1.0/2.2)), 1.0);
+}`;
+
+const uLPos = lights.map(l=> l.pos.clone());
+const uLCol = lights.map(l=> l.base.clone().multiplyScalar(l.intensity));
+const uLRange = lights.map(l=> l.range);
+
+const lightUniforms = {
+  tColor:{value:null}, tNormal:{value:null}, tPosition:{value:null},
+  uInvVP:{value:new THREE.Matrix4()}, uCameraPos:{value:new THREE.Vector3()},
+  uSunDir:{value:new THREE.Vector3(-0.32,0.26,-0.91).normalize()},
+  uSunColor:{value:C('#ffd49a').multiplyScalar(2.3)},
+  uAmbSky:{value:C('#6f8cc4').multiplyScalar(0.55)},
+  uAmbGround:{value:C('#7a5f33').multiplyScalar(0.5)},
+  uHorizon:{value:C('#ff8a44')}, uZenith:{value:C('#2a4f96')},
+  uFog:{value:0.011},
+  uLPos:{value:uLPos}, uLCol:{value:uLCol}, uLRange:{value:uLRange}
+};
+const lightMat = new THREE.RawShaderMaterial({glslVersion:THREE.GLSL3, vertexShader:LV, fragmentShader:LF, uniforms:lightUniforms, depthTest:false, depthWrite:false});
+const quadScene = new THREE.Scene();
+const quadCam = new THREE.OrthographicCamera(-1,1,1,-1,0,1);
+quadScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2,2), lightMat));
+
+/* ============================== audio (synth ambience) ============================== */
+let actx=null, windGain=null;
+function startAudio(){
+  if(actx) { actx.resume&&actx.resume(); return; }
+  actx=new (window.AudioContext||window.webkitAudioContext)();
+  // wind: brown noise -> lowpass -> slow LFO gain
+  const buf=actx.createBuffer(1, actx.sampleRate*2, actx.sampleRate), d=buf.getChannelData(0);
+  let last=0; for(let i=0;i<d.length;i++){ const w=Math.random()*2-1; last=(last+0.02*w)/1.02; d[i]=last*3.5; }
+  const src=actx.createBufferSource(); src.buffer=buf; src.loop=true;
+  const lp=actx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=420;
+  windGain=actx.createGain(); windGain.gain.value=0.18;
+  const lfo=actx.createOscillator(); lfo.frequency.value=0.07; const lg=actx.createGain(); lg.gain.value=0.07;
+  lfo.connect(lg).connect(windGain.gain); lfo.start();
+  src.connect(lp).connect(windGain).connect(actx.destination); src.start();
+  scheduleBird();
+}
+function chirp(){
+  if(!actx) return;
+  const o=actx.createOscillator(), g=actx.createGain(); const t=actx.currentTime;
+  o.type='sine'; o.frequency.setValueAtTime(1700+Math.random()*900,t);
+  o.frequency.exponentialRampToValueAtTime(2600+Math.random()*800,t+0.08);
+  g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(0.06,t+0.02); g.gain.exponentialRampToValueAtTime(0.001,t+0.16);
+  o.connect(g).connect(actx.destination); o.start(t); o.stop(t+0.2);
+}
+function scheduleBird(){ if(!actx)return; chirp(); if(Math.random()<0.4)setTimeout(chirp,140); setTimeout(scheduleBird, 1800+Math.random()*4200); }
+function footstep(){
+  if(!actx) return;
+  const t=actx.currentTime;
+  const buf=actx.createBuffer(1,actx.sampleRate*0.1,actx.sampleRate), d=buf.getChannelData(0);
+  for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/d.length,3);
+  const s=actx.createBufferSource(); s.buffer=buf;
+  const bp=actx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=150; bp.Q.value=1.2;
+  const g=actx.createGain(); g.gain.value=0.5;
+  s.connect(bp).connect(g).connect(actx.destination); s.start(t);
+}
+function arrivalDrums(){
+  if(!actx) return;
+  for(let i=0;i<4;i++){ const t=actx.currentTime+i*0.45;
+    const o=actx.createOscillator(), g=actx.createGain();
+    o.type='sine'; o.frequency.setValueAtTime(120,t); o.frequency.exponentialRampToValueAtTime(55,t+0.3);
+    g.gain.setValueAtTime(0.0,t); g.gain.linearRampToValueAtTime(0.5,t+0.01); g.gain.exponentialRampToValueAtTime(0.001,t+0.4);
+    o.connect(g).connect(actx.destination); o.start(t); o.stop(t+0.45);
+  }
+}
+
+/* ============================== walk / controls ============================== */
+const DURATION = 60;        // seconds for the whole trail
+let progress = 0;           // 0..1 along curve
+let speedMul = 1, running=false, finished=false, elapsed=0;
+let yaw=0, pitch=0;
+const keys={};
+addEventListener('keydown',e=>{ keys[e.code]=true; });
+addEventListener('keyup',e=>{ keys[e.code]=false; });
+canvas.addEventListener('click',()=>{ if(running && document.pointerLockElement!==canvas) canvas.requestPointerLock&&canvas.requestPointerLock(); });
+addEventListener('mousemove',e=>{
+  if(document.pointerLockElement===canvas){ yaw -= e.movementX*0.0022; pitch -= e.movementY*0.0022; pitch=Math.max(-1.0,Math.min(1.0,pitch)); }
+});
+
+const _dummy=new THREE.Object3D(); _dummy.up.set(0,1,0);
+const _base=new THREE.Quaternion(), _off=new THREE.Quaternion(), _oe=new THREE.Euler(0,0,0,'YXZ');
+const _vp=new THREE.Matrix4();
+let stepTimer=0, lastCaption=-1;
+const capEl=document.getElementById('caption'), subEl=document.getElementById('sub'), fillEl=document.getElementById('fill');
+
+const clock=new THREE.Clock();
+function frame(){
+  requestAnimationFrame(frame);
+  const dt=Math.min(0.05, clock.getDelta());
+
+  if(running && !finished){
+    // arrow-key look
+    if(keys['ArrowLeft']) yaw+=dt*1.4; if(keys['ArrowRight']) yaw-=dt*1.4;
+    if(keys['ArrowUp']) pitch=Math.min(1.0,pitch+dt*1.2); if(keys['ArrowDown']) pitch=Math.max(-1.0,pitch-dt*1.2);
+    // pace
+    let target=1; if(keys['KeyW'])target=2.4; if(keys['KeyS'])target=0.0;
+    speedMul += (target-speedMul)*Math.min(1,dt*5);
+    progress += dt/DURATION*speedMul; elapsed+=dt;
+    if(progress>=1){ progress=1; finishWalk(); }
+
+    // footsteps
+    stepTimer-=dt*Math.max(0.15,speedMul);
+    if(stepTimer<=0 && speedMul>0.2){ footstep(); stepTimer=0.52; }
+
+    // caption when near a station
+    let near=-1; for(let i=0;i<stations.length;i++){ if(Math.abs(progress-stations[i].t)<0.045){ near=i; break; } }
+    if(near!==lastCaption){
+      lastCaption=near;
+      if(near>=0){ capEl.textContent=stations[near].name; subEl.textContent=stations[near].sub;
+        capEl.style.color=stations[near].hex; capEl.style.opacity=1; subEl.style.opacity=1; }
+      else { capEl.style.opacity=0; subEl.style.opacity=0; }
+    }
+    fillEl.style.width=(progress*100).toFixed(1)+'%';
+  }
+
+  // place camera on the trail
+  const p=curve.getPointAt(progress), tan=curve.getTangentAt(progress).normalize();
+  camera.position.set(p.x, p.y+1.7, p.z);
+  _dummy.position.copy(camera.position); _dummy.lookAt(camera.position.x+tan.x, camera.position.y+tan.y, camera.position.z+tan.z);
+  _base.copy(_dummy.quaternion);
+  _oe.set(pitch, yaw, 0); _off.setFromEuler(_oe);
+  camera.quaternion.copy(_base).multiply(_off);
+  camera.updateMatrixWorld();
+
+  // flicker the fire light
+  const tnow=elapsed;
+  for(let i=0;i<lights.length;i++){
+    if(lights[i].kind==='fire'){
+      const f=0.75+0.25*Math.sin(tnow*23.0)+0.12*Math.sin(tnow*51.0);
+      uLCol[i].copy(lights[i].base).multiplyScalar(lights[i].intensity*f);
+    }
+  }
+
+  // ---- DEFERRED: 1) geometry -> G-buffer ----
+  renderer.setRenderTarget(mrt);
+  renderer.setClearColor(0x000000, 0); renderer.clear();
+  renderer.render(propsScene, camera);
+
+  // ---- DEFERRED: 2) fullscreen lighting pass ----
+  lightUniforms.tColor.value=mrt.textures[0];
+  lightUniforms.tNormal.value=mrt.textures[1];
+  lightUniforms.tPosition.value=mrt.textures[2];
+  lightUniforms.uCameraPos.value.copy(camera.position);
+  _vp.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+  lightUniforms.uInvVP.value.copy(_vp).invert();
+
+  renderer.setRenderTarget(null);
+  renderer.render(quadScene, quadCam);
+
+  // ---- forward overlay: floating loci labels ----
+  renderer.autoClear=false;
+  renderer.render(labelScene, camera);
+  renderer.autoClear=true;
+}
+frame();
+
+/* ============================== overlay / flow ============================== */
+function finishWalk(){
+  finished=true;
+  arrivalDrums();
+  capEl.style.opacity=0; subEl.style.opacity=0;
+  document.getElementById('donetxt').textContent =
+    `You walked the trail in ${elapsed.toFixed(0)} seconds, passing ten places etched into memory.`;
+  setTimeout(()=>{ document.getElementById('overlay').style.display='flex';
+    document.getElementById('start').style.display='none';
+    document.getElementById('done').style.display='block';
+    document.exitPointerLock&&document.exitPointerLock(); }, 1400);
+}
+function beginWalk(){
+  progress=0; elapsed=0; speedMul=1; finished=false; yaw=0; pitch=0; lastCaption=-1;
+  document.getElementById('overlay').style.display='none';
+  fillEl.style.width='0%';
+  startAudio();
+  running=true;
+  canvas.requestPointerLock&&canvas.requestPointerLock();
+}
+document.getElementById('go').onclick=beginWalk;
+document.getElementById('go2').onclick=beginWalk;
+
+/* ============================== resize ============================== */
+addEventListener('resize',()=>{
+  renderer.setSize(innerWidth, innerHeight);
+  camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
+  mrt.dispose(); mrt=makeMRT();
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,1006 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>The Vivid Trail — A Jungle Memory Walk</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #06120c; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+  #app { position: fixed; inset: 0; }
+  canvas { display: block; }
+
+  /* HUD */
+  #hud { position: fixed; inset: 0; pointer-events: none; color: #f3ffe9; }
+  #progressWrap {
+    position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%);
+    width: min(560px, 78vw); text-align: center;
+  }
+  #progressBar {
+    height: 8px; border-radius: 999px; background: rgba(255,255,255,.14);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); overflow: hidden;
+  }
+  #progressFill {
+    height: 100%; width: 0%; border-radius: 999px;
+    background: linear-gradient(90deg, #ffd36e, #7bf06b, #43c6ff);
+    transition: width .12s linear;
+  }
+  #progressLabel { margin-top: 8px; font-size: 13px; letter-spacing: .12em; text-transform: uppercase; opacity: .8; text-shadow: 0 1px 4px #000; }
+
+  #landmark {
+    position: absolute; top: 14%; left: 50%;
+    transform: translateX(-50%); text-align: center; width: max-content; max-width: 80vw;
+    opacity: 0; transition: opacity .5s ease;
+  }
+  #landmark .name { font-size: clamp(26px, 5vw, 52px); font-weight: 800; letter-spacing: .01em;
+    text-shadow: 0 2px 18px rgba(0,0,0,.85), 0 0 30px rgba(120,255,120,.25); }
+  #landmark .note { margin-top: 6px; font-size: clamp(13px, 1.8vw, 18px); font-style: italic; opacity: .92;
+    text-shadow: 0 2px 10px rgba(0,0,0,.9); }
+
+  #compass {
+    position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+    font-size: 12px; letter-spacing: .35em; opacity: .65; text-shadow: 0 1px 4px #000;
+  }
+
+  #hints {
+    position: absolute; left: 16px; bottom: 18px; font-size: 12px; line-height: 1.6;
+    opacity: .6; text-shadow: 0 1px 3px #000; max-width: 40vw;
+  }
+  #aoTag {
+    position: absolute; right: 16px; top: 14px; font-size: 12px; letter-spacing: .1em;
+    padding: 6px 10px; border-radius: 8px; background: rgba(0,0,0,.35);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); text-shadow: 0 1px 3px #000;
+  }
+  #aoTag b { color: #9affb0; }
+
+  /* Vignette to focus the eye (memory: tunnel focus) */
+  #vignette { position: absolute; inset: 0; pointer-events: none;
+    box-shadow: inset 0 0 220px 40px rgba(0,0,0,.55); }
+
+  /* Overlays */
+  .overlay {
+    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(120% 120% at 50% 30%, rgba(10,40,22,.86), rgba(3,10,6,.96));
+    color: #eafff0; text-align: center; padding: 24px; z-index: 10;
+  }
+  .card { max-width: 640px; }
+  .card h1 { font-size: clamp(28px, 6vw, 54px); margin: 0 0 10px; letter-spacing: .01em;
+    text-shadow: 0 0 30px rgba(110,255,140,.25); }
+  .card p { font-size: clamp(14px, 2.2vw, 18px); line-height: 1.65; opacity: .9; margin: 10px 0; }
+  .card .keys { font-size: 13px; opacity: .8; margin-top: 14px; }
+  .btn {
+    margin-top: 22px; pointer-events: auto; cursor: pointer; border: none;
+    font-size: 18px; font-weight: 700; letter-spacing: .04em;
+    padding: 14px 30px; border-radius: 12px; color: #06140b;
+    background: linear-gradient(90deg, #ffe07a, #8bf07a);
+    box-shadow: 0 10px 30px rgba(0,0,0,.45), inset 0 0 0 1px rgba(255,255,255,.3);
+  }
+  .btn:active { transform: translateY(1px); }
+  #endOverlay { display: none; }
+  .fadeOut { opacity: 0; transition: opacity 1s ease; pointer-events: none !important; }
+  #loading { position: fixed; inset: 0; display:flex; align-items:center; justify-content:center;
+    color:#bfe9c8; background:#06120c; z-index: 20; font-size: 15px; letter-spacing:.2em; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<div id="hud">
+  <div id="compass">N · NE · E · SE · S · SW · W · NW</div>
+  <div id="landmark"><div class="name"></div><div class="note"></div></div>
+  <div id="aoTag">Ambient Occlusion: <b id="aoState">ON</b> <span style="opacity:.6">(press O)</span></div>
+  <div id="progressWrap">
+    <div id="progressBar"><div id="progressFill"></div></div>
+    <div id="progressLabel">The Vivid Trail</div>
+  </div>
+  <div id="hints">Hold <b>W</b> / <b>↑</b> walk &nbsp;·&nbsp; <b>S</b> pause &nbsp;·&nbsp; move mouse to look &nbsp;·&nbsp; <b>O</b> toggle AO</div>
+  <div id="vignette"></div>
+</div>
+
+<div id="loading">growing the jungle…</div>
+
+<div class="overlay" id="startOverlay" style="display:none">
+  <div class="card">
+    <h1>The Vivid Trail</h1>
+    <p>You are walking home through the jungle — no map, no compass stone, only the land itself.
+       Long before paper or GPS, people remembered the way by the <i>things</i> along it:
+       a gate of giant roots, a red mound, a fallen giant, the whispering falls.</p>
+    <p>Walk it once. Let each landmark burn in. This is how a memory is built.</p>
+    <p class="keys">Hold <b>W</b> or <b>↑</b> to walk · move the mouse to look around · the path is about a minute long.</p>
+    <button class="btn" id="beginBtn">Begin the walk</button>
+  </div>
+</div>
+
+<div class="overlay" id="endOverlay">
+  <div class="card">
+    <h1>You made it home.</h1>
+    <p id="endRecall"></p>
+    <p>That sequence — in order, with their shapes and colors — is now a path you can walk in your mind.</p>
+    <button class="btn" id="againBtn">Walk it again</button>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+// ---------------------------------------------------------------------------
+// Small deterministic RNG so the trail is the SAME every time you walk it
+// (a memory palace must be stable — the gate is always the gate).
+// ---------------------------------------------------------------------------
+let _seed = 1337;
+function rand() { _seed = (_seed * 16807) % 2147483647; return (_seed - 1) / 2147483646; }
+function rrange(a, b) { return a + (b - a) * rand(); }
+function pick(arr) { return arr[Math.floor(rand() * arr.length)]; }
+
+// ---------------------------------------------------------------------------
+// Renderer / Scene / Camera
+// ---------------------------------------------------------------------------
+const app = document.getElementById('app');
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+app.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const FOG_COLOR = new THREE.Color(0x9fc89a);
+scene.background = FOG_COLOR.clone().lerp(new THREE.Color(0x3f6b4a), 0.35);
+scene.fog = new THREE.Fog(0x86b487, 18, 95);
+
+const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.1, 400);
+const EYE = 1.72;
+camera.position.set(0, EYE, 0);
+
+// ---------------------------------------------------------------------------
+// Lighting — heavy ambient + sun shafts so Ambient Occlusion has work to do.
+// AO darkens the creases where surfaces meet: under leaves, root crevices,
+// the base of every trunk. That contact shadow is what the brain reads as
+// "solid, real, here."
+// ---------------------------------------------------------------------------
+const hemi = new THREE.HemisphereLight(0xcdeccf, 0x24160d, 1.05);
+scene.add(hemi);
+
+const sun = new THREE.DirectionalLight(0xfff0c8, 2.0);
+sun.position.set(34, 58, 20);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.near = 1;
+sun.shadow.camera.far = 220;
+sun.shadow.camera.left = -70; sun.shadow.camera.right = 70;
+sun.shadow.camera.top = 70; sun.shadow.camera.bottom = -70;
+sun.shadow.bias = -0.0004;
+sun.shadow.normalBias = 0.04;
+scene.add(sun);
+scene.add(sun.target);
+
+const fillAmb = new THREE.AmbientLight(0x4a6b3f, 0.5);
+scene.add(fillAmb);
+
+// ---------------------------------------------------------------------------
+// THE PATH — a winding spline. Turns matter: a route that bends left, then
+// right, then climbs is far more memorable than a straight line. The body
+// remembers the turns. NOT infinite — it has a start (deep jungle) and an
+// end (home fire).
+// ---------------------------------------------------------------------------
+const pathPoints = [
+  new THREE.Vector3(  0, 0,   6),
+  new THREE.Vector3(  1, 0,  -8),
+  new THREE.Vector3( -7, 0, -22),
+  new THREE.Vector3( -6, 0, -38),
+  new THREE.Vector3(  6, 0, -52),
+  new THREE.Vector3( 16, 0, -66),
+  new THREE.Vector3( 12, 0, -84),
+  new THREE.Vector3( -2, 0, -96),
+  new THREE.Vector3(-16, 0,-108),
+  new THREE.Vector3(-15, 0,-126),
+  new THREE.Vector3( -2, 0,-140),
+  new THREE.Vector3( 10, 0,-152),
+  new THREE.Vector3(  8, 0,-168),
+  new THREE.Vector3( -4, 0,-180),
+];
+// Gentle elevation so we crest a small rise near the end (you see "home" appear).
+const elev = (z) => Math.sin((-z) * 0.018) * 1.6 + Math.max(0, (-z - 150)) * 0.05;
+pathPoints.forEach(p => p.y = elev(p.z));
+
+const curve = new THREE.CatmullRomCurve3(pathPoints, false, 'catmullrom', 0.5);
+const PATH_LEN = curve.getLength();
+const samples = curve.getSpacedPoints(600); // dense lookup for placement/height
+
+// Ground height = interpolate gentle terrain; ride slightly along path.
+function terrainHeight(x, z) {
+  return elev(z)
+    + Math.sin(x * 0.08 + z * 0.05) * 0.5
+    + Math.cos(x * 0.13 - z * 0.07) * 0.35;
+}
+
+// distance from a world point to the trail centerline (for clearing foliage)
+function distToPath(x, z) {
+  let best = 1e9;
+  for (let i = 0; i < samples.length; i += 2) {
+    const s = samples[i];
+    const dx = s.x - x, dz = s.z - z;
+    const d = dx*dx + dz*dz;
+    if (d < best) best = d;
+  }
+  return Math.sqrt(best);
+}
+
+// ---------------------------------------------------------------------------
+// GROUND + the trail itself (a lighter, worn dirt ribbon)
+// ---------------------------------------------------------------------------
+const groundGeo = new THREE.PlaneGeometry(360, 360, 120, 120);
+groundGeo.rotateX(-Math.PI / 2);
+{
+  const pos = groundGeo.attributes.position;
+  const col = [];
+  const base = new THREE.Color(0x2c3d1c);
+  const dark = new THREE.Color(0x1a2912);
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), z = pos.getZ(i);
+    pos.setY(i, terrainHeight(x, z) - 0.02 + rrange(-0.05, 0.05));
+    const c = base.clone().lerp(dark, rand() * 0.6);
+    col.push(c.r, c.g, c.b);
+  }
+  groundGeo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  groundGeo.computeVertexNormals();
+}
+const ground = new THREE.Mesh(groundGeo, new THREE.MeshStandardMaterial({
+  vertexColors: true, roughness: 1, metalness: 0
+}));
+ground.receiveShadow = true;
+scene.add(ground);
+
+// Trail ribbon built from a flattened tube following the curve
+{
+  const ribbonSegs = 240;
+  const halfW = 1.7;
+  const pts = curve.getSpacedPoints(ribbonSegs);
+  const positions = [], normals = [], colors = [], indices = [];
+  const up = new THREE.Vector3(0, 1, 0);
+  const dirt = new THREE.Color(0x6b5436);
+  const dirt2 = new THREE.Color(0x4e3d27);
+  for (let i = 0; i <= ribbonSegs; i++) {
+    const t = i / ribbonSegs;
+    const p = pts[i];
+    const tan = curve.getTangentAt(Math.min(t, 0.999)).setY(0).normalize();
+    const side = new THREE.Vector3().crossVectors(up, tan).normalize();
+    const w = halfW * (0.85 + 0.3 * Math.sin(t * 40));
+    for (let s = -1; s <= 1; s += 2) {
+      const x = p.x + side.x * w * s;
+      const z = p.z + side.z * w * s;
+      positions.push(x, terrainHeight(x, z) + 0.04, z);
+      normals.push(0, 1, 0);
+      const c = dirt.clone().lerp(dirt2, rand());
+      colors.push(c.r, c.g, c.b);
+    }
+  }
+  for (let i = 0; i < ribbonSegs; i++) {
+    const a = i*2, b = i*2+1, c = i*2+2, d = i*2+3;
+    indices.push(a, c, b, b, c, d);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  g.setIndex(indices);
+  const trail = new THREE.Mesh(g, new THREE.MeshStandardMaterial({
+    vertexColors: true, roughness: 1, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2
+  }));
+  trail.receiveShadow = true;
+  scene.add(trail);
+}
+
+// ---------------------------------------------------------------------------
+// REUSABLE GEOMETRY for instanced foliage (instancing keeps it fast; solid
+// low-poly shapes give SSAO clean depth to bite into).
+// ---------------------------------------------------------------------------
+const matLeaf  = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .9, metalness: 0, flatShading: true });
+const matBark  = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1,  metalness: 0, flatShading: true });
+const matRock  = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1,  metalness: 0, flatShading: true });
+
+function makeInstanced(geo, mat, count) {
+  const m = new THREE.InstancedMesh(geo, mat, count);
+  m.castShadow = true; m.receiveShadow = true;
+  m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  return m;
+}
+
+const tmpM = new THREE.Matrix4();
+const tmpQ = new THREE.Quaternion();
+const tmpP = new THREE.Vector3();
+const tmpS = new THREE.Vector3();
+const tmpC = new THREE.Color();
+
+// ---- Tree trunks (tapered cylinders) ----
+const trunkGeo = new THREE.CylinderGeometry(0.18, 0.42, 1, 7, 1);
+trunkGeo.translate(0, 0.5, 0);
+// ---- Tree canopy (stacked low-poly cones built into one geometry) ----
+function canopyGeometry() {
+  const geos = [];
+  const tiers = [ [2.6, 2.4, 0.0], [2.1, 2.2, 1.6], [1.5, 1.9, 3.0] ];
+  for (const [r, h, y] of tiers) {
+    const c = new THREE.ConeGeometry(r, h, 8, 1);
+    c.translate(0, y + h/2, 0);
+    geos.push(c);
+  }
+  // merge manually
+  let total = 0; geos.forEach(g => total += g.attributes.position.count);
+  const merged = new THREE.BufferGeometry();
+  const pos = new Float32Array(total*3);
+  let o = 0;
+  const idx = []; let base = 0;
+  for (const g of geos) {
+    const p = g.attributes.position.array;
+    pos.set(p, o*3);
+    const gi = g.index.array;
+    for (let i=0;i<gi.length;i++) idx.push(gi[i]+base);
+    base += g.attributes.position.count;
+    o += g.attributes.position.count;
+  }
+  merged.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  merged.setIndex(idx);
+  merged.computeVertexNormals();
+  return merged;
+}
+const canopyGeo = canopyGeometry();
+
+const TREES = 360;
+const trunks = makeInstanced(trunkGeo, matBark, TREES);
+const canopies = makeInstanced(canopyGeo, matLeaf, TREES);
+scene.add(trunks, canopies);
+
+const barkColors = [0x4a3a28, 0x55432c, 0x3c2f20, 0x6b5436];
+const leafColors = [0x2f6b27, 0x3f7a2e, 0x265c22, 0x4f8a2f, 0x1f5a2a, 0x5a9a35];
+
+let placed = 0, attempts = 0;
+while (placed < TREES && attempts < TREES * 40) {
+  attempts++;
+  const x = rrange(-150, 150);
+  const z = rrange(-195, 15);
+  const d = distToPath(x, z);
+  if (d < 3.2) continue;                 // keep the trail walkable & visible
+  // denser near the path (a corridor of close trunks = strong wall cue)
+  const keep = d < 14 ? 0.95 : 0.55;
+  if (rand() > keep) continue;
+  const y = terrainHeight(x, z);
+  const trunkH = rrange(4.5, 11) * (d < 14 ? 1.0 : 1.15);
+  const lean = rrange(-0.12, 0.12);
+
+  tmpP.set(x, y, z);
+  tmpQ.setFromEuler(new THREE.Euler(lean, rrange(0, Math.PI*2), lean*0.6));
+  tmpS.set(rrange(0.8,1.4), trunkH, rrange(0.8,1.4));
+  tmpM.compose(tmpP, tmpQ, tmpS);
+  trunks.setMatrixAt(placed, tmpM);
+  trunks.setColorAt(placed, tmpC.set(pick(barkColors)));
+
+  const cy = y + trunkH * 0.92;
+  tmpP.set(x + lean*trunkH*0.5, cy, z + lean*trunkH*0.4);
+  tmpQ.setFromEuler(new THREE.Euler(0, rrange(0,6.28), 0));
+  const cs = rrange(0.9, 1.7) * (d < 14 ? 1.1 : 1.3);
+  tmpS.set(cs, cs*rrange(0.9,1.2), cs);
+  tmpM.compose(tmpP, tmpQ, tmpS);
+  canopies.setMatrixAt(placed, tmpM);
+  tmpC.set(pick(leafColors));
+  canopies.setColorAt(placed, tmpC);
+  placed++;
+}
+trunks.count = placed; canopies.count = placed;
+trunks.instanceMatrix.needsUpdate = true; canopies.instanceMatrix.needsUpdate = true;
+
+// ---- Undergrowth: ferns & broad leaves (low cones/planes) ----
+const fernGeo = new THREE.ConeGeometry(0.5, 1.3, 5, 1, true);
+fernGeo.translate(0, 0.55, 0);
+const FERNS = 1400;
+const ferns = makeInstanced(fernGeo, matLeaf, FERNS);
+scene.add(ferns);
+let fp = 0, fa = 0;
+const fernCols = [0x356b2b, 0x2a5a25, 0x47892f, 0x6fae3a, 0x215423];
+while (fp < FERNS && fa < FERNS*30) {
+  fa++;
+  const x = rrange(-90, 90), z = rrange(-190, 12);
+  const d = distToPath(x, z);
+  if (d < 2.0) continue;
+  if (d > 12 && rand() > 0.4) continue;
+  const y = terrainHeight(x, z);
+  tmpP.set(x, y, z);
+  tmpQ.setFromEuler(new THREE.Euler(rrange(-0.2,0.2), rrange(0,6.28), rrange(-0.2,0.2)));
+  const s = rrange(0.6, 1.8);
+  tmpS.set(s*rrange(.8,1.5), s, s*rrange(.8,1.5));
+  tmpM.compose(tmpP, tmpQ, tmpS);
+  ferns.setMatrixAt(fp, tmpM);
+  ferns.setColorAt(fp, tmpC.set(pick(fernCols)));
+  fp++;
+}
+ferns.count = fp; ferns.instanceMatrix.needsUpdate = true;
+
+// ---- Scattered mossy rocks (AO loves rock crevices) ----
+const rockGeo = new THREE.DodecahedronGeometry(0.6, 0);
+const ROCKS = 160;
+const rocks = makeInstanced(rockGeo, matRock, ROCKS);
+scene.add(rocks);
+let rp = 0, ra = 0;
+const rockCols = [0x5b5b50, 0x474b3e, 0x6a6657, 0x3e4636];
+while (rp < ROCKS && ra < ROCKS*30) {
+  ra++;
+  const x = rrange(-80,80), z = rrange(-188,10);
+  const d = distToPath(x, z);
+  if (d < 2.2 || d > 30) continue;
+  const y = terrainHeight(x, z);
+  tmpP.set(x, y + rrange(-0.1,0.15), z);
+  tmpQ.setFromEuler(new THREE.Euler(rrange(0,6.28), rrange(0,6.28), rrange(0,6.28)));
+  const s = rrange(0.5, 2.2);
+  tmpS.set(s, s*rrange(.6,1), s);
+  tmpM.compose(tmpP, tmpQ, tmpS);
+  rocks.setMatrixAt(rp, tmpM);
+  rocks.setColorAt(rp, tmpC.set(pick(rockCols)));
+  rp++;
+}
+rocks.count = rp; rocks.instanceMatrix.needsUpdate = true;
+
+// ---------------------------------------------------------------------------
+// LANDMARKS — the heart of the memory palace. Each is a deliberately
+// DISTINCTIVE, multisensory, emotionally charged object placed at a known
+// point along the path. Distinctiveness + spatial order = recall.
+// Each lives at a normalized t along the curve.
+// ---------------------------------------------------------------------------
+const landmarks = [];
+function pointAt(t) { return curve.getPointAt(t); }
+function tangentAt(t) { return curve.getTangentAt(t).setY(0).normalize(); }
+function sideAt(t) { return new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0), tangentAt(t)).normalize(); }
+function groundAt(p) { p.y = terrainHeight(p.x, p.z); return p; }
+
+function addLandmark(t, name, note, builder) {
+  const center = pointAt(t).clone(); groundAt(center);
+  const fwd = tangentAt(t), side = sideAt(t);
+  const g = new THREE.Group();
+  scene.add(g);
+  builder(g, center, fwd, side, t);
+  landmarks.push({ t, name, note, triggered: false });
+}
+
+// helper builders -----------------------------------------------------------
+function trunkPillar(parent, x, y, z, r1, r2, h, color) {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(r1, r2, h, 9),
+    new THREE.MeshStandardMaterial({ color, roughness: 1, flatShading: true }));
+  m.position.set(x, y + h/2, z); m.castShadow = m.receiveShadow = true;
+  parent.add(m); return m;
+}
+function blob(parent, x,y,z, r, color, rough=0.9) {
+  const m = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 1),
+    new THREE.MeshStandardMaterial({ color, roughness: rough, flatShading: true }));
+  m.position.set(x,y,z); m.castShadow = m.receiveShadow = true; parent.add(m); return m;
+}
+
+// 1) THE TWIN-BUTTRESS GATE — two colossal roots arch over the path. The
+//    very first thing: a literal doorway into the journey. (Threshold = memory anchor.)
+addLandmark(0.045, 'The Twin-Buttress Gate', 'Two giant roots arch into a doorway. You step through, and the walk begins.',
+  (g, c, fwd, side) => {
+    for (const s of [-1, 1]) {
+      const bx = c.x + side.x * 3.1 * s, bz = c.z + side.z * 3.1 * s;
+      const by = terrainHeight(bx, bz);
+      const p = trunkPillar(g, bx, by, bz, 0.7, 2.3, 13, 0x5b4630);
+      p.rotation.z = 0.12 * -s;
+      // buttress fins
+      for (let k=0;k<3;k++){
+        const fin = new THREE.Mesh(new THREE.ConeGeometry(0.5, 4, 4),
+          new THREE.MeshStandardMaterial({color:0x4a3a26, roughness:1, flatShading:true}));
+        fin.position.set(bx + side.x*1.1*s*(k-1), by+2, bz + side.z*1.1*s*(k-1));
+        fin.scale.set(0.6,1,1.4); fin.castShadow=true; g.add(fin);
+      }
+    }
+    // arching cross-root over the path
+    const arch = new THREE.Mesh(new THREE.TorusGeometry(3.4, 0.55, 8, 16, Math.PI),
+      new THREE.MeshStandardMaterial({color:0x53412c, roughness:1, flatShading:true}));
+    arch.position.set(c.x, c.y + 9, c.z);
+    arch.rotation.y = Math.atan2(side.x, side.z);
+    arch.castShadow = true; g.add(arch);
+    // hanging vines
+    for (let i=0;i<10;i++){
+      const vx = c.x + side.x*rrange(-3,3), vz = c.z + side.z*rrange(-3,3);
+      const v = new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.04, rrange(2,6), 4),
+        new THREE.MeshStandardMaterial({color:0x35621f, roughness:1}));
+      v.position.set(vx, c.y + 8.5 - v.geometry.parameters.height/2, vz); g.add(v);
+    }
+  });
+
+// 2) THE CRIMSON TERMITE MOUND — a tall blood-red spire beside the path.
+//    Wrong color for a jungle = impossible to forget.
+addLandmark(0.16, 'The Crimson Mound', 'A blood-red termite spire, taller than a man. The one red thing in a green world.',
+  (g, c, fwd, side) => {
+    const mx = c.x + side.x*4, mz = c.z + side.z*4, my = terrainHeight(mx,mz);
+    for (let i=0;i<5;i++){
+      const h = 5 - i*0.8;
+      const cone = new THREE.Mesh(new THREE.ConeGeometry(1.6 - i*0.25, h, 7),
+        new THREE.MeshStandardMaterial({color: new THREE.Color(0x9c3b1e).lerp(new THREE.Color(0xc85a2c), i/5), roughness:1, flatShading:true}));
+      cone.position.set(mx + rrange(-0.5,0.5), my + i*1.6 + h/2*0.4, mz + rrange(-0.5,0.5));
+      cone.castShadow=cone.receiveShadow=true; g.add(cone);
+    }
+  });
+
+// 3) THE FALLEN GIANT — a vast mossy log lying ACROSS the path; you must
+//    duck under its arch. Body memory: you physically pass beneath it.
+addLandmark(0.30, 'The Fallen Giant', 'A vast moss-furred trunk lies across the trail. The path slips beneath it.',
+  (g, c, fwd, side) => {
+    const log = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.7, 22, 12),
+      new THREE.MeshStandardMaterial({color:0x4b3a26, roughness:1, flatShading:true}));
+    log.rotation.z = Math.PI/2;
+    log.rotation.y = Math.atan2(fwd.x, fwd.z);
+    log.position.set(c.x, c.y + 2.4, c.z);
+    log.castShadow=log.receiveShadow=true; g.add(log);
+    // moss cap (bright green ridge along the top)
+    const moss = new THREE.Mesh(new THREE.CylinderGeometry(1.55,1.75, 22, 12, 1, false, 0, Math.PI),
+      new THREE.MeshStandardMaterial({color:0x4f9a35, roughness:1, flatShading:true}));
+    moss.rotation.z = Math.PI/2; moss.rotation.y = log.rotation.y;
+    moss.position.copy(log.position); moss.position.y += 0.05; g.add(moss);
+    // exposed root-ball at one end
+    const root = blob(g, c.x + side.x*11, c.y+2.5, c.z + side.z*11, 3, 0x3c2f20);
+    root.scale.set(1,1.1,0.7);
+    // mushrooms on the log
+    for (let i=0;i<8;i++){
+      const t=rrange(-9,9);
+      const mu = new THREE.Mesh(new THREE.SphereGeometry(0.3,8,6,0,6.28,0,Math.PI/2),
+        new THREE.MeshStandardMaterial({color:0xe8c14a, roughness:.8}));
+      mu.position.set(c.x+fwd.x*t, c.y+3.9, c.z+fwd.z*t); g.add(mu);
+    }
+  });
+
+// 4) THE WHISPERING FALLS — a waterfall into a turquoise pool. SOUND + the
+//    only blue. Cool air. Strongest multisensory anchor on the trail.
+let fallsMat = null;
+addLandmark(0.45, 'The Whispering Falls', 'Cool spray, a turquoise pool, and the hush of falling water. The only blue on the trail.',
+  (g, c, fwd, side) => {
+    const fx = c.x + side.x*7, fz = c.z + side.z*7, fy = terrainHeight(fx,fz);
+    // cliff
+    const cliff = new THREE.Mesh(new THREE.BoxGeometry(10, 14, 5),
+      new THREE.MeshStandardMaterial({color:0x4a4b40, roughness:1, flatShading:true}));
+    cliff.position.set(fx + side.x*2, fy+6, fz + side.z*2); cliff.castShadow=cliff.receiveShadow=true; g.add(cliff);
+    // water sheet
+    fallsMat = new THREE.MeshStandardMaterial({color:0xbfeaff, transparent:true, opacity:0.78, roughness:0.2, emissive:0x2a6f8f, emissiveIntensity:.3});
+    const sheet = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 12, 1, 8), fallsMat);
+    sheet.position.set(fx, fy+5.5, fz - 0.1);
+    sheet.lookAt(c.x, fy+5.5, c.z); g.add(sheet);
+    // pool
+    const pool = new THREE.Mesh(new THREE.CircleGeometry(4.2, 24),
+      new THREE.MeshStandardMaterial({color:0x2f9fb8, roughness:0.15, metalness:0.1, transparent:true, opacity:.9}));
+    pool.rotation.x = -Math.PI/2; pool.position.set(fx, fy+0.12, fz); pool.receiveShadow=true; g.add(pool);
+    // wet rocks ringing the pool
+    for (let i=0;i<10;i++){
+      const a = i/10*6.28; blob(g, fx+Math.cos(a)*4.2, fy+0.1, fz+Math.sin(a)*4.2, rrange(.4,.9), 0x52564a, 0.4);
+    }
+    // a misty point light
+    const pl = new THREE.PointLight(0x9fe6ff, 6, 22, 2); pl.position.set(fx, fy+4, fz); g.add(pl);
+  });
+
+// 5) THE IDOL OF BONE — a pale carved face on a boulder, watching the path.
+//    A FACE. The brain has dedicated hardware for faces; this one stares.
+addLandmark(0.58, 'The Idol of Bone', 'A pale face carved into a standing stone, eyes following you past. Someone was here before.',
+  (g, c, fwd, side) => {
+    const ix = c.x - side.x*4.2, iz = c.z - side.z*4.2, iy = terrainHeight(ix,iz);
+    const stone = new THREE.Mesh(new THREE.BoxGeometry(3.2, 6, 2.4),
+      new THREE.MeshStandardMaterial({color:0xb9b6a4, roughness:1, flatShading:true}));
+    stone.position.set(ix, iy+3, iz);
+    stone.lookAt(c.x, iy+3, c.z); stone.castShadow=stone.receiveShadow=true; g.add(stone);
+    const faceMat = new THREE.MeshStandardMaterial({color:0xd9d6c4, roughness:1, flatShading:true});
+    // brow + deep eye sockets (AO pools darkness in them — that's the stare)
+    const facePos = new THREE.Vector3(ix,iy,iz).add(new THREE.Vector3(c.x-ix,0,c.z-iz).normalize().multiplyScalar(1.25));
+    for (const s of [-1,1]) {
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.42,10,8), new THREE.MeshStandardMaterial({color:0x14110c, roughness:1}));
+      const off = new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0), new THREE.Vector3(c.x-ix,0,c.z-iz).normalize()).multiplyScalar(0.7*s);
+      eye.position.set(facePos.x+off.x, iy+3.6, facePos.z+off.z); g.add(eye);
+    }
+    const nose = new THREE.Mesh(new THREE.ConeGeometry(0.3,1.2,4), faceMat);
+    nose.position.set(facePos.x, iy+2.9, facePos.z);
+    nose.lookAt(c.x, iy+1.5, c.z); g.add(nose);
+    const mouth = new THREE.Mesh(new THREE.BoxGeometry(1.3,0.3,0.4), new THREE.MeshStandardMaterial({color:0x14110c}));
+    mouth.position.set(facePos.x, iy+2.0, facePos.z); g.add(mouth);
+    // offering stones at the base
+    for(let i=0;i<5;i++) blob(g, ix+rrange(-1.5,1.5), iy+0.2, iz+rrange(0.8,2.2), rrange(.2,.4), 0x6a6657,0.7);
+  });
+
+// 6) THE GLOWING HOLLOW — bioluminescent mushrooms in a dim dell. Light in
+//    the gloom = wonder. Color you only see here.
+const glowLights = [];
+addLandmark(0.70, 'The Glowing Hollow', 'A shaded dell lit from below by blue-green mushrooms. They breathe with light.',
+  (g, c, fwd, side) => {
+    for (let i=0;i<22;i++){
+      const a = rand()*6.28, r = rrange(1.5, 7);
+      const mx=c.x+Math.cos(a)*r, mz=c.z+Math.sin(a)*r, my=terrainHeight(mx,mz);
+      const h = rrange(0.5,1.8);
+      const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.12,h,6),
+        new THREE.MeshStandardMaterial({color:0xcfe8d8, roughness:.8, emissive:0x224433, emissiveIntensity:.4}));
+      stem.position.set(mx,my+h/2,mz); g.add(stem);
+      const capCol = pick([0x49f0c0, 0x35d0ff, 0x7affd0]);
+      const cap = new THREE.Mesh(new THREE.SphereGeometry(rrange(0.3,0.6),10,8,0,6.28,0,Math.PI/2),
+        new THREE.MeshStandardMaterial({color:capCol, emissive:capCol, emissiveIntensity:1.4, roughness:.5}));
+      cap.position.set(mx,my+h,mz); cap.scale.y=0.7; g.add(cap);
+    }
+    const l1 = new THREE.PointLight(0x4ff0c0, 7, 18, 2); l1.position.set(c.x, c.y+1.5, c.z); g.add(l1); glowLights.push(l1);
+    const l2 = new THREE.PointLight(0x35d0ff, 5, 16, 2); l2.position.set(c.x+side.x*4, c.y+1, c.z+side.z*4); g.add(l2); glowLights.push(l2);
+  });
+
+// 7) THE MACAW TREE — a leaning tree crowded with vivid red/blue/yellow birds.
+//    Riot of color + implied sound. The brightest spot on the walk.
+addLandmark(0.82, 'The Macaw Tree', 'A leaning tree ablaze with scarlet and blue birds. Color so loud you can almost hear it.',
+  (g, c, fwd, side) => {
+    const tx=c.x+side.x*5, tz=c.z+side.z*5, ty=terrainHeight(tx,tz);
+    const tr = trunkPillar(g, tx, ty, tz, 0.3, 0.7, 9, 0x5b4630); tr.rotation.z=0.2;
+    const macaw = [0xff3b2e, 0x2e7bff, 0xffd23b, 0x18c06a];
+    for (let i=0;i<26;i++){
+      const a=rand()*6.28, r=rrange(0.6,3);
+      const bx=tx+1.4+Math.cos(a)*r, by=ty+rrange(5,9), bz=tz+Math.sin(a)*r;
+      const body = new THREE.Mesh(new THREE.SphereGeometry(rrange(0.22,0.36),8,6),
+        new THREE.MeshStandardMaterial({color:pick(macaw), roughness:.6, emissiveIntensity:.15, emissive:0x110000}));
+      body.position.set(bx,by,bz); body.scale.set(1,1.2,1.6); g.add(body);
+      const tail = new THREE.Mesh(new THREE.ConeGeometry(0.08,0.9,4),
+        new THREE.MeshStandardMaterial({color:pick(macaw), roughness:.6}));
+      tail.position.set(bx,by,bz-0.6); tail.rotation.x=Math.PI/2; g.add(tail);
+    }
+  });
+
+// 8) HOME — the destination. A clearing with a thatched hut and a living
+//    fire. Warmth, safety, arrival. The walk RESOLVES here. Not infinite.
+let fireLight = null, fireMesh = null;
+addLandmark(0.975, 'Home', 'A clearing opens. A thatched hut, a ring of stones, and a fire still burning. You are home.',
+  (g, c, fwd, side) => {
+    const hx=c.x+side.x*5, hz=c.z+side.z*5, hy=terrainHeight(hx,hz);
+    // hut walls
+    const wall = new THREE.Mesh(new THREE.CylinderGeometry(2.6,2.8,3,10),
+      new THREE.MeshStandardMaterial({color:0x6e5a3a, roughness:1, flatShading:true}));
+    wall.position.set(hx,hy+1.5,hz); wall.castShadow=wall.receiveShadow=true; g.add(wall);
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(3.6,3,10),
+      new THREE.MeshStandardMaterial({color:0x8a6a35, roughness:1, flatShading:true}));
+    roof.position.set(hx,hy+4.4,hz); roof.castShadow=true; g.add(roof);
+    // doorway (dark)
+    const door = new THREE.Mesh(new THREE.BoxGeometry(1.1,2,0.4), new THREE.MeshStandardMaterial({color:0x140d06}));
+    const dd = new THREE.Vector3(c.x-hx,0,c.z-hz).normalize();
+    door.position.set(hx+dd.x*2.6, hy+1, hz+dd.z*2.6); door.lookAt(c.x,hy+1,c.z); g.add(door);
+    // fire ring on the path side
+    const ringStones = 9;
+    const fcx=c.x, fcz=c.z, fcy=terrainHeight(fcx,fcz);
+    for(let i=0;i<ringStones;i++){const a=i/ringStones*6.28; blob(g, fcx+Math.cos(a)*1.3, fcy+0.1, fcz+Math.sin(a)*1.3, rrange(.3,.45), 0x4a4a40,0.8);}
+    // logs + flame
+    fireMesh = new THREE.Mesh(new THREE.ConeGeometry(0.7,1.6,7),
+      new THREE.MeshStandardMaterial({color:0xff8a1e, emissive:0xff5a00, emissiveIntensity:2, roughness:.4}));
+    fireMesh.position.set(fcx,fcy+0.9,fcz); g.add(fireMesh);
+    fireLight = new THREE.PointLight(0xff6a1e, 9, 26, 2); fireLight.position.set(fcx,fcy+1.4,fcz); g.add(fireLight);
+    // a couple of drying racks / spears for "lived-in" detail
+    for (const s of [-1,1]){
+      const spear = new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,3,5), new THREE.MeshStandardMaterial({color:0x6b5436}));
+      spear.position.set(hx+side.x*2.4*s, hy+1.4, hz+side.z*2.4*s); spear.rotation.z=0.25*s; g.add(spear);
+    }
+  });
+
+// light shafts through the canopy (god-ray feel) at a few memorable spots
+function lightShaft(t, off) {
+  const c = groundAt(pointAt(t).clone());
+  const s = sideAt(t);
+  const cone = new THREE.Mesh(new THREE.ConeGeometry(3.2, 22, 16, 1, true),
+    new THREE.MeshBasicMaterial({color:0xfff3c0, transparent:true, opacity:0.06, side:THREE.DoubleSide, depthWrite:false, blending:THREE.AdditiveBlending}));
+  cone.position.set(c.x + s.x*off, c.y+11, c.z + s.z*off);
+  cone.rotation.z = 0.18; scene.add(cone);
+}
+[0.10, 0.24, 0.39, 0.52, 0.66, 0.78].forEach((t,i)=>lightShaft(t, i%2?5:-5));
+
+// floating pollen / spores motes (subtle life + depth cue)
+const moteCount = 600;
+const moteGeo = new THREE.BufferGeometry();
+const motePos = new Float32Array(moteCount*3);
+for (let i=0;i<moteCount;i++){
+  const t = rand();
+  const p = curve.getPointAt(t); const s = sideAt(t);
+  motePos[i*3]   = p.x + s.x*rrange(-8,8) + rrange(-4,4);
+  motePos[i*3+1] = terrainHeight(p.x,p.z) + rrange(0.4, 5);
+  motePos[i*3+2] = p.z + s.z*rrange(-8,8) + rrange(-4,4);
+}
+moteGeo.setAttribute('position', new THREE.BufferAttribute(motePos,3));
+const motes = new THREE.Points(moteGeo, new THREE.PointsMaterial({
+  color:0xfff2c0, size:0.09, transparent:true, opacity:0.5, depthWrite:false, blending:THREE.AdditiveBlending}));
+scene.add(motes);
+
+// ---------------------------------------------------------------------------
+// POST-PROCESSING: Ambient Occlusion (SSAO)
+// This is the requested technique. SSAO samples the depth buffer to find
+// where geometry crowds together and darkens those contact creases — the
+// gap under every leaf, the seam where trunk meets earth, the eye sockets of
+// the idol. Without it the scene reads flat; with it, every object feels
+// PLANTED in the world. Toggle with O to see exactly what it does.
+// ---------------------------------------------------------------------------
+const composer = new EffectComposer(renderer);
+const ssaoPass = new SSAOPass(scene, camera, window.innerWidth, window.innerHeight);
+ssaoPass.kernelRadius = 10;
+ssaoPass.minDistance = 0.0018;
+ssaoPass.maxDistance = 0.12;
+ssaoPass.output = SSAOPass.OUTPUT.Default; // beauty * AO
+composer.addPass(ssaoPass);
+composer.addPass(new OutputPass());
+let aoEnabled = true;
+
+// ---------------------------------------------------------------------------
+// WebAudio jungle soundscape (multisensory recall). Synthesized — no assets.
+// A bed of insect noise + random bird calls + footsteps + water near falls.
+// ---------------------------------------------------------------------------
+let audioCtx = null, masterGain = null, ambGain = null, waterGain = null;
+let birdTimer = 0, stepPhase = 0;
+function initAudio() {
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  masterGain = audioCtx.createGain(); masterGain.gain.value = 0.0; masterGain.connect(audioCtx.destination);
+  masterGain.gain.linearRampToValueAtTime(0.6, audioCtx.currentTime + 2);
+
+  // insect/cicada bed: filtered noise
+  const bufSize = audioCtx.sampleRate * 2;
+  const buf = audioCtx.createBuffer(1, bufSize, audioCtx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i=0;i<bufSize;i++) data[i] = Math.random()*2-1;
+  const noise = audioCtx.createBufferSource(); noise.buffer = buf; noise.loop = true;
+  const bp = audioCtx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=2600; bp.Q.value=4;
+  ambGain = audioCtx.createGain(); ambGain.gain.value = 0.06;
+  noise.connect(bp).connect(ambGain).connect(masterGain); noise.start();
+
+  // low jungle hum
+  const hum = audioCtx.createOscillator(); hum.type='sine'; hum.frequency.value=70;
+  const hg = audioCtx.createGain(); hg.gain.value=0.04; hum.connect(hg).connect(masterGain); hum.start();
+
+  // water (near the falls) — separate gain we raise by proximity
+  const wn = audioCtx.createBufferSource(); wn.buffer = buf; wn.loop = true;
+  const wf = audioCtx.createBiquadFilter(); wf.type='lowpass'; wf.frequency.value=1200;
+  waterGain = audioCtx.createGain(); waterGain.gain.value = 0.0;
+  wn.connect(wf).connect(waterGain).connect(masterGain); wn.start();
+}
+function birdCall() {
+  if (!audioCtx) return;
+  const now = audioCtx.currentTime;
+  const o = audioCtx.createOscillator(); o.type = pick(['sine','triangle','square']);
+  const g = audioCtx.createGain();
+  const f0 = rrange(900, 3200);
+  o.frequency.setValueAtTime(f0, now);
+  o.frequency.exponentialRampToValueAtTime(f0*rrange(0.6,1.8), now+0.12);
+  g.gain.setValueAtTime(0.0, now);
+  g.gain.linearRampToValueAtTime(rrange(0.04,0.12), now+0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, now+rrange(0.15,0.4));
+  o.connect(g).connect(masterGain); o.start(now); o.stop(now+0.5);
+}
+function footstep() {
+  if (!audioCtx) return;
+  const now = audioCtx.currentTime;
+  const bufSize = audioCtx.sampleRate * 0.12;
+  const buf = audioCtx.createBuffer(1, bufSize, audioCtx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i=0;i<bufSize;i++) d[i] = (Math.random()*2-1) * Math.pow(1 - i/bufSize, 3);
+  const s = audioCtx.createBufferSource(); s.buffer = buf;
+  const lp = audioCtx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=520;
+  const g = audioCtx.createGain(); g.gain.value=0.5;
+  s.connect(lp).connect(g).connect(masterGain); s.start();
+}
+
+// ---------------------------------------------------------------------------
+// Controls — walk forward along the path, look freely with the mouse.
+// You never steer off the trail (you can't get lost), but you choose where to
+// look. This mirrors how a real route is remembered: a fixed sequence you
+// move through, glancing at the landmarks.
+// ---------------------------------------------------------------------------
+let progress = 0;                 // 0..1 along the curve
+const WALK_TIME = 60;             // seconds to complete at steady pace
+let walking = false;
+let yaw = 0, pitch = 0;           // look offset from path-forward
+const keys = {};
+
+window.addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (e.code === 'KeyO') toggleAO();
+});
+window.addEventListener('keyup', e => keys[e.code] = false);
+
+// mouse look (pointer lock once you click in)
+renderer.domElement.addEventListener('click', () => {
+  if (started && document.pointerLockElement !== renderer.domElement) renderer.domElement.requestPointerLock();
+});
+document.addEventListener('mousemove', e => {
+  if (document.pointerLockElement === renderer.domElement) {
+    yaw   -= e.movementX * 0.0024;
+    pitch -= e.movementY * 0.0024;
+  }
+});
+// touch look
+let lastTouch = null;
+renderer.domElement.addEventListener('touchstart', e => { lastTouch = e.touches[0]; walking = true; }, {passive:true});
+renderer.domElement.addEventListener('touchmove', e => {
+  if (lastTouch) { yaw -= (e.touches[0].clientX - lastTouch.clientX)*0.005; pitch -= (e.touches[0].clientY - lastTouch.clientY)*0.005; }
+  lastTouch = e.touches[0];
+}, {passive:true});
+renderer.domElement.addEventListener('touchend', ()=>{ lastTouch=null; });
+
+function toggleAO() {
+  aoEnabled = !aoEnabled;
+  ssaoPass.enabled = aoEnabled;
+  document.getElementById('aoState').textContent = aoEnabled ? 'ON' : 'OFF';
+}
+
+// ---------------------------------------------------------------------------
+// HUD references
+// ---------------------------------------------------------------------------
+const fill = document.getElementById('progressFill');
+const lmName = document.querySelector('#landmark .name');
+const lmNote = document.querySelector('#landmark .note');
+const lmBox  = document.getElementById('landmark');
+const progLabel = document.getElementById('progressLabel');
+let lmHideTimer = 0;
+const seenOrder = [];
+
+function showLandmark(l) {
+  lmName.textContent = l.name;
+  lmNote.textContent = l.note;
+  lmBox.style.opacity = 1;
+  progLabel.textContent = l.name;
+  lmHideTimer = 3.4;
+  if (!seenOrder.includes(l.name)) seenOrder.push(l.name);
+}
+
+// compass
+const dirNames = ['N','NE','E','SE','S','SW','W','NW'];
+const compass = document.getElementById('compass');
+
+// ---------------------------------------------------------------------------
+// Start / End overlay wiring
+// ---------------------------------------------------------------------------
+let started = false, ended = false;
+const startOverlay = document.getElementById('startOverlay');
+const endOverlay = document.getElementById('endOverlay');
+document.getElementById('loading').style.display = 'none';
+startOverlay.style.display = 'flex';
+
+document.getElementById('beginBtn').addEventListener('click', () => {
+  started = true; initAudio();
+  startOverlay.classList.add('fadeOut');
+  setTimeout(()=> startOverlay.style.display='none', 1000);
+  renderer.domElement.requestPointerLock?.();
+});
+document.getElementById('againBtn').addEventListener('click', () => {
+  progress = 0; walking = false; ended = false; yaw = 0; pitch = 0;
+  seenOrder.length = 0;
+  endOverlay.style.display = 'none';
+});
+
+function endWalk() {
+  ended = true; walking = false;
+  const recall = document.getElementById('endRecall');
+  recall.innerHTML = 'You walked, in order: <b>' + seenOrder.join('</b> → <b>') + '</b>.';
+  endOverlay.style.display = 'flex';
+  document.exitPointerLock?.();
+}
+
+// ---------------------------------------------------------------------------
+// Main loop
+// ---------------------------------------------------------------------------
+const clock = new THREE.Clock();
+const fallsPoint = pointAt(0.45);
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t = clock.elapsedTime;
+
+  // advance along path while walking
+  if (started && !ended) {
+    const fwdKey = keys['KeyW'] || keys['ArrowUp'];
+    const slowKey = keys['KeyS'] || keys['ArrowDown'];
+    if (fwdKey) walking = true;
+    if (slowKey) walking = false;
+
+    if (walking) {
+      const speed = (1 / WALK_TIME) * (fwdKey ? 1.6 : 1.0); // hold W to stride faster
+      progress += speed * dt;
+      // footsteps
+      stepPhase += dt * (fwdKey ? 3.4 : 2.2);
+      if (stepPhase >= 1) { stepPhase -= 1; footstep(); }
+    }
+    if (progress >= 1) { progress = 1; endWalk(); }
+  }
+
+  // camera placement on the path
+  const pp = curve.getPointAt(Math.min(progress, 1));
+  const tang = curve.getTangentAt(Math.min(progress, 0.9999)).normalize();
+  const baseYaw = Math.atan2(tang.x, tang.z);
+
+  // gentle head-bob while striding (embodiment → stronger memory)
+  const bob = walking ? Math.sin(t * 8) * 0.045 : 0;
+  const sway = walking ? Math.cos(t * 4) * 0.03 : 0;
+
+  camera.position.set(
+    pp.x + Math.cos(baseYaw)*sway,
+    terrainHeight(pp.x, pp.z) + EYE + bob,
+    pp.z - Math.sin(baseYaw)*sway
+  );
+
+  // look direction = path forward + user yaw/pitch offset (clamped: you can
+  // look around, but the trail always pulls your gaze back)
+  pitch = Math.max(-1.0, Math.min(0.9, pitch));
+  yaw   = Math.max(-2.2, Math.min(2.2, yaw));
+  const lookYaw = baseYaw + Math.PI + yaw; // +PI: tangent points "into" screen
+  const dir = new THREE.Vector3(
+    Math.sin(lookYaw) * Math.cos(pitch),
+    Math.sin(pitch),
+    Math.cos(lookYaw) * Math.cos(pitch)
+  );
+  camera.lookAt(camera.position.clone().add(dir));
+  // relax yaw slowly back toward forward (so the path keeps reorienting you)
+  yaw *= (1 - dt * 0.6);
+  pitch *= (1 - dt * 0.3);
+
+  // landmark triggers
+  for (const l of landmarks) {
+    if (!l.triggered && progress >= l.t - 0.012) { l.triggered = true; showLandmark(l); }
+    if (progress < l.t - 0.05) l.triggered = false; // re-arm if walked again
+  }
+  if (lmHideTimer > 0) { lmHideTimer -= dt; if (lmHideTimer <= 0) lmBox.style.opacity = 0; }
+
+  // progress bar
+  fill.style.width = (progress * 100).toFixed(1) + '%';
+
+  // compass readout
+  const headingDeg = ((lookYaw * 180/Math.PI) % 360 + 360) % 360;
+  const di = Math.round(headingDeg / 45) % 8;
+  compass.textContent = dirNames.map((d,i)=> i===di ? '· '+d+' ·' : d).join('  ');
+
+  // animate living elements
+  if (fireMesh) { fireMesh.scale.y = 1 + Math.sin(t*12)*0.12; fireMesh.rotation.y = t*2; }
+  if (fireLight) fireLight.intensity = 8 + Math.sin(t*14)*2 + Math.sin(t*7)*1.5;
+  for (let i=0;i<glowLights.length;i++) glowLights[i].intensity = 5 + Math.sin(t*1.5 + i)*2.5;
+  if (fallsMat) fallsMat.map ? 0 : (fallsMat.emissiveIntensity = 0.25 + Math.sin(t*6)*0.1);
+  // mote drift
+  const mp = moteGeo.attributes.position;
+  for (let i=0;i<moteCount;i++){
+    mp.array[i*3+1] += Math.sin(t*0.6 + i)*0.002 + 0.004;
+    if (mp.array[i*3+1] > 9) mp.array[i*3+1] = 0.4;
+  }
+  mp.needsUpdate = true;
+
+  // birds (random, denser near macaw tree)
+  if (started && audioCtx) {
+    birdTimer -= dt;
+    const nearMacaw = Math.abs(progress - 0.82) < 0.06;
+    if (birdTimer <= 0) { birdCall(); birdTimer = nearMacaw ? rrange(0.15,0.5) : rrange(1.2, 3.5); }
+    // water proximity
+    if (waterGain) {
+      const dx = pp.x - fallsPoint.x, dz = pp.z - fallsPoint.z;
+      const dist = Math.sqrt(dx*dx+dz*dz);
+      const target = Math.max(0, 0.22 * (1 - dist/16));
+      waterGain.gain.value += (target - waterGain.gain.value) * 0.05;
+    }
+  }
+
+  // keep sun shadow centered on the walker
+  sun.target.position.set(pp.x, 0, pp.z);
+  sun.position.set(pp.x + 34, 58, pp.z + 20);
+
+  if (aoEnabled) composer.render(); else renderer.render(scene, camera);
+}
+animate();
+
+// ---------------------------------------------------------------------------
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  composer.setSize(window.innerWidth, window.innerHeight);
+  ssaoPass.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>

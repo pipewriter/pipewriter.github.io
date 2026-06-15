@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Long Walk Home — A Tundra Memory Trail</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:100%; height:100%; overflow:hidden; background:#0a0f1a; font-family:"Trebuchet MS",system-ui,sans-serif; color:#eaf2ff; }
+  #app { position:fixed; inset:0; }
+  canvas { display:block; }
+
+  /* ---- Start overlay ---- */
+  #start {
+    position:fixed; inset:0; z-index:30;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    text-align:center; padding:24px;
+    background:radial-gradient(ellipse at 50% 35%, rgba(40,70,120,.55), rgba(6,10,20,.96));
+    backdrop-filter:blur(2px);
+  }
+  #start h1 { font-size:clamp(26px,5vw,52px); letter-spacing:1px; text-shadow:0 2px 18px #000;
+    background:linear-gradient(90deg,#bfe3ff,#9fd8b6,#e8c9a0); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  #start p { max-width:640px; margin:14px 0; line-height:1.55; color:#cfe0f5; font-size:clamp(13px,1.6vw,17px); }
+  #start .keys { font-size:13px; color:#9fb4d4; margin-top:6px; }
+  #start b { color:#fff; }
+  #begin {
+    margin-top:26px; padding:14px 40px; font-size:19px; letter-spacing:2px; cursor:pointer;
+    color:#06121f; font-weight:bold; border:none; border-radius:40px;
+    background:linear-gradient(180deg,#d8ecff,#7fc2a0); box-shadow:0 6px 30px rgba(120,200,255,.4);
+    transition:transform .15s ease, box-shadow .15s; text-transform:uppercase;
+  }
+  #begin:hover { transform:translateY(-2px) scale(1.03); box-shadow:0 10px 40px rgba(150,220,255,.6); }
+
+  /* ---- HUD ---- */
+  #hud { position:fixed; inset:0; z-index:10; pointer-events:none; }
+  #log {
+    position:absolute; top:16px; left:16px; max-width:240px;
+    background:rgba(8,14,26,.42); border:1px solid rgba(150,190,255,.18); border-radius:10px;
+    padding:10px 14px; font-size:12.5px; line-height:1.7; backdrop-filter:blur(4px);
+  }
+  #log h3 { font-size:11px; letter-spacing:2px; color:#8fb6e8; margin-bottom:6px; text-transform:uppercase; font-weight:normal; }
+  #log .item { color:#7e93b4; transition:color .4s; }
+  #log .item.seen { color:#eaf6ff; text-shadow:0 0 8px rgba(150,220,255,.5); }
+  #log .item.seen::before { content:"◆ "; color:#9fe0c0; }
+  #log .item::before { content:"◇ "; color:#566b8c; }
+
+  #progressWrap { position:absolute; bottom:26px; left:50%; transform:translateX(-50%);
+    width:min(60vw,520px); }
+  #progressBar { height:6px; border-radius:6px; background:rgba(255,255,255,.12); overflow:hidden;
+    border:1px solid rgba(150,190,255,.2); }
+  #progressFill { height:100%; width:0%; background:linear-gradient(90deg,#7fc2a0,#bfe3ff,#e8c9a0); transition:width .2s; }
+  #progressTxt { text-align:center; font-size:11px; letter-spacing:2px; color:#a9c2e6; margin-top:6px; text-transform:uppercase; }
+
+  #banner { position:absolute; bottom:22%; left:0; right:0; text-align:center;
+    font-size:clamp(22px,4vw,40px); font-weight:bold; letter-spacing:1px;
+    color:#fff; text-shadow:0 3px 20px #000, 0 0 40px rgba(120,200,255,.6);
+    opacity:0; transition:opacity .6s; }
+  #banner small { display:block; font-size:.42em; font-weight:normal; letter-spacing:3px; color:#cfe0f5; margin-top:8px; text-transform:uppercase; }
+
+  #compass { position:absolute; top:16px; right:16px; font-size:12px; color:#a9c2e6;
+    background:rgba(8,14,26,.42); border:1px solid rgba(150,190,255,.18); border-radius:8px; padding:8px 12px; backdrop-filter:blur(4px); text-align:center; }
+  #compass b { font-size:18px; color:#fff; display:block; }
+
+  /* ---- End overlay ---- */
+  #end { position:fixed; inset:0; z-index:25; display:none; flex-direction:column; align-items:center; justify-content:center;
+    text-align:center; padding:24px; background:radial-gradient(ellipse at 50% 40%, rgba(60,40,20,.6), rgba(8,6,12,.97)); }
+  #end h1 { font-size:clamp(28px,5vw,54px); color:#ffd9a0; text-shadow:0 0 30px rgba(255,170,80,.6); }
+  #end p { max-width:560px; margin:16px 0; line-height:1.6; color:#e8d8c4; }
+  #end button { margin-top:20px; padding:12px 34px; font-size:16px; letter-spacing:2px; cursor:pointer; border:none; border-radius:30px;
+    background:linear-gradient(180deg,#ffe6c2,#e0a868); color:#3a1f08; font-weight:bold; text-transform:uppercase; }
+  .tag { position:fixed; bottom:8px; right:12px; z-index:10; font-size:10px; letter-spacing:1px; color:#5c7090; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<div id="hud">
+  <div id="log"><h3>Trail Memories</h3><div id="logItems"></div></div>
+  <div id="compass">heading<b id="compassDir">N</b></div>
+  <div id="banner"></div>
+  <div id="progressWrap">
+    <div id="progressBar"><div id="progressFill"></div></div>
+    <div id="progressTxt">The Long Walk Home</div>
+  </div>
+</div>
+
+<div id="start">
+  <h1>The Long Walk Home</h1>
+  <p>Dusk falls over the tundra and the aurora is waking. You have no map, no stars yet, no words on paper —
+     only the <b>look of things</b> to guide you. Walk the trail and let each strange landmark burn itself into memory,
+     for one day you must find your way back along it alone.</p>
+  <p class="keys"><b>W A S D</b> walk &nbsp;·&nbsp; <b>Mouse</b> look &nbsp;·&nbsp; <b>Shift</b> hurry &nbsp;·&nbsp; <b>Arrow keys</b> also turn</p>
+  <p class="keys">Rendered with <b>Phong shading</b> — watch the low sun glint off the ice.</p>
+  <button id="begin">Begin the Walk</button>
+</div>
+
+<div id="end">
+  <h1>You are Home.</h1>
+  <p id="endTxt"></p>
+  <button id="restart">Walk it Again</button>
+</div>
+
+<div class="tag">Phong-shaded · Tundra · single-file three.js</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+/* ============================================================================
+   THE LONG WALK HOME — a finite, ~1-minute first-person tundra memory trail.
+   Every landmark is deliberately distinct in SHAPE, COLOR, SIDE, SCALE, SOUND
+   and MOTION so the human brain can anchor a mind-palace journey to it.
+   Graphics technique: PHONG SHADING (THREE.MeshPhongMaterial — per-pixel
+   interpolated normals + specular highlights, ideal for icy sheen).
+   ============================================================================ */
+
+const THREEr = THREE;
+let scene, camera, renderer, clock;
+let yaw = 0, pitch = 0;             // look angles
+const yawObj = new THREEr.Object3D(); // holds the camera, rotated by yaw
+let started = false, finished = false;
+const keys = {};
+let dirLight, fireLight, homeLight;
+const updaters = [];                // per-frame callbacks
+let curve, curveSamples = [];       // trail path
+let landmarks = [];                 // {pos, name, sub, r, seen}
+let snowPoints;
+
+/* -------------------- value-noise terrain (shared by geom + placement) ----- */
+function fract(x){ return x - Math.floor(x); }
+function hash2(x,y){ return fract(Math.sin(x*127.1 + y*311.7) * 43758.5453123); }
+function vnoise(x,y){
+  const xi=Math.floor(x), yi=Math.floor(y), xf=x-xi, yf=y-yi;
+  const u=xf*xf*(3-2*xf), v=yf*yf*(3-2*yf);
+  const a=hash2(xi,yi), b=hash2(xi+1,yi), c=hash2(xi,yi+1), d=hash2(xi+1,yi+1);
+  return a*(1-u)*(1-v) + b*u*(1-v) + c*(1-u)*v + d*u*v;
+}
+function fbm(x,y){ let s=0,a=.5,f=1; for(let i=0;i<4;i++){ s+=a*vnoise(x*f,y*f); f*=2; a*=.5; } return s; }
+function terrainHeight(x,z){
+  return (fbm(x*0.015+10, z*0.015-5)-0.5)*6.0 + (fbm(x*0.06, z*0.06)-0.5)*1.1;
+}
+
+/* ============================== INIT ====================================== */
+function init(){
+  scene = new THREEr.Scene();
+  scene.background = new THREEr.Color(0x1b2a4a);
+  scene.fog = new THREEr.FogExp2(0x2a3c61, 0.0065);
+
+  camera = new THREEr.PerspectiveCamera(68, innerWidth/innerHeight, 0.1, 1200);
+  yawObj.add(camera);
+  scene.add(yawObj);
+
+  renderer = new THREEr.WebGLRenderer({ antialias:true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.outputEncoding = THREEr.sRGBEncoding;
+  renderer.toneMapping = THREEr.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.12;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREEr.PCFSoftShadowMap;
+  document.getElementById('app').appendChild(renderer.domElement);
+
+  clock = new THREEr.Clock();
+
+  buildLights();
+  buildSky();
+  buildAurora();
+  buildTerrain();
+  buildPath();
+  buildMountains();
+  buildLandmarks();
+  buildScatter();
+  buildSnow();
+
+  // place player at trail start, facing down the trail (toward -Z / north)
+  const p0 = curveSamples[0], p1 = curveSamples[6];
+  yawObj.position.set(p0.x, terrainHeight(p0.x,p0.z)+1.7, p0.z);
+  yaw = Math.atan2(p0.x - p1.x, p0.z - p1.z); // look toward the path
+
+  addEventListeners();
+  buildLog();
+  animate();
+}
+
+/* ============================== LIGHTS ==================================== */
+function buildLights(){
+  // hemisphere ambient: cold sky over snowy ground (tundra dusk)
+  const hemi = new THREEr.HemisphereLight(0x9fc2ff, 0x3a4a66, 0.55);
+  scene.add(hemi);
+
+  // low grazing "sun" — warm, gives Phong specular glints on ice
+  dirLight = new THREEr.DirectionalLight(0xffd2a1, 1.35);
+  dirLight.position.set(40, 22, 60);
+  dirLight.castShadow = true;
+  dirLight.shadow.mapSize.set(2048,2048);
+  const s = 55;
+  dirLight.shadow.camera.left=-s; dirLight.shadow.camera.right=s;
+  dirLight.shadow.camera.top=s; dirLight.shadow.camera.bottom=-s;
+  dirLight.shadow.camera.near=1; dirLight.shadow.camera.far=220;
+  dirLight.shadow.bias = -0.0005;
+  scene.add(dirLight);
+  scene.add(dirLight.target);
+
+  // subtle cool fill so shadow sides aren't black
+  const fill = new THREEr.DirectionalLight(0x7da0ff, 0.25);
+  fill.position.set(-30, 15, -20);
+  scene.add(fill);
+}
+
+/* ============================== SKY ====================================== */
+function buildSky(){
+  const geo = new THREEr.SphereGeometry(700, 32, 16);
+  const mat = new THREEr.ShaderMaterial({
+    side:THREEr.BackSide, depthWrite:false,
+    uniforms:{ top:{value:new THREEr.Color(0x0c1430)}, mid:{value:new THREEr.Color(0x32507f)}, bot:{value:new THREEr.Color(0xe9a86a)} },
+    vertexShader:`varying float h; void main(){ h = normalize(position).y; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
+    fragmentShader:`varying float h; uniform vec3 top,mid,bot;
+      void main(){ float t=clamp(h,-1.0,1.0);
+        vec3 c = t>0.0 ? mix(mid,top,pow(t,0.7)) : mix(mid,bot,pow(-t*1.4,0.8));
+        gl_FragColor=vec4(c,1.0);} `
+  });
+  scene.add(new THREEr.Mesh(geo, mat));
+}
+
+/* ============================== AURORA =================================== */
+function buildAurora(){
+  const mat = new THREEr.ShaderMaterial({
+    transparent:true, depthWrite:false, side:THREEr.DoubleSide, blending:THREEr.AdditiveBlending,
+    uniforms:{ t:{value:0} },
+    vertexShader:`varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
+    fragmentShader:`varying vec2 vUv; uniform float t;
+      void main(){
+        float x=vUv.x, y=vUv.y;
+        float wave = sin(x*9.0 + t*0.7)*0.5 + sin(x*17.0 - t*0.5)*0.25;
+        float band = smoothstep(0.5, 0.0, abs(y - (0.55 + wave*0.12)));
+        float curtain = pow(band, 1.6) * (0.6 + 0.4*sin(x*40.0 + t));
+        float vert = smoothstep(0.0,0.25,y) * smoothstep(1.0,0.55,y);
+        vec3 col = mix(vec3(0.1,0.95,0.55), vec3(0.5,0.25,0.95), x);
+        float a = curtain * vert * 0.55;
+        gl_FragColor = vec4(col*a, a);
+      }`
+  });
+  for(let i=0;i<4;i++){
+    const g = new THREEr.PlaneGeometry(420, 150, 1, 1);
+    const m = new THREEr.Mesh(g, mat);
+    const ang = (i/4)*Math.PI*2;
+    m.position.set(Math.sin(ang)*260, 150, Math.cos(ang)*260 - 120);
+    m.lookAt(0,150,-120);
+    scene.add(m);
+  }
+  updaters.push((t)=>{ mat.uniforms.t.value = t; });
+}
+
+/* ============================== TERRAIN ================================== */
+function buildTerrain(){
+  const SIZE=560, SEG=240;
+  const geo = new THREEr.PlaneGeometry(SIZE, SIZE, SEG, SEG);
+  geo.rotateX(-Math.PI/2);
+  const pos = geo.attributes.position;
+  for(let i=0;i<pos.count;i++){
+    const x=pos.getX(i), z=pos.getZ(i);
+    pos.setY(i, terrainHeight(x, z-110)); // shift so trail (-z) is centered in mesh
+  }
+  geo.computeVertexNormals();
+  geo.translate(0,0,-110);
+  const mat = new THREEr.MeshPhongMaterial({
+    color:0xdfeaff, specular:0x6f86b0, shininess:36, flatShading:false
+  });
+  const ground = new THREEr.Mesh(geo, mat);
+  ground.receiveShadow = true;
+  scene.add(ground);
+}
+
+/* ============================== PATH ===================================== */
+function buildPath(){
+  const pts = [
+    [0,6],[-7,-12],[9,-30],[-5,-50],[11,-70],[-9,-92],
+    [5,-114],[-11,-136],[7,-158],[-5,-180],[9,-200],[0,-220]
+  ].map(p=> new THREEr.Vector3(p[0],0,p[1]));
+  curve = new THREEr.CatmullRomCurve3(pts, false, 'catmullrom', 0.5);
+
+  const N=400;
+  curveSamples = [];
+  for(let i=0;i<=N;i++){ const p=curve.getPointAt(i/N); curveSamples.push(p.clone()); }
+
+  // trodden-snow ribbon laid on the terrain
+  const verts=[], idx=[]; const half=1.6;
+  for(let i=0;i<=N;i++){
+    const p = curve.getPointAt(i/N);
+    const tan = curve.getTangentAt(i/N);
+    const perp = new THREEr.Vector3(tan.z,0,-tan.x).normalize();
+    const yc = (xx,zz)=> terrainHeight(xx,zz)+0.06;
+    const a = p.clone().addScaledVector(perp, half);
+    const b = p.clone().addScaledVector(perp,-half);
+    verts.push(a.x, yc(a.x,a.z), a.z,  b.x, yc(b.x,b.z), b.z);
+    if(i<N){ const k=i*2; idx.push(k,k+1,k+2, k+1,k+3,k+2); }
+  }
+  const g = new THREEr.BufferGeometry();
+  g.setAttribute('position', new THREEr.Float32BufferAttribute(verts,3));
+  g.setIndex(idx); g.computeVertexNormals();
+  const m = new THREEr.MeshPhongMaterial({ color:0x6b5a48, specular:0x222222, shininess:6 });
+  const ribbon = new THREEr.Mesh(g,m);
+  ribbon.receiveShadow = true;
+  scene.add(ribbon);
+
+  // little footprint dimples (pairs) for extra "human" cue
+  const footGeo = new THREEr.CircleGeometry(0.16, 6); footGeo.rotateX(-Math.PI/2);
+  const footMat = new THREEr.MeshPhongMaterial({ color:0x4d4032, shininess:2 });
+  const foot = new THREEr.InstancedMesh(footGeo, footMat, 160);
+  const dummy = new THREEr.Object3D(); let fi=0;
+  for(let i=2;i<N-2 && fi<160;i+=5){
+    const p = curve.getPointAt(i/N);
+    const tan = curve.getTangentAt(i/N);
+    const perp = new THREEr.Vector3(tan.z,0,-tan.x).normalize();
+    const side = (fi%2===0)?0.45:-0.45;
+    const fp = p.clone().addScaledVector(perp, side);
+    dummy.position.set(fp.x, terrainHeight(fp.x,fp.z)+0.07, fp.z);
+    dummy.rotation.set(0,0,0); dummy.updateMatrix();
+    foot.setMatrixAt(fi++, dummy.matrix);
+  }
+  foot.count=fi; scene.add(foot);
+}
+
+/* helper: world position offset to the side of the trail at param t */
+function atTrail(t, side, dist){
+  const p = curve.getPointAt(t);
+  const tan = curve.getTangentAt(t);
+  const perp = new THREEr.Vector3(tan.z,0,-tan.x).normalize();
+  const w = p.clone().addScaledVector(perp, dist*side);
+  w.y = terrainHeight(w.x, w.z);
+  return w;
+}
+
+/* ============================== MOUNTAINS ================================ */
+function buildMountains(){
+  const mat = new THREEr.MeshPhongMaterial({ color:0x5d6f93, specular:0x223, shininess:8 });
+  const snowMat = new THREEr.MeshPhongMaterial({ color:0xf0f5ff, specular:0x8899bb, shininess:30 });
+  for(let i=0;i<22;i++){
+    const ang = (i/22)*Math.PI*2 + 0.2;
+    const R = 300 + Math.sin(i*3.3)*40;
+    const h = 60 + ((i*53)%70);
+    const r = 50 + ((i*31)%40);
+    const g = new THREEr.ConeGeometry(r, h, 5);
+    const m = new THREEr.Mesh(g, mat);
+    m.position.set(Math.sin(ang)*R, h/2 - 14, Math.cos(ang)*R - 110);
+    scene.add(m);
+    const cap = new THREEr.Mesh(new THREEr.ConeGeometry(r*0.4, h*0.32, 5), snowMat);
+    cap.position.set(m.position.x, m.position.y + h*0.33, m.position.z);
+    scene.add(cap);
+  }
+}
+
+/* ============================== LANDMARKS ================================ */
+function addLandmark(group, pos, name, sub, r){
+  group.position.copy(pos);
+  scene.add(group);
+  landmarks.push({ pos:pos.clone(), name, sub, r:r||9, seen:false });
+}
+function mat(color, shininess, specular){
+  return new THREEr.MeshPhongMaterial({ color, shininess:shininess||30, specular:specular!==undefined?specular:0x333333 });
+}
+function castAll(g){ g.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true; } }); }
+
+function buildLandmarks(){
+  buildWatcherStone( atTrail(0.02, 1, 4) );
+  buildFrozenLake(   atTrail(0.12,-1, 6) );
+  buildMammoth(      atTrail(0.22, 1, 7) );
+  buildDeadTrees(    atTrail(0.32,-1, 6) );
+  buildStoneCircle(  atTrail(0.42, 0, 0) );
+  buildWaterfall(    atTrail(0.52, 1,14) );
+  buildBonfire(      atTrail(0.60,-1, 5) );
+  buildReindeer(     atTrail(0.68,-1,12) );
+  buildBoneArch(     atTrail(0.78, 0, 0) );
+  buildOchreBoulder( atTrail(0.88, 1, 5) );
+  buildHome(         atTrail(0.985,0, 2) );
+}
+
+/* 1 — THE WATCHER STONE: black monolith banded with blood-red ochre (warning) */
+function buildWatcherStone(pos){
+  const g = new THREEr.Group();
+  const stone = new THREEr.Mesh(new THREEr.BoxGeometry(1.6, 7, 1.1), mat(0x20242c, 18, 0x111));
+  stone.position.y = 3.5; stone.rotation.z = 0.05; g.add(stone);
+  const red = mat(0xc0291b, 50, 0x551); red.emissive=new THREEr.Color(0x3a0a05);
+  for(let i=0;i<3;i++){
+    const band = new THREEr.Mesh(new THREEr.BoxGeometry(1.7,0.45,1.2), red);
+    band.position.y = 1.6 + i*1.7; g.add(band);
+  }
+  const eye = new THREEr.Mesh(new THREEr.SphereGeometry(0.35,12,12), mat(0xf2e0c0,60,0x222));
+  eye.position.set(0,5.6,0.6); g.add(eye);
+  castAll(g);
+  addLandmark(g, pos, "The Watcher Stone", "Black monolith, three red bands", 8);
+}
+
+/* 2 — THE BLUE MIRROR: frozen cracked lake, high-specular ice (left) */
+function buildFrozenLake(pos){
+  const g = new THREEr.Group();
+  const iceMat = new THREEr.MeshPhongMaterial({ color:0x69b4d8, specular:0xffffff, shininess:110, transparent:true, opacity:0.92, emissive:0x0a2233 });
+  const lake = new THREEr.Mesh(new THREEr.CircleGeometry(13, 40), iceMat);
+  lake.rotation.x = -Math.PI/2; lake.position.y = 0.12; lake.receiveShadow=true; g.add(lake);
+  // dark cracks
+  const crackMat = new THREEr.LineBasicMaterial({ color:0x123040, transparent:true, opacity:0.6 });
+  for(let i=0;i<14;i++){
+    const a = Math.random()*Math.PI*2, r1=Math.random()*4, r2=4+Math.random()*8;
+    const pts=[ new THREEr.Vector3(Math.cos(a)*r1,0.14,Math.sin(a)*r1),
+                new THREEr.Vector3(Math.cos(a+0.3)*r2,0.14,Math.sin(a+0.3)*r2) ];
+    g.add(new THREEr.Line(new THREEr.BufferGeometry().setFromPoints(pts), crackMat));
+  }
+  // a reed cluster at the edge for asymmetry
+  const reedMat = mat(0xb8a05a, 6, 0x111);
+  for(let i=0;i<10;i++){
+    const reed = new THREEr.Mesh(new THREEr.CylinderGeometry(0.02,0.04,1.2+Math.random()*0.8,4), reedMat);
+    reed.position.set(11+Math.random()*2, 0.6, -3+Math.random()*6); reed.rotation.z=(Math.random()-.5)*0.4; g.add(reed);
+  }
+  addLandmark(g, pos, "The Blue Mirror", "Cracked frozen lake (your left)", 13);
+}
+
+/* 3 — THE GREAT RIBS: mammoth skeleton you pass beside (right) */
+function buildMammoth(pos){
+  const g = new THREEr.Group();
+  const bone = mat(0xe8e2d2, 22, 0x222);
+  // spine
+  const spine = new THREEr.Mesh(new THREEr.CylinderGeometry(0.25,0.25,9,8), bone);
+  spine.rotation.z = Math.PI/2; spine.position.y = 3.4; g.add(spine);
+  // rib pairs (torus halves)
+  for(let i=0;i<6;i++){
+    for(const s of [1,-1]){
+      const rib = new THREEr.Mesh(new THREEr.TorusGeometry(2.4-i*0.12, 0.18, 8, 16, Math.PI), bone);
+      rib.position.set(-4 + i*1.5, 3.4, 0);
+      rib.rotation.y = Math.PI/2; rib.rotation.z = s>0?0:Math.PI;
+      rib.scale.z = s; g.add(rib);
+    }
+  }
+  // skull + curling tusks
+  const skull = new THREEr.Mesh(new THREEr.SphereGeometry(1.1,12,12), bone);
+  skull.position.set(-5.4,2.6,0); skull.scale.set(1,1.1,0.9); g.add(skull);
+  for(const s of [1,-1]){
+    const tuskPts=[]; for(let i=0;i<=10;i++){ const t=i/10; tuskPts.push(new THREEr.Vector3(-5.6 - t*3.5, 2.2 - Math.sin(t*2.4)*1.6, s*(0.5+t*0.9))); }
+    const tube = new THREEr.Mesh(new THREEr.TubeGeometry(new THREEr.CatmullRomCurve3(tuskPts),16,0.18-0,8), bone);
+    g.add(tube);
+  }
+  castAll(g); g.rotation.y = -0.4;
+  addLandmark(g, pos, "The Great Ribs", "Mammoth skeleton (your right)", 10);
+}
+
+/* 4 — THE THREE WIDOWS: black twisted dead trees (left) */
+function buildDeadTrees(pos){
+  const g = new THREEr.Group();
+  const wood = mat(0x241a14, 8, 0x000);
+  for(let n=0;n<3;n++){
+    const tree = new THREEr.Group();
+    const h = 4.5 + n*0.8;
+    const trunk = new THREEr.Mesh(new THREEr.CylinderGeometry(0.18,0.5,h,7), wood);
+    trunk.position.y = h/2; trunk.rotation.z = (n-1)*0.12; tree.add(trunk);
+    for(let b=0;b<5;b++){
+      const len = 1.2+Math.random()*1.6;
+      const br = new THREEr.Mesh(new THREEr.CylinderGeometry(0.04,0.12,len,5), wood);
+      br.position.y = h*0.55 + Math.random()*h*0.4;
+      br.rotation.z = (Math.random()-.5)*1.8; br.rotation.x=(Math.random()-.5)*1.2;
+      br.position.x += Math.sin(b)*0.2; tree.add(br);
+    }
+    tree.position.set((n-1)*3.0, 0, (n%2)*2 - 1);
+    g.add(tree);
+  }
+  castAll(g);
+  addLandmark(g, pos, "The Three Widows", "Twisted black dead trees (left)", 9);
+}
+
+/* 5 — THE RING OF ELDERS: standing stone circle you walk THROUGH (centre) */
+function buildStoneCircle(pos){
+  const g = new THREEr.Group();
+  const stoneMat = mat(0x8a8d92, 14, 0x222);
+  const R=7;
+  for(let i=0;i<9;i++){
+    const a=(i/9)*Math.PI*2;
+    const h=2.8+((i*37)%18)/6;
+    const s=new THREEr.Mesh(new THREEr.BoxGeometry(1+ (i%3)*0.2, h, 0.8), stoneMat);
+    s.position.set(Math.cos(a)*R, h/2, Math.sin(a)*R);
+    s.rotation.y = -a; s.rotation.z=(Math.random()-.5)*0.12; g.add(s);
+  }
+  const altar = new THREEr.Mesh(new THREEr.BoxGeometry(2.4,0.8,1.4), mat(0x6f7277,14,0x222));
+  altar.position.y=0.4; g.add(altar);
+  // a small cairn of round rocks atop the altar (very distinct silhouette)
+  let y=0.9; for(let i=0;i<4;i++){ const r=0.5-i*0.09; const rock=new THREEr.Mesh(new THREEr.DodecahedronGeometry(r),mat(0x9aa0a8,16,0x222)); rock.position.y=y+r; y+=r*1.5; g.add(rock); }
+  castAll(g);
+  addLandmark(g, pos, "The Ring of Elders", "Walk through the stone circle", 8);
+}
+
+/* 6 — THE WHITE FALL: frozen waterfall on a cliff (right) */
+function buildWaterfall(pos){
+  const g = new THREEr.Group();
+  const cliff = new THREEr.Mesh(new THREEr.BoxGeometry(10,16,5), mat(0x4a5168,10,0x222));
+  cliff.position.set(0,8,0); cliff.rotation.y=0.2; g.add(cliff);
+  const iceMat = new THREEr.MeshPhongMaterial({ color:0xbfe9ff, specular:0xffffff, shininess:120, transparent:true, opacity:0.85, emissive:0x16384a });
+  for(let i=0;i<5;i++){
+    const col = new THREEr.Mesh(new THREEr.CylinderGeometry(0.4+Math.random()*0.3, 0.7, 14, 7), iceMat);
+    col.position.set(-3.5 + i*1.7, 7, -2.4); col.scale.x=0.6; g.add(col);
+  }
+  const pool = new THREEr.Mesh(new THREEr.CircleGeometry(5,24), iceMat);
+  pool.rotation.x=-Math.PI/2; pool.position.set(0,0.1,-4); g.add(pool);
+  castAll(cliff);
+  addLandmark(g, pos, "The White Fall", "Frozen waterfall cliff (right)", 12);
+}
+
+/* 7 — THE LIVING FIRE: bonfire with flicker + warmth (left, centre of trail) */
+function buildBonfire(pos){
+  const g = new THREEr.Group();
+  const ringMat = mat(0x55504a, 10, 0x111);
+  for(let i=0;i<10;i++){ const a=(i/10)*Math.PI*2; const r=new THREEr.Mesh(new THREEr.DodecahedronGeometry(0.45),ringMat); r.position.set(Math.cos(a)*1.6,0.3,Math.sin(a)*1.6); g.add(r);}
+  const logMat = mat(0x3a2418, 8, 0x100);
+  for(let i=0;i<5;i++){ const log=new THREEr.Mesh(new THREEr.CylinderGeometry(0.16,0.16,2.2,6),logMat); log.position.y=0.5; log.rotation.z=Math.PI/2; log.rotation.y=(i/5)*Math.PI; g.add(log);}
+  // flame cones (emissive, no specular) + glowing point light
+  const flameMats=[ new THREEr.MeshPhongMaterial({color:0xff7b1f,emissive:0xff5500,shininess:0}),
+                    new THREEr.MeshPhongMaterial({color:0xffd23f,emissive:0xffaa00,shininess:0}) ];
+  const flames=[];
+  for(let i=0;i<6;i++){
+    const f=new THREEr.Mesh(new THREEr.ConeGeometry(0.4-i*0.04, 1.6-i*0.12, 7), flameMats[i%2]);
+    f.position.set((Math.random()-.5)*0.4, 1.0+i*0.18, (Math.random()-.5)*0.4); g.add(f); flames.push(f);
+  }
+  fireLight = new THREEr.PointLight(0xff7a2a, 2.4, 30, 2); fireLight.position.set(0,2,0); g.add(fireLight);
+  // rising sparks
+  const sparkGeo=new THREEr.BufferGeometry(); const sp=new Float32Array(40*3);
+  for(let i=0;i<40;i++){ sp[i*3]=(Math.random()-.5); sp[i*3+1]=Math.random()*3; sp[i*3+2]=(Math.random()-.5);}
+  sparkGeo.setAttribute('position',new THREEr.BufferAttribute(sp,3));
+  const sparks=new THREEr.Points(sparkGeo,new THREEr.PointsMaterial({color:0xffc46a,size:0.12,transparent:true,opacity:0.9,blending:THREEr.AdditiveBlending,depthWrite:false}));
+  g.add(sparks);
+  scene.add(g); g.position.copy(pos);
+  landmarks.push({pos:pos.clone(), name:"The Living Fire", sub:"Warm bonfire — feel the heat", r:9, seen:false});
+  updaters.push((t)=>{
+    const fl = 0.7 + Math.sin(t*13)*0.18 + Math.sin(t*27)*0.1;
+    fireLight.intensity = 2.0*fl + 0.8;
+    flames.forEach((f,i)=>{ f.scale.y = 0.7 + Math.sin(t*9 + i)*0.3 + fl*0.4; f.scale.x=f.scale.z=0.8+Math.sin(t*11+i)*0.2; });
+    const arr=sparkGeo.attributes.position.array;
+    for(let i=0;i<40;i++){ arr[i*3+1]+=0.03; if(arr[i*3+1]>3){arr[i*3+1]=0; arr[i*3]=(Math.random()-.5); arr[i*3+2]=(Math.random()-.5);} }
+    sparkGeo.attributes.position.needsUpdate=true;
+  });
+}
+
+/* 8 — THE WANDERING HERD: reindeer grazing (left) */
+function buildReindeer(pos){
+  const g = new THREEr.Group();
+  const fur = mat(0x6b4a30, 6, 0x111), pale=mat(0xcdbfa6,6,0x111), antler=mat(0x8a7a5a,8,0x111);
+  function deer(){
+    const d=new THREEr.Group();
+    const bodyGeo = THREEr.CapsuleGeometry ? new THREEr.CapsuleGeometry(0.5,1.4,4,8) : new THREEr.CylinderGeometry(0.5,0.5,1.6,8);
+    const body=new THREEr.Mesh(bodyGeo, fur);
+    body.rotation.z=Math.PI/2; body.position.y=1.4; d.add(body);
+    const neck=new THREEr.Mesh(new THREEr.CylinderGeometry(0.22,0.3,1.0,7),fur); neck.position.set(1.0,1.9,0); neck.rotation.z=0.7; d.add(neck);
+    const head=new THREEr.Mesh(new THREEr.ConeGeometry(0.3,0.8,7),pale); head.position.set(1.5,2.2,0); head.rotation.z=-1.4; d.add(head);
+    for(const sx of [0.6,-0.6]) for(const sz of [0.3,-0.3]){
+      const leg=new THREEr.Mesh(new THREEr.CylinderGeometry(0.09,0.07,1.4,6),fur); leg.position.set(sx,0.7,sz); d.add(leg);
+    }
+    for(const sz of [0.25,-0.25]){ // branching antlers
+      const a=new THREEr.Mesh(new THREEr.CylinderGeometry(0.04,0.07,1.0,5),antler); a.position.set(1.6,2.9,sz); a.rotation.z=0.4; d.add(a);
+      const b=new THREEr.Mesh(new THREEr.CylinderGeometry(0.03,0.05,0.5,5),antler); b.position.set(1.8,3.3,sz); b.rotation.z=1.0; d.add(b);
+    }
+    castAll(d); return d;
+  }
+  const herd=[];
+  for(let i=0;i<5;i++){ const d=deer(); d.position.set((i%3)*3-3, 0, Math.floor(i/3)*3); d.rotation.y=Math.random()*0.6-0.3; d.scale.setScalar(0.9+Math.random()*0.25); g.add(d); herd.push(d); }
+  scene.add(g); g.position.copy(pos);
+  landmarks.push({pos:pos.clone(), name:"The Wandering Herd", sub:"Grazing reindeer (left)", r:13, seen:false});
+  updaters.push((t)=>{ herd.forEach((d,i)=>{ d.position.y = Math.abs(Math.sin(t*0.6+i))*0.1; d.rotation.y += Math.sin(t*0.3+i)*0.002; }); });
+}
+
+/* 9 — THE BONE GATE: huge tusk arch you walk UNDER (centre) */
+function buildBoneArch(pos){
+  const g = new THREEr.Group();
+  const bone = mat(0xeee6d2, 24, 0x333);
+  for(const s of [1,-1]){
+    const pts=[]; for(let i=0;i<=12;i++){ const t=i/12; const ang=t*Math.PI*0.92; pts.push(new THREEr.Vector3(s*Math.cos(ang)*5, Math.sin(ang)*7.5, 0)); }
+    const tube=new THREEr.Mesh(new THREEr.TubeGeometry(new THREEr.CatmullRomCurve3(pts),20,0.5*(1.0),9), bone);
+    g.add(tube);
+    const base=new THREEr.Mesh(new THREEr.CylinderGeometry(0.8,1.1,1.2,8),bone); base.position.set(s*5,0.6,0); g.add(base);
+  }
+  // skulls hung at the apex
+  const skull=new THREEr.Mesh(new THREEr.SphereGeometry(0.7,10,10),bone); skull.position.set(0,7.2,0); skull.scale.set(1,1.2,0.85); g.add(skull);
+  castAll(g);
+  addLandmark(g, pos, "The Bone Gate", "Walk under the tusk arch", 7);
+}
+
+/* 10 — THE RED HAND: ochre boulder with white handprints (right) */
+function buildOchreBoulder(pos){
+  const g = new THREEr.Group();
+  const rock = new THREEr.Mesh(new THREEr.DodecahedronGeometry(3,0), mat(0xa23a22, 12, 0x331));
+  rock.position.y=2.4; rock.scale.set(1.2,0.9,1); g.add(rock);
+  // handprints (simple pale splats facing the trail)
+  const handMat = new THREEr.MeshPhongMaterial({ color:0xf3ecd8, shininess:4, emissive:0x332b1e });
+  for(let i=0;i<6;i++){
+    const palm=new THREEr.Mesh(new THREEr.CircleGeometry(0.28,8), handMat);
+    const a=(i/6)*1.4 - 0.7;
+    palm.position.set(Math.sin(a)*2.6, 2.0+Math.cos(i)*0.8, 2.6+Math.cos(a)*0.4); palm.lookAt(palm.position.clone().add(new THREEr.Vector3(Math.sin(a),0,1)));
+    g.add(palm);
+    for(let f=0;f<5;f++){ const fin=new THREEr.Mesh(new THREEr.CircleGeometry(0.08,6),handMat); fin.position.copy(palm.position); fin.position.y+=0.32; fin.position.x+=(f-2)*0.12; fin.quaternion.copy(palm.quaternion); g.add(fin);}
+  }
+  castAll(rock);
+  addLandmark(g, pos, "The Red Hand", "Ochre boulder, white handprints (right)", 9);
+}
+
+/* 11 — HOME: glowing hide tent with smoke (trail's end) */
+function buildHome(pos){
+  const g = new THREEr.Group();
+  const hide = new THREEr.MeshPhongMaterial({ color:0x9c7250, shininess:5, emissive:0x140d06 });
+  const tent = new THREEr.Mesh(new THREEr.ConeGeometry(3.4, 6, 12, 1, true), hide);
+  tent.position.y=3; g.add(tent);
+  // lashing poles poking out the top
+  for(let i=0;i<6;i++){ const a=(i/6)*Math.PI*2; const pole=new THREEr.Mesh(new THREEr.CylinderGeometry(0.05,0.07,2,5),mat(0x3a2a1c,6,0x100)); pole.position.set(Math.cos(a)*0.3,6.2,Math.sin(a)*0.3); pole.rotation.z=Math.cos(a)*0.2; pole.rotation.x=Math.sin(a)*0.2; g.add(pole);}
+  // warm glowing doorway facing the walker
+  const door = new THREEr.Mesh(new THREEr.CircleGeometry(1.0,16), new THREEr.MeshBasicMaterial({color:0xffb24d}));
+  door.position.set(0,1.4,3.25); door.scale.y=1.4; g.add(door);
+  homeLight = new THREEr.PointLight(0xffb45a, 2.0, 26, 2); homeLight.position.set(0,2.4,2); g.add(homeLight);
+  // smoke
+  const smGeo=new THREEr.BufferGeometry(); const sm=new Float32Array(30*3);
+  for(let i=0;i<30;i++){ sm[i*3]=(Math.random()-.5)*0.6; sm[i*3+1]=6+Math.random()*5; sm[i*3+2]=(Math.random()-.5)*0.6;}
+  smGeo.setAttribute('position',new THREEr.BufferAttribute(sm,3));
+  const smoke=new THREEr.Points(smGeo,new THREEr.PointsMaterial({color:0xb8c2d2,size:0.6,transparent:true,opacity:0.4,depthWrite:false}));
+  g.add(smoke);
+  castAll(tent);
+  scene.add(g); g.position.copy(pos);
+  landmarks.push({pos:pos.clone(), name:"Home", sub:"The hearth fire is lit", r:9, seen:false, isHome:true});
+  updaters.push((t)=>{
+    homeLight.intensity = 1.6 + Math.sin(t*8)*0.3;
+    const arr=smGeo.attributes.position.array;
+    for(let i=0;i<30;i++){ arr[i*3+1]+=0.02; arr[i*3]+=0.005; if(arr[i*3+1]>13){arr[i*3+1]=6; arr[i*3]=(Math.random()-.5)*0.6;} }
+    smGeo.attributes.position.needsUpdate=true;
+  });
+}
+
+/* ============================== SCATTER ================================== */
+function buildScatter(){
+  // dry grass tufts (warm yellow) + occasional snow boulders, kept off the path
+  const grassMat = mat(0xb9a25c, 4, 0x111);
+  const tuft = new THREEr.ConeGeometry(0.12, 0.7, 4);
+  const grass = new THREEr.InstancedMesh(tuft, grassMat, 600);
+  const rockMat = mat(0xbfc8d6, 14, 0x223);
+  const rock = new THREEr.InstancedMesh(new THREEr.DodecahedronGeometry(1,0), rockMat, 70);
+  const d = new THREEr.Object3D(); let gi=0, ri=0;
+  for(let n=0;n<900;n++){
+    const x=(Math.random()-0.5)*340, z=-(Math.random()*250)+20;
+    // keep clear of the trail
+    let near=false; for(let i=0;i<curveSamples.length;i+=8){ if(curveSamples[i].distanceToSquared(new THREEr.Vector3(x,0,z))<14){near=true;break;} }
+    if(near) continue;
+    const y=terrainHeight(x,z);
+    if(Math.random()<0.85 && gi<600){
+      d.position.set(x,y+0.3,z); d.rotation.set(0,Math.random()*6,0); d.scale.setScalar(0.6+Math.random()*1.2); d.updateMatrix(); grass.setMatrixAt(gi++, d.matrix);
+    } else if(ri<70){
+      d.position.set(x,y+0.2,z); d.rotation.set(Math.random(),Math.random()*6,Math.random()); d.scale.setScalar(0.5+Math.random()*1.4); d.updateMatrix(); rock.setMatrixAt(ri++, d.matrix);
+    }
+  }
+  grass.count=gi; rock.count=ri; rock.castShadow=true; rock.receiveShadow=true;
+  scene.add(grass); scene.add(rock);
+}
+
+/* ============================== SNOW ===================================== */
+function buildSnow(){
+  const N=900; const geo=new THREEr.BufferGeometry(); const arr=new Float32Array(N*3);
+  for(let i=0;i<N;i++){ arr[i*3]=(Math.random()-.5)*120; arr[i*3+1]=Math.random()*60; arr[i*3+2]=(Math.random()-.5)*120; }
+  geo.setAttribute('position', new THREEr.BufferAttribute(arr,3));
+  snowPoints = new THREEr.Points(geo, new THREEr.PointsMaterial({ color:0xffffff, size:0.22, transparent:true, opacity:0.85, depthWrite:false }));
+  scene.add(snowPoints);
+  updaters.push(()=>{
+    const a=geo.attributes.position.array;
+    const px=yawObj.position.x, pz=yawObj.position.z;
+    for(let i=0;i<N;i++){
+      a[i*3+1]-=0.06 + (i%5)*0.01;
+      a[i*3]+=0.02;
+      if(a[i*3+1]<terrainHeight(a[i*3]+px, a[i*3+2]+pz)){ a[i*3+1]=55; }
+    }
+    geo.attributes.position.needsUpdate=true;
+    snowPoints.position.set(px,0,pz);
+  });
+}
+
+/* ============================== AUDIO ==================================== */
+let audioCtx, windGain, fireGain, fireOsc;
+function startAudio(){
+  try{
+    audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+    // wind: filtered noise
+    const buf = audioCtx.createBuffer(1, audioCtx.sampleRate*2, audioCtx.sampleRate);
+    const dat = buf.getChannelData(0); for(let i=0;i<dat.length;i++) dat[i]=Math.random()*2-1;
+    const noise = audioCtx.createBufferSource(); noise.buffer=buf; noise.loop=true;
+    const flt = audioCtx.createBiquadFilter(); flt.type='lowpass'; flt.frequency.value=420;
+    windGain = audioCtx.createGain(); windGain.gain.value=0.12;
+    noise.connect(flt); flt.connect(windGain); windGain.connect(audioCtx.destination); noise.start();
+    // a slow LFO on wind volume for gusts
+    const lfo=audioCtx.createOscillator(); lfo.frequency.value=0.08; const lfoG=audioCtx.createGain(); lfoG.gain.value=0.06;
+    lfo.connect(lfoG); lfoG.connect(windGain.gain); lfo.start();
+    // fire crackle (proximity-driven), separate noise
+    const fbuf=audioCtx.createBuffer(1,audioCtx.sampleRate,audioCtx.sampleRate);
+    const fd=fbuf.getChannelData(0); for(let i=0;i<fd.length;i++) fd[i]=(Math.random()*2-1)*(Math.random()<0.04?1:0.2);
+    const fnoise=audioCtx.createBufferSource(); fnoise.buffer=fbuf; fnoise.loop=true;
+    const fflt=audioCtx.createBiquadFilter(); fflt.type='bandpass'; fflt.frequency.value=900;
+    fireGain=audioCtx.createGain(); fireGain.gain.value=0;
+    fnoise.connect(fflt); fflt.connect(fireGain); fireGain.connect(audioCtx.destination); fnoise.start();
+  }catch(e){ /* audio optional */ }
+}
+
+/* ============================== UI / LOG ================================= */
+function buildLog(){
+  const c = document.getElementById('logItems');
+  // landmarks created in order; reflect that order
+  c.innerHTML = landmarks.map((l,i)=>`<div class="item" id="lm${i}">${l.name}</div>`).join('');
+}
+let bannerTimer=0;
+function showBanner(name, sub){
+  const b=document.getElementById('banner');
+  b.innerHTML = name + (sub?`<small>${sub}</small>`:'');
+  b.style.opacity=1; bannerTimer=3.2;
+}
+
+/* ============================== EVENTS =================================== */
+function addEventListeners(){
+  addEventListener('resize', ()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight); });
+  addEventListener('keydown', e=>{ keys[e.code]=true; if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault(); });
+  addEventListener('keyup', e=>{ keys[e.code]=false; });
+  const cv=renderer.domElement;
+  document.addEventListener('mousemove', e=>{
+    if(document.pointerLockElement===cv){
+      yaw -= e.movementX*0.0022; pitch -= e.movementY*0.0022;
+      pitch = Math.max(-1.2, Math.min(1.2, pitch));
+    }
+  });
+  document.getElementById('begin').onclick = beginWalk;
+  document.getElementById('restart').onclick = ()=> location.reload();
+}
+function beginWalk(){
+  document.getElementById('start').style.display='none';
+  started=true;
+  startAudio();
+  renderer.domElement.requestPointerLock && renderer.domElement.requestPointerLock();
+}
+
+/* ============================== MOVEMENT ================================= */
+function updateMovement(dt){
+  if(!started || finished) return;
+  const speed = (keys['ShiftLeft']||keys['ShiftRight'] ? 11 : 6) * dt;
+  // arrow-key look fallback
+  if(keys['ArrowLeft']) yaw += 1.6*dt;
+  if(keys['ArrowRight']) yaw -= 1.6*dt;
+  if(keys['ArrowUp']) pitch = Math.min(1.2, pitch+1.2*dt);
+  if(keys['ArrowDown']) pitch = Math.max(-1.2, pitch-1.2*dt);
+
+  const fwd = new THREEr.Vector3(-Math.sin(yaw),0,-Math.cos(yaw));
+  const right = new THREEr.Vector3(Math.cos(yaw),0,-Math.sin(yaw));
+  const move = new THREEr.Vector3();
+  if(keys['KeyW']) move.add(fwd);
+  if(keys['KeyS']) move.sub(fwd);
+  if(keys['KeyD']) move.add(right);
+  if(keys['KeyA']) move.sub(right);
+  if(move.lengthSq()>0){ move.normalize().multiplyScalar(speed); yawObj.position.add(move); }
+
+  // clamp to a generous corridor so the walker can't wander off the world
+  yawObj.position.x = Math.max(-160, Math.min(160, yawObj.position.x));
+  yawObj.position.z = Math.max(-235, Math.min(20, yawObj.position.z));
+  // stick to terrain
+  yawObj.position.y = terrainHeight(yawObj.position.x, yawObj.position.z) + 1.7;
+}
+
+/* ============================== PROGRESS ================================= */
+function updateProgress(){
+  // nearest sample → fraction along trail
+  const p = yawObj.position; let best=Infinity, bi=0;
+  for(let i=0;i<curveSamples.length;i+=2){ const d=curveSamples[i].distanceToSquared(p); if(d<best){best=d;bi=i;} }
+  const frac = bi/(curveSamples.length-1);
+  document.getElementById('progressFill').style.width = (frac*100).toFixed(0)+'%';
+
+  // landmark discovery
+  landmarks.forEach((l,i)=>{
+    if(!l.seen && p.distanceTo(l.pos) < l.r){
+      l.seen=true;
+      const el=document.getElementById('lm'+i); if(el) el.classList.add('seen');
+      showBanner(l.name, l.sub);
+      if(l.isHome) finishWalk();
+    }
+  });
+
+  // fire proximity → louder crackle + warm screen note (audio only)
+  if(fireGain){
+    const fl = landmarks.find(l=>l.name==="The Living Fire");
+    if(fl){ const d=p.distanceTo(fl.pos); fireGain.gain.value = Math.max(0, 0.5*(1 - d/14)); }
+  }
+
+  // compass
+  const dirs=['N','NW','W','SW','S','SE','E','NE'];
+  let a = ((yaw/(Math.PI*2))%1+1)%1; // 0 at facing -Z (north)
+  document.getElementById('compassDir').textContent = dirs[Math.round(a*8)%8];
+}
+
+function finishWalk(){
+  if(finished) return; finished=true;
+  document.exitPointerLock && document.exitPointerLock();
+  const seenCount = landmarks.filter(l=>l.seen).length;
+  document.getElementById('endTxt').innerHTML =
+    `You followed the trail past <b>${seenCount}</b> of <b>${landmarks.length}</b> waymarks and reached the hide tents before dark.<br><br>`+
+    `Now close your eyes and walk it backward in your mind: the warm doorway, the red hand, the bone gate, the herd, the fire, the white fall, the ring of elders, the three widows, the great ribs, the blue mirror — to the watcher stone where you began.`;
+  document.getElementById('end').style.display='flex';
+}
+
+/* ============================== LOOP ===================================== */
+function animate(){
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t = clock.elapsedTime;
+
+  updateMovement(dt);
+
+  // camera orientation from yaw/pitch
+  yawObj.rotation.y = yaw;
+  camera.rotation.x = pitch;
+
+  // keep the shadow frustum tight around the walker for crisp Phong shadows
+  const px=yawObj.position.x, pz=yawObj.position.z;
+  dirLight.position.set(px+40, 22, pz+60);
+  dirLight.target.position.set(px, 0, pz);
+
+  for(const u of updaters) u(t);
+  if(started && !finished) updateProgress();
+
+  if(bannerTimer>0){ bannerTimer-=dt; if(bannerTimer<=0) document.getElementById('banner').style.opacity=0; }
+
+  renderer.render(scene, camera);
+}
+
+init();
+</script>
+</body>
+</html>
