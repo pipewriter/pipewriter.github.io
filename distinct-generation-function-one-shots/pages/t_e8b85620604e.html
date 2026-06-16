@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<base href="file:///home/parker/Dropbox/repos/june-12/novel-generation-tactic/try-4/">
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Spectral Genome Fields — an infinite, deterministic world</title>
+<style>
+  :root { --fg:#e8eef5; --dim:#9fb0c3; --accent:#7fd0ff; }
+  * { box-sizing: border-box; }
+  html,body { margin:0; height:100%; overflow:hidden; background:#0a0e14;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; color:var(--fg); }
+  #app { position:fixed; inset:0; }
+  canvas { display:block; }
+
+  .panel { position:fixed; backdrop-filter: blur(8px);
+    background:rgba(12,18,28,0.62); border:1px solid rgba(127,208,255,0.18);
+    border-radius:10px; padding:12px 14px; font-size:12px; line-height:1.5;
+    box-shadow:0 6px 30px rgba(0,0,0,0.45); }
+
+  #info { top:14px; left:14px; max-width:330px; }
+  #info h1 { font-size:14px; margin:0 0 6px; letter-spacing:.3px; color:var(--accent); }
+  #info p { margin:6px 0; color:var(--dim); }
+  #info b { color:var(--fg); }
+
+  #hud { top:14px; right:14px; width:262px; }
+  #hud .row { display:flex; justify-content:space-between; gap:10px; }
+  #hud .k { color:var(--dim); }
+  #hud .v { color:var(--fg); text-align:right; }
+  #biome { font-size:15px; color:var(--accent); margin:2px 0 8px; font-weight:600; }
+
+  .bar { height:9px; border-radius:5px; background:rgba(255,255,255,0.08);
+    overflow:hidden; margin-top:4px; }
+  .bar > i { display:block; height:100%; background:linear-gradient(90deg,#3aa0ff,#7fffd0); }
+
+  #dna { display:flex; gap:2px; height:30px; align-items:flex-end; margin-top:6px; }
+  #dna > i { flex:1; background:var(--accent); border-radius:2px 2px 0 0; transition:height .25s, background .25s; }
+
+  #controls { bottom:14px; left:14px; color:var(--dim); }
+  #controls b { color:var(--fg); }
+  #controls .btns { margin-top:8px; display:flex; gap:8px; }
+  button { font:inherit; font-size:11px; color:var(--fg); cursor:pointer;
+    background:rgba(127,208,255,0.12); border:1px solid rgba(127,208,255,0.35);
+    border-radius:7px; padding:6px 10px; }
+  button:hover { background:rgba(127,208,255,0.24); }
+
+  #lock { position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+    flex-direction:column; gap:10px; background:rgba(6,10,16,0.55); cursor:pointer; z-index:10; }
+  #lock .big { font-size:20px; color:var(--accent); }
+  #lock .sub { color:var(--dim); font-size:13px; text-align:center; max-width:440px; }
+  .hidden { display:none !important; }
+  .hint { font-size:11px; color:var(--dim); margin-top:6px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<div id="info" class="panel">
+  <h1>Spectral Genome Fields</h1>
+  <p>Every point of this infinite world carries a <b>genome</b> — a vector sampled from a
+  Gaussian-process field via Random Fourier Features. By Bochner's theorem the genome
+  similarity between two places is <b>exp(−d²/2ℓ²)</b>: neighbors are nearly identical,
+  distant places grow genetically foreign.</p>
+  <p>Terrain, biome, color, and every tree &amp; rock are <b>decoded</b> from the local genome.
+  The field is <b>stateless, deterministic, and O(1)</b> per sample — fly forever, it never
+  repeats and never loads.</p>
+</div>
+
+<div id="hud" class="panel">
+  <div id="biome">—</div>
+  <div class="row"><span class="k">position</span><span class="v" id="pos">0, 0</span></div>
+  <div class="row"><span class="k">elevation</span><span class="v" id="elev">0 m</span></div>
+  <div class="row"><span class="k">temp / moisture</span><span class="v" id="climate">—</span></div>
+  <div style="margin-top:10px" class="k">genome similarity to <b style="color:var(--fg)">home</b></div>
+  <div class="bar"><i id="simbar" style="width:100%"></i></div>
+  <div class="row"><span class="k">distance from home</span><span class="v" id="dist">0 m</span></div>
+  <div style="margin-top:10px" class="k">local DNA fingerprint</div>
+  <div id="dna"></div>
+</div>
+
+<div id="controls" class="panel">
+  <div><b>WASD</b> move · <b>mouse</b> look · <b>Space/Ctrl</b> up/down · <b>Shift</b> boost</div>
+  <div class="btns">
+    <button id="home">Set Home Here</button>
+    <button id="leap">Leap 4 km away</button>
+  </div>
+</div>
+
+<div id="lock">
+  <div class="big">▶ Click to explore</div>
+  <div class="sub">A genome grown from pure mathematics. Roam and watch nearby land stay
+  familiar while distant land becomes alien — the DNA fingerprint and similarity meter prove it.</div>
+  <div class="hint">(Esc to release the mouse)</div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* ============================================================================
+   SPECTRAL GENOME FIELDS
+   ----------------------------------------------------------------------------
+   The whole world is one function  G : R^2 -> R^M   (the genome field).
+
+   G(p)_i = sqrt(2/M) * cos(w_i . p + b_i)
+
+   where the frequencies w_i are drawn (deterministically, from a seed) from a
+   mixture of Gaussians N(0, 1/ℓ_band^2) and the phases b_i ~ U(0, 2π).
+
+   This is the Random Fourier Features map. Bochner's theorem guarantees:
+        <G(p), G(q)>  ≈  Σ_band exp( -||p-q||^2 / (2 ℓ_band^2) )
+   i.e. genome similarity decays smoothly with distance. Nearby -> similar,
+   far -> foreign. Exactly the requested property, and provably so.
+
+   Stateless: only the seeded {w_i, b_i} table exists (a few hundred floats).
+   Deterministic: same p -> same genome, forever.
+   O(1) per sample: M cosines, independent of how large the world is.
+
+   PHENOTYPE: traits are fixed linear read-outs of the genome (each is its own
+   GP draw, theta_t ~ N(0,1)): elevation, mountain-uplift, ridge-detail,
+   temperature, moisture, and three palette genes. Height, color and life are
+   decoded from those traits — genotype -> phenotype, like development.
+   ========================================================================== */
+
+const SEED = 0xC0FFEE;
+const M = 64;                                  // genome dimension
+const BANDS = [2600, 760, 220, 70, 26];        // length scales ℓ (world units)
+const NORM = Math.sqrt(2 / M);
+
+// --- deterministic RNG (mulberry32) + gaussian -----------------------------
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+function gauss(r){let u=1-r(),v=r();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
+
+// --- seeded spectral table (the entire "state" of the universe) ------------
+const WX=new Float32Array(M), WZ=new Float32Array(M), PH=new Float32Array(M);
+const TRAITS=['elev','mount','detail','temp','moist','pr','pg','pb'];
+const TH={}; for(const t of TRAITS) TH[t]=new Float32Array(M);
+(function setupField(){
+  const r=mulberry32(SEED);
+  for(let i=0;i<M;i++){
+    const L=BANDS[i%BANDS.length], inv=1/L;
+    WX[i]=gauss(r)*inv; WZ[i]=gauss(r)*inv; PH[i]=r()*Math.PI*2;
+  }
+  for(const t of TRAITS){const rr=mulberry32(SEED^(t.length*2654435761));for(let i=0;i<M;i++)TH[t][i]=gauss(rr);}
+})();
+
+// --- the genome vector at a point (used for similarity / fingerprint) ------
+function genomeVec(x,z,out){
+  out=out||new Float32Array(M);
+  for(let i=0;i<M;i++) out[i]=Math.cos(WX[i]*x+WZ[i]*z+PH[i])*NORM;
+  return out;
+}
+function cosine(a,b){let d=0,na=0,nb=0;for(let i=0;i<M;i++){d+=a[i]*b[i];na+=a[i]*a[i];nb+=b[i]*b[i];}return d/(Math.sqrt(na*nb)+1e-9);}
+
+// --- decode genome -> traits + phenotype, in one pass ----------------------
+const SEA = -6, SNOW = 52;
+function evalWorld(x,z){
+  let e=0,mt=0,de=0,te=0,mi=0,pr=0,pg=0,pb=0;
+  for(let i=0;i<M;i++){
+    const a=Math.cos(WX[i]*x+WZ[i]*z+PH[i])*NORM;
+    e+=TH.elev[i]*a; mt+=TH.mount[i]*a; de+=TH.detail[i]*a;
+    te+=TH.temp[i]*a; mi+=TH.moist[i]*a;
+    pr+=TH.pr[i]*a; pg+=TH.pg[i]*a; pb+=TH.pb[i]*a;
+  }
+  // ---- height: rolling base + masked ridged mountains ----
+  const base = e*24 + de*4;
+  const mask = smooth(0.15,1.35,mt);                       // where crust is uplifted
+  const ridge = Math.pow(1-Math.abs(Math.tanh(de*1.25)),1.5);
+  const height = base + mask*ridge*125;
+  // ---- climate (cools with altitude) ----
+  let temp01 = clamp01(0.5+te*0.23 - Math.max(0,height-25)*0.0045);
+  let moist01 = clamp01(0.5+mi*0.23);
+  return {height,temp01,moist01,pr,pg,pb};
+}
+
+function smooth(a,b,x){x=clamp01((x-a)/(b-a));return x*x*(3-2*x);}
+function clamp01(x){return x<0?0:x>1?1:x;}
+function lerp(a,b,t){return a+(b-a)*t;}
+
+// --- biome color from phenotype --------------------------------------------
+const _c=new THREE.Color(), _c2=new THREE.Color();
+function biomeColor(out,h,t,m,slope,pr,pg,pb){
+  // base biome (Whittaker-ish: temperature x moisture)
+  if(t<0.22){ out.setRGB(0.80,0.84,0.88); }                 // tundra / cold
+  else if(m<0.22){ t>0.6?out.setRGB(0.82,0.72,0.45):out.setRGB(0.64,0.60,0.42);} // desert / dry steppe
+  else if(m<0.5){ out.setRGB(0.46,0.60,0.27);}              // grassland / savanna
+  else { t>0.6?out.setRGB(0.11,0.36,0.16):out.setRGB(0.18,0.41,0.26);} // rainforest / boreal
+  // steep slopes -> rock
+  if(slope>0.45){ const k=smooth(0.45,0.8,slope); out.lerp(_c2.setRGB(0.40,0.38,0.36),k);}
+  // beaches near sea
+  if(h<SEA+1.6 && h>SEA-1){ const k=smooth(SEA+1.6,SEA-0.5,h); out.lerp(_c2.setRGB(0.86,0.79,0.55),k);}
+  // submerged floor darkens
+  if(h<SEA){ out.lerp(_c2.setRGB(0.05,0.13,0.18), smooth(SEA,SEA-18,h)); }
+  // snow caps
+  const snowAt = SNOW + (t-0.5)*40;
+  if(h>snowAt){ out.lerp(_c2.setRGB(0.95,0.96,0.99), smooth(snowAt,snowAt+22,h)); }
+  // subtle per-region palette tint -> visual distinctiveness
+  out.r=clamp01(out.r*(0.92+pr*0.10)); out.g=clamp01(out.g*(0.92+pg*0.10)); out.b=clamp01(out.b*(0.92+pb*0.10));
+  return out;
+}
+function biomeName(h,t,m){
+  if(h<SEA) return 'Ocean';
+  if(h>SNOW+14) return 'Glacial Peaks';
+  if(t<0.22) return m>0.4?'Boreal Tundra':'Frozen Steppe';
+  if(m<0.22) return t>0.6?'Scorched Desert':'Arid Badlands';
+  if(m<0.5)  return t>0.6?'Golden Savanna':'Open Grassland';
+  return t>0.6?'Emerald Rainforest':'Deep Boreal Forest';
+}
+
+/* ============================================================================
+   RENDERER / SCENE
+   ========================================================================== */
+const app=document.getElementById('app');
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+app.appendChild(renderer.domElement);
+
+const SKY=new THREE.Color(0x9ec4e8);
+const scene=new THREE.Scene();
+scene.background=SKY;
+scene.fog=new THREE.Fog(SKY,110,340);
+
+const camera=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,0.1,2000);
+camera.position.set(0,40,0);
+
+// lights
+const sun=new THREE.DirectionalLight(0xfff2d8,2.1); sun.position.set(80,120,40); scene.add(sun);
+scene.add(new THREE.HemisphereLight(0xbcd6ff,0x3a3020,0.9));
+scene.add(new THREE.AmbientLight(0xffffff,0.15));
+
+// water
+const water=new THREE.Mesh(new THREE.PlaneGeometry(4000,4000),
+  new THREE.MeshStandardMaterial({color:0x2a6f9e,transparent:true,opacity:0.78,roughness:0.25,metalness:0.1}));
+water.rotation.x=-Math.PI/2; water.position.y=SEA; scene.add(water);
+
+/* ============================================================================
+   STREAMING TILES  (infinite world via recentering pool)
+   ========================================================================== */
+const TILE=50, SEG=26, GRID=7, HALF=(GRID-1)/2;
+const MAXTREE=46, MAXROCK=22;
+
+const treeGeo=new THREE.ConeGeometry(0.85,3.4,6); treeGeo.translate(0,1.7,0);
+const rockGeo=new THREE.IcosahedronGeometry(0.75,0); rockGeo.translate(0,0.45,0);
+const treeMat=new THREE.MeshStandardMaterial({vertexColors:false,roughness:0.9,flatShading:true});
+const rockMat=new THREE.MeshStandardMaterial({roughness:1.0,flatShading:true});
+const dummy=new THREE.Object3D();
+
+function makeTileGeometry(){
+  const n=(SEG+1)*(SEG+1);
+  const pos=new Float32Array(n*3), col=new Float32Array(n*3);
+  let p=0;
+  for(let iz=0;iz<=SEG;iz++)for(let ix=0;ix<=SEG;ix++){
+    pos[p*3]=ix/SEG*TILE; pos[p*3+1]=0; pos[p*3+2]=iz/SEG*TILE; p++;
+  }
+  const idx=[];
+  for(let iz=0;iz<SEG;iz++)for(let ix=0;ix<SEG;ix++){
+    const a=iz*(SEG+1)+ix,b=a+1,c=a+SEG+1,d=c+1;
+    idx.push(a,c,b, b,c,d);
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  g.setAttribute('color',new THREE.BufferAttribute(col,3));
+  g.setIndex(idx);
+  return g;
+}
+
+const tiles=[];
+for(let i=0;i<GRID*GRID;i++){
+  const group=new THREE.Group();
+  const terrain=new THREE.Mesh(makeTileGeometry(),
+    new THREE.MeshStandardMaterial({vertexColors:true,roughness:0.96,metalness:0.0}));
+  const trees=new THREE.InstancedMesh(treeGeo,treeMat,MAXTREE);
+  const rocks=new THREE.InstancedMesh(rockGeo,rockMat,MAXROCK);
+  trees.instanceColor=new THREE.InstancedBufferAttribute(new Float32Array(MAXTREE*3),3);
+  rocks.instanceColor=new THREE.InstancedBufferAttribute(new Float32Array(MAXROCK*3),3);
+  trees.count=0; rocks.count=0;
+  group.add(terrain,trees,rocks); scene.add(group);
+  const n=(SEG+1)*(SEG+1);
+  tiles.push({group,terrain,trees,rocks,tx:1e9,tz:1e9,
+    temp:new Float32Array(n),moist:new Float32Array(n),
+    pr:new Float32Array(n),pg:new Float32Array(n),pb:new Float32Array(n)});
+}
+
+function buildTile(tile,tx,tz){
+  const geo=tile.terrain.geometry;
+  const pos=geo.attributes.position, col=geo.attributes.color;
+  const n=pos.count, ox=tx*TILE, oz=tz*TILE;
+  for(let k=0;k<n;k++){
+    const s=evalWorld(ox+pos.getX(k), oz+pos.getZ(k));
+    pos.setY(k,s.height);
+    tile.temp[k]=s.temp01; tile.moist[k]=s.moist01;
+    tile.pr[k]=s.pr; tile.pg[k]=s.pg; tile.pb[k]=s.pb;
+  }
+  pos.needsUpdate=true;
+  geo.computeVertexNormals();
+  const nor=geo.attributes.normal;
+  for(let k=0;k<n;k++){
+    const slope=1-nor.getY(k);
+    biomeColor(_c,pos.getY(k),tile.temp[k],tile.moist[k],slope,tile.pr[k],tile.pg[k],tile.pb[k]);
+    col.setXYZ(k,_c.r,_c.g,_c.b);
+  }
+  col.needsUpdate=true;
+  geo.computeBoundingSphere();
+  buildFeatures(tile,tx,tz);
+  tile.group.position.set(ox,0,oz);
+  tile.tx=tx; tile.tz=tz;
+}
+
+function buildFeatures(tile,tx,tz){
+  const r=mulberry32(((tx*73856093)^(tz*19349663)^SEED)>>>0);
+  let ti=0,ri=0; const ox=tx*TILE, oz=tz*TILE, N=80;
+  for(let k=0;k<N;k++){
+    const lx=r()*TILE, lz=r()*TILE;
+    const wx=ox+lx, wz=oz+lz;
+    // slope estimate via small finite difference
+    const s=evalWorld(wx,wz);
+    if(s.height<SEA+0.5) continue;
+    const e=2.2;
+    const hx=evalWorld(wx+e,wz).height-evalWorld(wx-e,wz).height;
+    const hz=evalWorld(wx,wz+e).height-evalWorld(wx,wz-e).height;
+    const slope=Math.min(1,Math.hypot(hx,hz)/(2*e)*1.4);
+    const vegetated = s.moist01>0.34 && s.temp01>0.24 && slope<0.5 && s.height<SNOW;
+    if(vegetated && ti<MAXTREE && r()<0.7){
+      const sc=lerp(0.7,2.1,r());
+      dummy.position.set(lx,s.height,lz);
+      dummy.rotation.set(0,r()*6.28,0);
+      dummy.scale.set(sc, sc*lerp(0.9,1.6,r()), sc);
+      dummy.updateMatrix(); tile.trees.setMatrixAt(ti,dummy.matrix);
+      // foliage hue from biome
+      const g=lerp(0.30,0.62,s.moist01)*(s.temp01>0.6?0.8:1.0);
+      tile.trees.setColorAt(ti,_c.setRGB(0.10+s.temp01*0.10, g, 0.16+(1-s.temp01)*0.18));
+      ti++;
+    } else if((slope>0.42 || s.temp01<0.24 || s.moist01<0.22) && ri<MAXROCK && r()<0.5){
+      const sc=lerp(0.5,2.0,r());
+      dummy.position.set(lx,s.height,lz);
+      dummy.rotation.set(r()*6.28,r()*6.28,r()*6.28);
+      dummy.scale.set(sc,sc*lerp(0.7,1.2,r()),sc);
+      dummy.updateMatrix(); tile.rocks.setMatrixAt(ri,dummy.matrix);
+      const v=lerp(0.30,0.52,r());
+      tile.rocks.setColorAt(ri,_c.setRGB(v,v*0.97,v*0.92));
+      ri++;
+    }
+  }
+  tile.trees.count=ti; tile.rocks.count=ri;
+  tile.trees.instanceMatrix.needsUpdate=true; tile.rocks.instanceMatrix.needsUpdate=true;
+  if(tile.trees.instanceColor) tile.trees.instanceColor.needsUpdate=true;
+  if(tile.rocks.instanceColor) tile.rocks.instanceColor.needsUpdate=true;
+}
+
+function refreshTiles(){
+  const cx=Math.floor(camera.position.x/TILE), cz=Math.floor(camera.position.z/TILE);
+  let k=0;
+  for(let dz=-HALF;dz<=HALF;dz++)for(let dx=-HALF;dx<=HALF;dx++){
+    const tx=cx+dx, tz=cz+dz, t=tiles[k++];
+    if(t.tx!==tx||t.tz!==tz) buildTile(t,tx,tz);
+  }
+}
+
+/* ============================================================================
+   FLY CONTROLS (pointer lock)
+   ========================================================================== */
+let yaw=0,pitch=-0.15,locked=false;
+const keys={};
+const lockEl=document.getElementById('lock');
+lockEl.addEventListener('click',()=>renderer.domElement.requestPointerLock());
+document.addEventListener('pointerlockchange',()=>{locked=document.pointerLockElement===renderer.domElement;lockEl.classList.toggle('hidden',locked);});
+document.addEventListener('mousemove',e=>{if(!locked)return;yaw-=e.movementX*0.0022;pitch-=e.movementY*0.0022;pitch=Math.max(-1.45,Math.min(1.45,pitch));});
+addEventListener('keydown',e=>{keys[e.code]=true;});
+addEventListener('keyup',e=>{keys[e.code]=false;});
+
+const fwd=new THREE.Vector3(), right=new THREE.Vector3(), up=new THREE.Vector3(0,1,0);
+function move(dt){
+  fwd.set(Math.sin(yaw)*Math.cos(pitch),Math.sin(pitch),Math.cos(yaw)*Math.cos(pitch)).normalize();
+  // forward is -z when yaw 0 in three; adjust so W goes where you look:
+  fwd.set(-Math.sin(yaw)*Math.cos(pitch),Math.sin(pitch),-Math.cos(yaw)*Math.cos(pitch));
+  right.crossVectors(fwd,up).normalize();
+  let sp=(keys['ShiftLeft']||keys['ShiftRight']?160:55)*dt;
+  if(keys['KeyW'])camera.position.addScaledVector(fwd,sp);
+  if(keys['KeyS'])camera.position.addScaledVector(fwd,-sp);
+  if(keys['KeyD'])camera.position.addScaledVector(right,sp);
+  if(keys['KeyA'])camera.position.addScaledVector(right,-sp);
+  if(keys['Space'])camera.position.y+=sp;
+  if(keys['ControlLeft']||keys['KeyC'])camera.position.y-=sp;
+  // stay above ground
+  const g=evalWorld(camera.position.x,camera.position.z).height;
+  if(camera.position.y<g+2.5)camera.position.y=g+2.5;
+  camera.lookAt(camera.position.x+fwd.x,camera.position.y+fwd.y,camera.position.z+fwd.z);
+  water.position.x=camera.position.x; water.position.z=camera.position.z;
+  sun.position.set(camera.position.x+80,160,camera.position.z+40);
+  sun.target.position.copy(camera.position); sun.target.updateMatrixWorld();
+}
+
+/* ============================================================================
+   HUD
+   ========================================================================== */
+const dnaEl=document.getElementById('dna');
+const bars=[];
+for(let i=0;i<20;i++){const b=document.createElement('i');dnaEl.appendChild(b);bars.push(b);}
+let homeVec=genomeVec(0,0), homePos=new THREE.Vector3(0,0,0);
+const curVec=new Float32Array(M);
+const $=id=>document.getElementById(id);
+document.getElementById('home').addEventListener('click',()=>{homeVec=genomeVec(camera.position.x,camera.position.z,homeVec.slice());homePos.copy(camera.position);});
+document.getElementById('leap').addEventListener('click',()=>{const a=Math.random()*6.28;camera.position.x+=Math.cos(a)*4000;camera.position.z+=Math.sin(a)*4000;refreshTiles();});
+
+let hudT=0;
+function updateHUD(){
+  const x=camera.position.x,z=camera.position.z;
+  const s=evalWorld(x,z);
+  genomeVec(x,z,curVec);
+  const sim=Math.max(0,cosine(curVec,homeVec));
+  $('biome').textContent=biomeName(s.height,s.temp01,s.moist01);
+  $('pos').textContent=`${x.toFixed(0)}, ${z.toFixed(0)}`;
+  $('elev').textContent=`${s.height.toFixed(0)} m`;
+  $('climate').textContent=`${(s.temp01*100).toFixed(0)}% / ${(s.moist01*100).toFixed(0)}%`;
+  $('simbar').style.width=(sim*100).toFixed(1)+'%';
+  $('dist').textContent=`${homePos.distanceTo(camera.position).toFixed(0)} m`;
+  for(let i=0;i<bars.length;i++){
+    const v=curVec[i*3%M]/NORM; // -1..1
+    bars[i].style.height=(15+v*15+15)+'%';
+    const hue=(v*0.5+0.5)*200+180;
+    bars[i].style.background=`hsl(${hue},70%,${55+v*15}%)`;
+  }
+}
+
+/* ============================================================================
+   LOOP
+   ========================================================================== */
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
+
+let last=performance.now();
+refreshTiles();
+function animate(now){
+  const dt=Math.min(0.05,(now-last)/1000); last=now;
+  move(dt);
+  refreshTiles();
+  hudT+=dt; if(hudT>0.1){hudT=0;updateHUD();}
+  renderer.render(scene,camera);
+  requestAnimationFrame(animate);
+}
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>

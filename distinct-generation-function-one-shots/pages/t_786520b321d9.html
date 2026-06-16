@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<base href="file:///home/parker/Dropbox/repos/june-12/novel-generation-tactic/try-2/">
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Genome Drift — a stateless world from fractal DNA</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html,body { margin:0; height:100%; overflow:hidden; background:#0a0d12;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; color:#dfe7ef; }
+  #app { position:fixed; inset:0; }
+  canvas { display:block; }
+
+  /* ---- HUD ---- */
+  .panel {
+    position:fixed; background:rgba(12,16,22,.72); backdrop-filter:blur(8px);
+    border:1px solid rgba(140,170,210,.18); border-radius:12px; padding:12px 14px;
+    box-shadow:0 8px 30px rgba(0,0,0,.45); font-size:12px; line-height:1.45;
+    user-select:none; pointer-events:none;
+  }
+  #hud { top:14px; left:14px; width:288px; }
+  #hud h1 { margin:0 0 2px; font-size:17px; letter-spacing:.3px; font-weight:700; }
+  #hud .sub { color:#8fa6bd; font-size:11px; margin-bottom:10px; }
+  .row { display:flex; justify-content:space-between; gap:8px; }
+  .k { color:#8fa6bd; } .v { color:#eaf2fb; font-weight:600; text-align:right; }
+  .bars { display:flex; gap:3px; height:34px; align-items:flex-end; margin:8px 0 4px; }
+  .bar { flex:1; border-radius:3px 3px 0 0; min-height:2px; transition:height .25s ease; }
+  .barlabel { font-size:9px; color:#7d93aa; letter-spacing:.5px; }
+  .sim { margin-top:8px; }
+  .meter { height:9px; border-radius:6px; background:rgba(255,255,255,.08); overflow:hidden; margin-top:3px; }
+  .meterfill { height:100%; width:100%; border-radius:6px;
+    background:linear-gradient(90deg,#ff5b6b,#ffcf5b,#5bff9d); transition:width .25s ease; }
+
+  #help { bottom:14px; left:14px; max-width:330px; }
+  #help b { color:#bfe0ff; }
+  kbd { background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.18);
+    border-radius:5px; padding:1px 6px; font-size:11px; }
+
+  #about { bottom:14px; right:14px; max-width:360px; pointer-events:auto; }
+  #about .head { display:flex; justify-content:space-between; align-items:center; cursor:pointer; }
+  #about .body { margin-top:8px; color:#c2d2e3; font-size:11.5px; line-height:1.55; display:none; }
+  #about.open .body { display:block; }
+  #about code { color:#9fd0ff; }
+  #toggle { color:#9fb6cd; font-size:11px; }
+
+  #compass { position:fixed; top:14px; right:14px; text-align:right; }
+  #compass .big { font-size:13px; font-weight:700; color:#eaf2fb; }
+
+  /* ---- start veil ---- */
+  #veil { position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+    background:radial-gradient(120% 120% at 50% 30%, #16202c 0%, #090c11 70%); z-index:20;
+    transition:opacity .6s ease; }
+  #veil .card { text-align:center; max-width:540px; padding:0 24px; }
+  #veil h2 { font-size:30px; margin:0 0 6px; letter-spacing:.5px; }
+  #veil p { color:#9db2c8; line-height:1.6; font-size:13.5px; }
+  #veil .go { display:inline-block; margin-top:18px; padding:12px 30px; border-radius:30px;
+    background:linear-gradient(90deg,#3a86ff,#5bd6ff); color:#04121f; font-weight:800;
+    font-size:14px; cursor:pointer; letter-spacing:.4px; }
+  #veil .go:hover { filter:brightness(1.1); }
+  .fade { opacity:0; pointer-events:none; }
+  .hidden { display:none !important; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<div id="hud" class="panel">
+  <h1 id="biomeName">—</h1>
+  <div class="sub" id="biomeType">scanning genome…</div>
+  <div class="row"><span class="k">temperature</span><span class="v" id="tTemp">—</span></div>
+  <div class="row"><span class="k">moisture</span><span class="v" id="tMoist">—</span></div>
+  <div class="row"><span class="k">relief</span><span class="v" id="tRelief">—</span></div>
+  <div class="row"><span class="k">elevation</span><span class="v" id="tElev">—</span></div>
+
+  <div class="bars" id="bars"></div>
+  <div class="barlabel">REGION DNA · 8 fractal-drift genes</div>
+
+  <div class="sim">
+    <div class="row"><span class="k">DNA similarity to origin</span><span class="v" id="simPct">100%</span></div>
+    <div class="meter"><div class="meterfill" id="simFill"></div></div>
+  </div>
+</div>
+
+<div id="compass" class="panel">
+  <div class="big" id="cDist">0 m from origin</div>
+  <div class="row" style="margin-top:4px;"><span class="k">speed</span><span class="v" id="cSpeed">—</span></div>
+</div>
+
+<div id="help" class="panel">
+  <b>Fly:</b> <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> · up/down <kbd>Space</kbd>/<kbd>C</kbd> · boost <kbd>Shift</kbd><br>
+  <b>Look:</b> move mouse (click to capture, <kbd>Esc</kbd> to release)<br>
+  <b>Speed:</b> mouse&nbsp;wheel · <b>Teleport far:</b> <kbd>T</kbd> · <b>New world:</b> <kbd>R</kbd>
+</div>
+
+<div id="about" class="panel">
+  <div class="head"><b>How this works — “Genome Drift”</b><span id="toggle">▸ show</span></div>
+  <div class="body" id="aboutBody">
+    Every point in the world carries an 8-gene <b>DNA vector</b> sampled from a
+    <code>vector-valued fractional Brownian field</code>. Because the field is fractal, the
+    <b>genetic distance between two places grows as a power law of their physical distance</b> —
+    so neighbors share almost-identical DNA (similar, never identical), and faraway places drift
+    into wholly foreign genomes. There is no biome grid and no characteristic scale.<br><br>
+    A fixed <b>decoder</b> turns each DNA vector into everything you see — base elevation, mountain
+    amplitude, ridge sharpness, terracing, temperature, moisture, the color signature, and the
+    plants. Smooth blending of the DNA between peaks is the “sun-damage” gradient you cross at
+    biome edges.<br><br>
+    Each sample is <code>stateless</code>, <code>deterministic</code>, and <code>O(1)</code> in world
+    size: the same coordinate always yields the same land, computed from coordinates alone — so the
+    world is effectively infinite. Press <kbd>T</kbd> to leap thousands of meters and watch the DNA
+    go foreign; take a few steps to see it barely shift.
+  </div>
+</div>
+
+<div id="veil">
+  <div class="card">
+    <h2>GENOME&nbsp;DRIFT</h2>
+    <p>An endless, deterministic world grown from a fractal DNA field.<br>
+       Nearby looks similar but never the same. Far away looks foreign.<br>
+       Everything — mountains, color, life — is decoded from each region’s genes.</p>
+    <div class="go" id="goBtn">Enter the world →</div>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+
+/* =====================================================================
+   GENOME DRIFT — the algorithm
+   ---------------------------------------------------------------------
+   1. DNA(x,z): an 8-dimensional fractional-Brownian field. Each gene is
+      an independent fBm noise. Fractal => genetic distance is a power
+      law of spatial distance: near = similar, far = foreign. Stateless,
+      O(1) per sample.
+   2. decode(DNA): a fixed map from genes -> terrain & biome traits.
+   3. terrain/color/life are all derived from the decoded traits.
+   ===================================================================== */
+
+// ---- deterministic hash + value noise (stateless, O(1)) ----
+let WORLD_SEED = 1337;
+function smooth(t){ return t*t*(3-2*t); }
+function lerp(a,b,t){ return a+(b-a)*t; }
+function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
+function smoothstep(e0,e1,x){ const t=clamp((x-e0)/(e1-e0),0,1); return t*t*(3-2*t); }
+
+function hash(ix, iz, seed){
+  let h = Math.imul(ix|0, 374761393) ^ Math.imul(iz|0, 668265263) ^ Math.imul((seed+WORLD_SEED)|0, 1442695041);
+  h = Math.imul(h ^ (h>>>13), 1274126177);
+  h ^= h>>>16;
+  return (h>>>0) / 4294967296;
+}
+function vnoise(x, z, seed){
+  const xi=Math.floor(x), zi=Math.floor(z);
+  const xf=x-xi, zf=z-zi;
+  const u=smooth(xf), v=smooth(zf);
+  const a=hash(xi,zi,seed),   b=hash(xi+1,zi,seed);
+  const c=hash(xi,zi+1,seed), d=hash(xi+1,zi+1,seed);
+  return lerp(lerp(a,b,u), lerp(c,d,u), v); // [0,1]
+}
+function fbm(x, z, seed, oct, lac, gain){
+  let amp=1, freq=1, sum=0, norm=0;
+  for(let i=0;i<oct;i++){ sum += amp*vnoise(x*freq, z*freq, seed+i*1013); norm+=amp; amp*=gain; freq*=lac; }
+  return sum/norm; // [0,1]
+}
+function ridged(x, z, seed, oct, lac, gain){
+  let amp=0.5, freq=1, sum=0, prev=1;
+  for(let i=0;i<oct;i++){
+    let n = vnoise(x*freq, z*freq, seed+i*131);
+    n = 1 - Math.abs(2*n-1); n *= n;     // sharp ridge
+    sum += n*amp*prev; prev = n;
+    freq*=lac; amp*=gain;
+  }
+  return sum; // ~[0,1+]
+}
+
+// ---- (1) DNA field: 8 genes of fractional Brownian motion ----
+const GENES = 8;
+const GSEED = [101,211,331,433,541,653,769,883];
+const GFREQ = 0.00055;                 // base biome wavelength ~ 1800 m
+function dna(x, z){
+  const g = new Array(GENES);
+  for(let i=0;i<GENES;i++) g[i] = fbm(x*GFREQ, z*GFREQ, GSEED[i], 4, 2.0, 0.5);
+  return g;
+}
+
+// ---- (2) decoder: genes -> traits ----
+// g0 continentalness  g1 orogeny(mountains)  g2 ruggedness  g3 temperature
+// g4 moisture         g5 color signature     g6 hilliness   g7 terracing
+function decode(g){
+  return {
+    base:     (g[0]-0.48) * 150,                       // sea floor .. plateau
+    mountain: smoothstep(0.42, 0.86, g[1]) * 430,      // only orogenic biomes get ranges
+    hill:     16 + g[6]*60,
+    rugged:   0.5 + g[2]*0.9,
+    detail:   3 + g[2]*11,
+    terrace:  smoothstep(0.68, 0.92, g[7]),            // mesas in some biomes
+    temp:     g[3],
+    moist:    g[4],
+    hue:      g[5],
+  };
+}
+
+// ---- (3) terrain height from decoded DNA ----
+function terrain(x, z){
+  const g = dna(x,z);
+  const t = decode(g);
+  let h = t.base;
+  h += ridged(x*0.0065, z*0.0065, 401, 5, 2.0, 0.5*t.rugged + 0.25) * t.mountain;
+  h += (fbm(x*0.02, z*0.02, 77, 4, 2.0, 0.5) - 0.5) * 2 * t.hill;
+  h += (fbm(x*0.085, z*0.085, 99, 3, 2.0, 0.5) - 0.5) * 2 * t.detail;
+  if(t.terrace > 0.01){                                 // stepped mesas
+    const step = 16;
+    h = lerp(h, Math.round(h/step)*step, t.terrace*0.85);
+  }
+  return h;
+}
+
+// finite-difference surface normal "up" component (1 flat .. 0 vertical)
+function upness(x, z){
+  const e = 2.0;
+  const hL=terrain(x-e,z), hR=terrain(x+e,z), hD=terrain(x,z-e), hU=terrain(x,z+e);
+  const nx = hL-hR, nz = hD-hU, ny = 2*e;
+  return ny / Math.hypot(nx,ny,nz);
+}
+
+// ---- color: decoded traits -> per-vertex color (returns linear THREE.Color) ----
+const _c = new THREE.Color();
+const _ground = new THREE.Color(), _sand = new THREE.Color(),
+      _rock = new THREE.Color(),   _snow = new THREE.Color();
+function vertexColor(out, h, up, t){
+  const slope = clamp(1-up, 0, 1);
+  // biome-signature ground hue spans the whole spectrum -> visibly distinct biomes
+  _ground.setHSL(t.hue, 0.30 + 0.40*t.moist, 0.30 + 0.14*t.moist);
+  _sand.setHSL(lerp(0.09,0.13,t.hue), 0.42, 0.60 - 0.05*(1-t.moist));
+  _rock.setHSL(lerp(0.03,0.10,t.hue), 0.16 + 0.18*t.rugged, 0.30 + 0.12*t.rugged);
+  _snow.setHSL(0.60, 0.06, 0.93);
+
+  const snowLine = 95 + t.temp*200;
+  const beach   = smoothstep(2.5, 0.0, h);                 // near/under water
+  let   rockAmt = smoothstep(0.42, 0.72, slope);
+  rockAmt = Math.max(rockAmt, smoothstep(snowLine-95, snowLine-20, h));
+  const snowAmt = smoothstep(snowLine-15, snowLine+45, h) * (1 - slope*0.5);
+
+  out.copy(_ground);
+  out.lerp(_sand, beach);
+  out.lerp(_rock, rockAmt*(1-beach));
+  out.lerp(_snow, snowAmt);
+  out.convertSRGBToLinear();
+  return out;
+}
+
+/* =====================================================================
+   THREE.JS SCENE
+   ===================================================================== */
+const SKY = new THREE.Color('#9ec6e8');
+const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = SKY;
+scene.fog = new THREE.FogExp2(SKY, 0.00052);
+
+const camera = new THREE.PerspectiveCamera(68, innerWidth/innerHeight, 0.5, 9000);
+camera.position.set(0, 160, 0);
+
+// lights
+const sun = new THREE.DirectionalLight(0xfff2d6, 2.4);
+sun.position.set(0.5, 1.0, 0.35).multiplyScalar(500);
+scene.add(sun);
+scene.add(new THREE.HemisphereLight(0xbcd8ff, 0x5a4a3a, 0.55));
+scene.add(new THREE.AmbientLight(0xffffff, 0.12));
+
+// water (follows camera, sea level y=0)
+const CHUNK = 160, SEG = 32, RADIUS = 7, BUILD_PER_FRAME = 2;
+const waterSize = CHUNK*(2*RADIUS+3);
+const water = new THREE.Mesh(
+  new THREE.PlaneGeometry(waterSize, waterSize).rotateX(-Math.PI/2),
+  new THREE.MeshStandardMaterial({ color:0x2b6c8f, transparent:true, opacity:0.78,
+    roughness:0.25, metalness:0.05 })
+);
+water.position.y = 0;
+scene.add(water);
+
+// shared geometries for instanced life
+const treeGeo = new THREE.ConeGeometry(1, 1, 6).translate(0, 0.5, 0);
+const rockGeo = new THREE.IcosahedronGeometry(1, 0).translate(0, 0.3, 0);
+const lifeMat = () => new THREE.MeshStandardMaterial({ roughness:0.92, metalness:0, flatShading:true });
+const dummy = new THREE.Object3D();
+const tmpCol = new THREE.Color();
+
+/* ---- chunk streaming ---- */
+const chunks = new Map();
+const key = (cx,cz)=> cx+'_'+cz;
+
+function buildChunk(cx, cz){
+  const ox = cx*CHUNK, oz = cz*CHUNK;
+  const geo = new THREE.PlaneGeometry(CHUNK, CHUNK, SEG, SEG).rotateX(-Math.PI/2);
+  const pos = geo.attributes.position;
+  const colors = new Float32Array(pos.count*3);
+  for(let i=0;i<pos.count;i++){
+    const wx = ox + pos.getX(i);
+    const wz = oz + pos.getZ(i);
+    const g = dna(wx,wz); const t = decode(g);
+    const h = terrain(wx,wz);
+    pos.setY(i, h);
+    vertexColor(tmpCol, h, upness(wx,wz), t);
+    colors[i*3]=tmpCol.r; colors[i*3+1]=tmpCol.g; colors[i*3+2]=tmpCol.b;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(colors,3));
+  geo.computeVertexNormals();
+  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+    vertexColors:true, roughness:0.95, metalness:0.0, flatShading:false }));
+  mesh.position.set(ox, 0, oz);
+  scene.add(mesh);
+
+  // ---- life: scatter trees & rocks from decoded DNA ----
+  const trees=[], rocks=[];
+  const N = 11;                                   // candidate grid per chunk
+  for(let a=0;a<N;a++) for(let b=0;b<N;b++){
+    const jx = hash(cx*N+a, cz*N+b, 7)*0.9;
+    const jz = hash(cx*N+a, cz*N+b, 13)*0.9;
+    const wx = ox + (a+jx)/N*CHUNK - CHUNK/2;
+    const wz = oz + (b+jz)/N*CHUNK - CHUNK/2;
+    const g = dna(wx,wz); const t = decode(g);
+    const h = terrain(wx,wz);
+    const up = upness(wx,wz);
+    const r = hash(cx*N+a+1, cz*N+b+7, 23);
+    const snowLine = 95 + t.temp*200;
+    // trees: moist, gentle slope, above water, below snow
+    if(h>3 && h<snowLine-25 && up>0.80 && r < t.moist*0.85){
+      trees.push({ x:wx, y:h, z:wz,
+        ht: 5 + t.moist*9 + g[6]*4, wd: 0.30 + 0.12*t.moist,
+        hue: lerp(t.hue, 0.32, 0.45), light: 0.20 + 0.12*t.moist });
+    } else if((up<0.78 || h>snowLine-40) && h>2 && r>0.93){
+      // rocks on steep / high ground
+      rocks.push({ x:wx, y:h, z:wz, s: 1.5 + r*4, hue:lerp(0.05,0.1,t.hue) });
+    }
+  }
+  let treeMesh=null, rockMesh=null;
+  if(trees.length){
+    treeMesh = new THREE.InstancedMesh(treeGeo, lifeMat(), trees.length);
+    trees.forEach((tr,i)=>{
+      dummy.position.set(tr.x, tr.y, tr.z);
+      dummy.scale.set(tr.wd*tr.ht, tr.ht, tr.wd*tr.ht);
+      dummy.rotation.y = hash(i,cx,cz)*6.28; dummy.updateMatrix();
+      treeMesh.setMatrixAt(i, dummy.matrix);
+      treeMesh.setColorAt(i, tmpCol.setHSL(tr.hue, 0.55, tr.light).convertSRGBToLinear());
+    });
+    treeMesh.instanceColor.needsUpdate = true;
+    scene.add(treeMesh);
+  }
+  if(rocks.length){
+    rockMesh = new THREE.InstancedMesh(rockGeo, lifeMat(), rocks.length);
+    rocks.forEach((rk,i)=>{
+      dummy.position.set(rk.x, rk.y, rk.z);
+      dummy.scale.setScalar(rk.s);
+      dummy.rotation.set(hash(i,3,cz)*6.28, hash(i,cx,9)*6.28, hash(i,5,7)*6.28);
+      dummy.updateMatrix(); rockMesh.setMatrixAt(i, dummy.matrix);
+      rockMesh.setColorAt(i, tmpCol.setHSL(rk.hue, 0.18, 0.36).convertSRGBToLinear());
+    });
+    rockMesh.instanceColor.needsUpdate = true;
+    scene.add(rockMesh);
+  }
+
+  chunks.set(key(cx,cz), { mesh, treeMesh, rockMesh });
+}
+
+function disposeChunk(ch){
+  scene.remove(ch.mesh); ch.mesh.geometry.dispose(); ch.mesh.material.dispose();
+  if(ch.treeMesh){ scene.remove(ch.treeMesh); ch.treeMesh.dispose(); }
+  if(ch.rockMesh){ scene.remove(ch.rockMesh); ch.rockMesh.dispose(); }
+}
+
+function streamChunks(){
+  const ccx = Math.round(camera.position.x/CHUNK);
+  const ccz = Math.round(camera.position.z/CHUNK);
+  // remove out-of-range
+  for(const [k,ch] of chunks){
+    const [cx,cz] = k.split('_').map(Number);
+    if(Math.max(Math.abs(cx-ccx),Math.abs(cz-ccz)) > RADIUS+1){ disposeChunk(ch); chunks.delete(k); }
+  }
+  // build nearest missing, limited per frame
+  let budget = BUILD_PER_FRAME;
+  let best;
+  while(budget>0){
+    best=null; let bestD=1e9;
+    for(let dx=-RADIUS;dx<=RADIUS;dx++) for(let dz=-RADIUS;dz<=RADIUS;dz++){
+      const cx=ccx+dx, cz=ccz+dz;
+      if(chunks.has(key(cx,cz))) continue;
+      const d = dx*dx+dz*dz;
+      if(d<bestD){ bestD=d; best=[cx,cz]; }
+    }
+    if(!best) break;
+    buildChunk(best[0], best[1]); budget--;
+  }
+}
+
+function rebuildWorld(){
+  for(const [k,ch] of chunks){ disposeChunk(ch); }
+  chunks.clear();
+}
+
+/* =====================================================================
+   CONTROLS — fly cam
+   ===================================================================== */
+const controls = new PointerLockControls(camera, renderer.domElement);
+scene.add(controls.getObject ? controls.getObject() : camera);
+const keys = {};
+addEventListener('keydown', e=>{
+  keys[e.code]=true;
+  if(e.code==='KeyT') teleport();
+  if(e.code==='KeyR') newWorld();
+});
+addEventListener('keyup', e=> keys[e.code]=false);
+let speed = 90;                                  // m/s
+addEventListener('wheel', e=>{ speed = clamp(speed * (e.deltaY>0?0.88:1.14), 12, 1600); }, {passive:true});
+
+const veil = document.getElementById('veil');
+document.getElementById('goBtn').onclick = ()=>{ controls.lock(); };
+controls.addEventListener('lock', ()=> veil.classList.add('fade'));
+controls.addEventListener('unlock', ()=>{ /* keep flying paused; veil stays hidden after first entry */ });
+
+let origin = dna(0,0);                            // DNA at spawn, for similarity meter
+function teleport(){
+  const ang = hash(Math.floor(camera.position.x), Math.floor(camera.position.z), 999)*6.28;
+  const dist = 5000 + hash(Math.floor(camera.position.z), 42, 7)*5000;
+  camera.position.x += Math.cos(ang)*dist;
+  camera.position.z += Math.sin(ang)*dist;
+  camera.position.y = Math.max(terrain(camera.position.x, camera.position.z)+140, 160);
+}
+function newWorld(){
+  WORLD_SEED = (WORLD_SEED*1103515245 + 12345) & 0x7fffffff;
+  rebuildWorld();
+  origin = dna(camera.position.x, camera.position.z);
+}
+
+/* =====================================================================
+   HUD
+   ===================================================================== */
+const bars = document.getElementById('bars');
+const barEls = [];
+for(let i=0;i<GENES;i++){
+  const b=document.createElement('div'); b.className='bar';
+  tmpCol.setHSL(i/GENES, 0.65, 0.55);
+  b.style.background = '#'+tmpCol.getHexString();
+  bars.appendChild(b); barEls.push(b);
+}
+const A=['Ae','Bru','Cor','Dax','Eo','Fen','Gol','Hyr','Ix','Jor','Kel','Lun','Mor','Nyx','Oss','Pyr','Quel','Rho','Syl','Tor','Umb','Vael','Wyr','Xan','Yvr','Zeph'];
+const B=['ara','andis','eth','oria','une','iel','oss','ix','arn','elle','ymar','adi','oth','enia','ula','irn'];
+const C=['Reach','Expanse','Wastes','Vale','Steppe','Hollow','Flats','Highlands','Drift','Basin','Shelf','Marches'];
+const fmt = (g,arr)=> arr[Math.min(arr.length-1, Math.floor(g*arr.length))];
+function label(v, lo, mid, hi){ return v<0.34?lo : v<0.67?mid : hi; }
+
+let hudT = 0;
+function updateHUD(dt){
+  hudT += dt; if(hudT < 0.16) return; hudT = 0;
+  const x=camera.position.x, z=camera.position.z;
+  const g = dna(x,z); const t = decode(g);
+  document.getElementById('biomeName').textContent = fmt(g[0],A)+fmt(g[4],B)+' '+fmt(g[1],C);
+  const relief = t.mountain>250 ? 'alpine ranges' : t.mountain>110 ? 'rolling mountains'
+              : t.hill>55 ? 'rugged hills' : t.terrace>0.4 ? 'stepped mesas' : 'open lowlands';
+  document.getElementById('biomeType').textContent =
+    label(t.temp,'frigid','temperate','torrid')+' · '+label(t.moist,'arid','seasonal','lush');
+  document.getElementById('tTemp').textContent  = (Math.round(-15 + t.temp*55))+' °C';
+  document.getElementById('tMoist').textContent = Math.round(t.moist*100)+'%';
+  document.getElementById('tRelief').textContent= relief;
+  document.getElementById('tElev').textContent  = Math.round(camera.position.y)+' m';
+  for(let i=0;i<GENES;i++) barEls[i].style.height = (4 + g[i]*30)+'px';
+
+  // genetic similarity to origin
+  let d2=0; for(let i=0;i<GENES;i++){ const dd=g[i]-origin[i]; d2+=dd*dd; }
+  const sim = clamp(1 - Math.sqrt(d2)/Math.sqrt(GENES)*1.9, 0, 1);
+  document.getElementById('simPct').textContent = Math.round(sim*100)+'%';
+  document.getElementById('simFill').style.width = (sim*100)+'%';
+
+  const dist = Math.hypot(x,z);
+  document.getElementById('cDist').textContent =
+    (dist>1000 ? (dist/1000).toFixed(1)+' km' : Math.round(dist)+' m')+' from origin';
+  document.getElementById('cSpeed').textContent = Math.round(speed)+' m/s';
+}
+
+document.getElementById('about').querySelector('.head').onclick = ()=>{
+  const a=document.getElementById('about'); a.classList.toggle('open');
+  document.getElementById('toggle').textContent = a.classList.contains('open')?'▾ hide':'▸ show';
+};
+
+/* =====================================================================
+   LOOP
+   ===================================================================== */
+const fwd = new THREE.Vector3(), right = new THREE.Vector3(), UP = new THREE.Vector3(0,1,0);
+const clock = new THREE.Clock();
+function tick(){
+  requestAnimationFrame(tick);
+  const dt = Math.min(clock.getDelta(), 0.05);
+
+  // movement
+  const boost = keys['ShiftLeft']||keys['ShiftRight'] ? 4 : 1;
+  const v = speed*boost*dt;
+  camera.getWorldDirection(fwd);
+  right.crossVectors(fwd, UP).normalize();
+  if(keys['KeyW']) camera.position.addScaledVector(fwd, v);
+  if(keys['KeyS']) camera.position.addScaledVector(fwd, -v);
+  if(keys['KeyD']) camera.position.addScaledVector(right, v);
+  if(keys['KeyA']) camera.position.addScaledVector(right, -v);
+  if(keys['Space']) camera.position.y += v;
+  if(keys['KeyC']) camera.position.y -= v;
+  // soft floor so you don't fall through terrain
+  const ground = terrain(camera.position.x, camera.position.z) + 3.5;
+  if(camera.position.y < ground) camera.position.y = ground;
+
+  water.position.set(camera.position.x, 0, camera.position.z);
+  sun.position.set(camera.position.x+300, 600, camera.position.z+220);
+  sun.target.position.copy(camera.position); sun.target.updateMatrixWorld();
+
+  streamChunks();
+  updateHUD(dt);
+  renderer.render(scene, camera);
+}
+tick();
+
+addEventListener('resize', ()=>{
+  camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// warm-start a patch so the first frame isn't empty
+for(let dx=-2;dx<=2;dx++) for(let dz=-2;dz<=2;dz++) buildChunk(dx,dz);
+</script>
+</body>
+</html>
