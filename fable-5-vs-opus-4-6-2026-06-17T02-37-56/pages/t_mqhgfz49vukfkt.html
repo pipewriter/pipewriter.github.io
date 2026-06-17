@@ -1,0 +1,987 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The Vivid Trail</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { width:100%; height:100%; overflow:hidden; background:#000; font-family: Georgia, 'Times New Roman', serif; color:#fff; }
+  canvas { display:block; }
+  #overlay {
+    position:fixed; inset:0; z-index:10; cursor:pointer;
+    background: radial-gradient(circle at 50% 40%, #2a1040 0%, #0a0418 70%, #000 100%);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:2rem; text-align:center;
+    transition: opacity 0.9s ease;
+  }
+  #overlay h1 {
+    font-size: clamp(2.2rem, 6vw, 3.8rem);
+    letter-spacing: 0.18em; font-weight: 300;
+    margin-bottom: 1.4rem;
+    text-shadow: 0 0 24px rgba(255, 180, 120, 0.5);
+  }
+  #overlay p {
+    font-size: 1.05rem; line-height: 1.75; max-width: 560px; opacity: 0.85;
+    margin-bottom: 0.6rem;
+  }
+  #overlay .controls {
+    margin-top: 2.2rem; opacity: 0.55; font-size: 0.85rem;
+    letter-spacing: 0.18em; text-transform: uppercase;
+  }
+  #overlay.hidden { opacity: 0; pointer-events: none; }
+  #hud {
+    position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%);
+    font-size: 0.95rem; opacity: 0; letter-spacing: 0.15em;
+    text-shadow: 0 1px 6px rgba(0,0,0,0.95);
+    pointer-events: none; transition: opacity 1.6s ease;
+    font-style: italic;
+  }
+  #ending {
+    position: fixed; inset: 0; z-index: 9;
+    background: radial-gradient(circle, rgba(60, 30, 90, 0.85), rgba(0,0,0,0.97));
+    display: flex; align-items: center; justify-content: center; flex-direction: column;
+    opacity: 0; pointer-events: none; transition: opacity 3s ease;
+    padding: 2rem; text-align: center;
+  }
+  #ending.show { opacity: 1; }
+  #ending h2 {
+    font-size: clamp(1.8rem, 4.5vw, 2.8rem); letter-spacing: 0.22em;
+    margin-bottom: 1.2rem; font-weight: 300;
+    text-shadow: 0 0 24px rgba(180, 150, 255, 0.6);
+  }
+  #ending p { opacity: 0.75; max-width: 540px; line-height: 1.8; font-size: 1.05rem; }
+  #ending .reload { margin-top:2.5rem; opacity:0.5; font-size:0.85rem; letter-spacing:0.18em; }
+</style>
+</head>
+<body>
+<div id="overlay">
+  <h1>THE VIVID TRAIL</h1>
+  <p>You are about to walk a short path before nightfall — no map, no compass, no breadcrumbs.</p>
+  <p>Notice every strange thing you pass. The gate. The eye. The water that climbs. The piano on fire. When you reach the end, try to walk it back in your mind.</p>
+  <div class="controls">click to begin · WASD to walk · mouse to look</div>
+</div>
+<div id="hud"></div>
+<div id="ending">
+  <h2>YOU HAVE ARRIVED</h2>
+  <p>Now close your eyes. Walk it backwards. What stood at the gate? What hung in the air after the upside-down trees? Whose ribs did you pass through? What burned? What ticked beneath your feet?</p>
+  <div class="reload">refresh the page to walk it again</div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+
+// ============================================================
+//  RENDERER / SCENE / CAMERA
+// ============================================================
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x18102a, 0.020);
+
+const camera = new THREE.PerspectiveCamera(74, innerWidth / innerHeight, 0.1, 600);
+camera.position.set(0, 1.7, -4);
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ============================================================
+//  SKY (gradient shader)
+// ============================================================
+{
+  const skyGeo = new THREE.SphereGeometry(420, 32, 16);
+  const skyMat = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    depthWrite: false,
+    fog: false,
+    uniforms: {
+      topCol: { value: new THREE.Color(0x05031a) },
+      midCol: { value: new THREE.Color(0xff5a3c) },
+      lowCol: { value: new THREE.Color(0x180a28) },
+    },
+    vertexShader: `
+      varying vec3 vP;
+      void main() { vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }
+    `,
+    fragmentShader: `
+      varying vec3 vP;
+      uniform vec3 topCol, midCol, lowCol;
+      void main() {
+        float h = normalize(vP).y;
+        vec3 c = mix(lowCol, midCol, smoothstep(-0.05, 0.18, h));
+        c = mix(c, topCol, smoothstep(0.18, 0.7, h));
+        gl_FragColor = vec4(c, 1.0);
+      }
+    `
+  });
+  scene.add(new THREE.Mesh(skyGeo, skyMat));
+}
+
+// ============================================================
+//  STARS
+// ============================================================
+{
+  const positions = [];
+  for (let i = 0; i < 800; i++) {
+    const phi = Math.acos(1 - Math.random() * 1.1);
+    const theta = Math.random() * Math.PI * 2;
+    const r = 400;
+    positions.push(
+      r * Math.sin(phi) * Math.cos(theta),
+      r * Math.cos(phi),
+      r * Math.sin(phi) * Math.sin(theta)
+    );
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  const m = new THREE.PointsMaterial({
+    color: 0xffffff, size: 1.6, sizeAttenuation: false,
+    transparent: true, opacity: 0.85, fog: false
+  });
+  scene.add(new THREE.Points(g, m));
+}
+
+// rising moon
+{
+  const moon = new THREE.Mesh(
+    new THREE.SphereGeometry(8, 24, 16),
+    new THREE.MeshBasicMaterial({ color: 0xffeedd, fog: false })
+  );
+  moon.position.set(-90, 80, 320);
+  scene.add(moon);
+}
+
+// ============================================================
+//  LIGHTS
+// ============================================================
+scene.add(new THREE.HemisphereLight(0x9988ff, 0x221144, 0.55));
+const dirLight = new THREE.DirectionalLight(0xccddff, 0.55);
+dirLight.position.set(60, 100, -40);
+scene.add(dirLight);
+const warm = new THREE.DirectionalLight(0xffaa66, 0.35);
+warm.position.set(-40, 30, 80);
+scene.add(warm);
+
+// ============================================================
+//  PATH (curved waypoints)
+// ============================================================
+const waypoints = [
+  new THREE.Vector3( 0,    0,   0),
+  new THREE.Vector3( 0,    0,  15),
+  new THREE.Vector3( 0.5,  0,  30),
+  new THREE.Vector3(-0.3,  0,  45),
+  new THREE.Vector3(-1.5,  0,  60),
+  new THREE.Vector3( 0,    0,  78),
+  new THREE.Vector3( 1,    0,  92),
+  new THREE.Vector3( 0,    0, 108),
+  new THREE.Vector3(-1,    0, 125),  // through whale arch
+  new THREE.Vector3( 0,    0, 140),
+  new THREE.Vector3( 1.5,  0, 155),
+  new THREE.Vector3( 0,    0, 170),
+  new THREE.Vector3(-1,    0, 185),  // through stone faces
+  new THREE.Vector3( 0,    0, 200),
+  new THREE.Vector3( 0.5,  0, 215),
+  new THREE.Vector3( 0,    0, 230),
+  new THREE.Vector3( 0,    0, 245),  // across giant clock
+  new THREE.Vector3( 0,    0, 260),
+  new THREE.Vector3( 0,    0, 275),  // through floating door
+  new THREE.Vector3( 0,    0, 290),  // crystal dome
+];
+const trail = new THREE.CatmullRomCurve3(waypoints, false, 'centripetal');
+const trailLen = trail.getLength();
+
+// ============================================================
+//  GROUND (large plane with mottled color)
+// ============================================================
+{
+  const groundMat = new THREE.MeshStandardMaterial({ color: 0x140a1c, roughness: 1, metalness: 0 });
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(900, 900), groundMat);
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.set(0, -0.05, 140);
+  scene.add(ground);
+}
+
+// ============================================================
+//  PATH STONES (rainbow-glow tiles along curve)
+// ============================================================
+{
+  const tileCount = Math.floor(trailLen / 1.4);
+  for (let i = 0; i < tileCount; i++) {
+    const t = i / tileCount;
+    const p = trail.getPointAt(t);
+    const tan = trail.getTangentAt(t);
+    const yaw = Math.atan2(tan.x, tan.z);
+    const hue = (t * 1.25 + 0.04) % 1;
+    const col = new THREE.Color().setHSL(hue, 0.72, 0.55);
+    const emit = new THREE.Color().setHSL(hue, 0.85, 0.32);
+    const tile = new THREE.Mesh(
+      new THREE.BoxGeometry(2.6, 0.12, 1.25),
+      new THREE.MeshStandardMaterial({
+        color: col, emissive: emit, emissiveIntensity: 0.5, roughness: 0.55
+      })
+    );
+    tile.position.set(p.x, 0.06, p.z);
+    tile.rotation.y = yaw;
+    scene.add(tile);
+  }
+}
+
+// ============================================================
+//  SCATTERED AMBIENCE (rocks and grass tufts off-path)
+// ============================================================
+{
+  for (let i = 0; i < 320; i++) {
+    const x = (Math.random() - 0.5) * 110;
+    const z = Math.random() * 300 - 6;
+    // crude path-distance check
+    const tApprox = Math.max(0, Math.min(1, z / 290));
+    const pp = trail.getPointAt(tApprox);
+    if (Math.abs(x - pp.x) < 3.6) continue;
+
+    if (Math.random() < 0.45) {
+      // rock
+      const rock = new THREE.Mesh(
+        new THREE.IcosahedronGeometry(0.25 + Math.random() * 0.65, 0),
+        new THREE.MeshStandardMaterial({
+          color: new THREE.Color().setHSL(0.7 + Math.random() * 0.1, 0.18, 0.20),
+          roughness: 1, flatShading: true
+        })
+      );
+      rock.position.set(x, 0.12, z);
+      rock.scale.y = 0.55 + Math.random() * 0.5;
+      rock.rotation.y = Math.random() * Math.PI * 2;
+      scene.add(rock);
+    } else {
+      // grass tuft
+      const g = new THREE.Group();
+      const blades = 3 + Math.floor(Math.random() * 3);
+      for (let j = 0; j < blades; j++) {
+        const blade = new THREE.Mesh(
+          new THREE.ConeGeometry(0.05, 0.55 + Math.random() * 0.5, 4),
+          new THREE.MeshStandardMaterial({
+            color: new THREE.Color().setHSL(0.28 + Math.random() * 0.18, 0.6, 0.32 + Math.random() * 0.18),
+            emissive: 0x113322, emissiveIntensity: 0.18,
+            flatShading: true
+          })
+        );
+        blade.position.set((Math.random() - 0.5) * 0.35, 0.3, (Math.random() - 0.5) * 0.35);
+        blade.rotation.x = (Math.random() - 0.5) * 0.4;
+        blade.rotation.z = (Math.random() - 0.5) * 0.4;
+        g.add(blade);
+      }
+      g.position.set(x, 0, z);
+      scene.add(g);
+    }
+  }
+}
+
+// ============================================================
+//  ANIMATABLE OBJECT REGISTRY
+// ============================================================
+const animated = [];
+
+// ============================================================
+//  LANDMARK 1 — RED TORII GATE  (z = 0)
+// ============================================================
+function makeTorii(x, z) {
+  const g = new THREE.Group();
+  const matRed = new THREE.MeshStandardMaterial({ color: 0xc8252b, emissive: 0x4a0a0a, emissiveIntensity: 0.45, roughness: 0.45 });
+  const matBlack = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.7 });
+  const left = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.42, 7, 14), matRed);
+  left.position.set(-3, 3.5, 0);
+  g.add(left);
+  const right = left.clone(); right.position.x = 3; g.add(right);
+  const lintel = new THREE.Mesh(new THREE.BoxGeometry(8.2, 0.7, 0.85), matBlack);
+  lintel.position.set(0, 7.4, 0); g.add(lintel);
+  const top = new THREE.Mesh(new THREE.BoxGeometry(8.8, 0.55, 1.1), matRed);
+  top.position.set(0, 8.05, 0); g.add(top);
+  const sign = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.85, 0.12), matBlack);
+  sign.position.set(0, 6.55, 0.05); g.add(sign);
+  // hanging lanterns
+  for (let i = -2; i <= 2; i += 2) {
+    const lant = new THREE.Mesh(
+      new THREE.SphereGeometry(0.45, 14, 10),
+      new THREE.MeshBasicMaterial({ color: 0xffaa44 })
+    );
+    lant.position.set(i, 5.3, 0); g.add(lant);
+    const light = new THREE.PointLight(0xffaa55, 1.6, 16, 1.6);
+    light.position.copy(lant.position); g.add(light);
+    animated.push({ type: 'lantern', mesh: lant, light, baseY: 5.3, phase: Math.random() * Math.PI * 2 });
+  }
+  g.position.set(x, 0, z);
+  return g;
+}
+scene.add(makeTorii(0, 0));
+
+// ============================================================
+//  LANDMARK 2 — GIANT FLOATING EYE  (z = 30)
+// ============================================================
+function makeEye(x, y, z) {
+  const g = new THREE.Group();
+  const sclera = new THREE.Mesh(
+    new THREE.SphereGeometry(2.2, 36, 26),
+    new THREE.MeshStandardMaterial({ color: 0xfff8e8, roughness: 0.4, emissive: 0x332211, emissiveIntensity: 0.25 })
+  );
+  g.add(sclera);
+  // veins
+  for (let v = 0; v < 5; v++) {
+    const vein = new THREE.Mesh(
+      new THREE.TorusGeometry(2.2, 0.025, 4, 32, Math.PI * 0.5),
+      new THREE.MeshBasicMaterial({ color: 0xaa2233 })
+    );
+    vein.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+    g.add(vein);
+  }
+  const irisGroup = new THREE.Group();
+  const iris = new THREE.Mesh(
+    new THREE.SphereGeometry(1.1, 32, 24),
+    new THREE.MeshStandardMaterial({ color: 0xddaa22, emissive: 0xcc6611, emissiveIntensity: 1.6, roughness: 0.3 })
+  );
+  iris.position.z = 1.5; iris.scale.z = 0.5;
+  irisGroup.add(iris);
+  const pupil = new THREE.Mesh(
+    new THREE.SphereGeometry(0.45, 18, 14),
+    new THREE.MeshBasicMaterial({ color: 0x000000 })
+  );
+  pupil.position.z = 1.85; pupil.scale.z = 0.3;
+  irisGroup.add(pupil);
+  g.add(irisGroup);
+
+  const glow = new THREE.PointLight(0xffaa55, 2.2, 24);
+  g.add(glow);
+
+  g.position.set(x, y, z);
+  animated.push({ type: 'eye', mesh: g, irisGroup, baseY: y });
+  return g;
+}
+scene.add(makeEye(3.5, 5.2, 30));
+
+// ============================================================
+//  LANDMARK 3 — UPSIDE-DOWN PINK FOREST  (z = 55-72)
+// ============================================================
+function makeUpsideTree(x, z, hue) {
+  const g = new THREE.Group();
+  const foliageCol = new THREE.Color().setHSL(hue, 0.75, 0.55);
+  const foliage = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(1.7, 0),
+    new THREE.MeshStandardMaterial({
+      color: foliageCol, emissive: foliageCol.clone().multiplyScalar(0.45),
+      emissiveIntensity: 0.45, roughness: 0.6, flatShading: true
+    })
+  );
+  foliage.position.y = 1.7;
+  foliage.scale.y = 0.85;
+  g.add(foliage);
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.18, 0.42, 6.2, 6),
+    new THREE.MeshStandardMaterial({ color: 0x4d2e1c, roughness: 1, flatShading: true })
+  );
+  trunk.position.y = 5.6;
+  g.add(trunk);
+  for (let r = 0; r < 7; r++) {
+    const ang = (r / 7) * Math.PI * 2 + Math.random() * 0.3;
+    const root = new THREE.Mesh(
+      new THREE.ConeGeometry(0.13, 1.7, 5),
+      new THREE.MeshStandardMaterial({ color: 0x3d1e0c, roughness: 1, flatShading: true })
+    );
+    const rx = Math.cos(ang), rz = Math.sin(ang);
+    root.position.set(rx * 0.45, 9.1, rz * 0.45);
+    root.rotation.x = rz * 0.85;
+    root.rotation.z = -rx * 0.85;
+    g.add(root);
+  }
+  g.position.set(x, 0, z);
+  return g;
+}
+{
+  const positions = [
+    [-6, 50, 0.92], [ 5, 53, 0.85], [-7, 58, 0.95], [ 4, 60, 0.88],
+    [ 7, 56, 0.82], [-5, 62, 0.97], [-7, 68, 0.86], [ 6, 70, 0.94],
+    [-4, 72, 0.89]
+  ];
+  positions.forEach(([px, pz, h]) => scene.add(makeUpsideTree(px, pz, h)));
+}
+
+// ============================================================
+//  LANDMARK 4 — GLOWING BLUE MUSHROOM FIELD  (z = 80-105)
+// ============================================================
+function makeMushroom(x, z, scale, hue) {
+  const g = new THREE.Group();
+  const stem = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.4 * scale, 0.62 * scale, 4 * scale, 12),
+    new THREE.MeshStandardMaterial({ color: 0xeae0d0, roughness: 0.7 })
+  );
+  stem.position.y = 2 * scale;
+  g.add(stem);
+  const capCol = new THREE.Color().setHSL(hue, 0.85, 0.5);
+  const cap = new THREE.Mesh(
+    new THREE.SphereGeometry(2 * scale, 22, 14, 0, Math.PI * 2, 0, Math.PI / 2),
+    new THREE.MeshStandardMaterial({
+      color: capCol, emissive: capCol, emissiveIntensity: 0.75, roughness: 0.5
+    })
+  );
+  cap.position.y = 4 * scale;
+  g.add(cap);
+  for (let d = 0; d < 10; d++) {
+    const dot = new THREE.Mesh(
+      new THREE.SphereGeometry(0.18 * scale, 8, 6),
+      new THREE.MeshBasicMaterial({ color: 0xffffff })
+    );
+    const ang = Math.random() * Math.PI * 2;
+    const dist = 0.5 * scale + Math.random() * 1.4 * scale;
+    dot.position.set(
+      Math.cos(ang) * dist,
+      4 * scale + Math.sqrt(Math.max(0, 4 * scale * scale - dist * dist)) * 0.22,
+      Math.sin(ang) * dist
+    );
+    g.add(dot);
+  }
+  const light = new THREE.PointLight(capCol, 1.0, 10 * scale);
+  light.position.y = 4 * scale;
+  g.add(light);
+  g.position.set(x, 0, z);
+  animated.push({ type: 'mushroom', light, phase: Math.random() * Math.PI * 2, baseInt: 1.0 });
+  return g;
+}
+{
+  const ms = [
+    [-4, 80, 1.0, 0.62], [ 4, 83, 0.85, 0.55], [-3, 88, 1.3, 0.65],
+    [ 5, 90, 0.95, 0.58], [-6, 93, 0.75, 0.6 ], [ 4, 96, 1.1, 0.7],
+    [-4, 100, 0.9, 0.65], [ 6, 102, 0.7, 0.55], [-5, 105, 1.05, 0.6]
+  ];
+  ms.forEach(([x, z, s, h]) => scene.add(makeMushroom(x, z, s, h)));
+}
+
+// ============================================================
+//  LANDMARK 5 — WHALE SKELETON ARCH  (z = 125, walk through)
+// ============================================================
+function makeWhaleArch(x, z) {
+  const g = new THREE.Group();
+  const matBone = new THREE.MeshStandardMaterial({
+    color: 0xefe6cf, roughness: 0.7, emissive: 0x222014, emissiveIntensity: 0.15
+  });
+  // ribs
+  for (let i = -3; i <= 3; i++) {
+    const c = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(-4.8, 0, 0),
+      new THREE.Vector3(-3.8, 4.6, 0),
+      new THREE.Vector3(-2,   7.0, 0),
+      new THREE.Vector3( 0,   7.7, 0),
+      new THREE.Vector3( 2,   7.0, 0),
+      new THREE.Vector3( 3.8, 4.6, 0),
+      new THREE.Vector3( 4.8, 0, 0),
+    ]);
+    const rib = new THREE.Mesh(new THREE.TubeGeometry(c, 36, 0.16, 8, false), matBone);
+    rib.position.z = i * 0.95;
+    g.add(rib);
+  }
+  // spine
+  const spine = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 7.2, 10), matBone);
+  spine.rotation.x = Math.PI / 2;
+  spine.position.set(0, 7.7, 0);
+  g.add(spine);
+  // skull
+  const skull = new THREE.Mesh(new THREE.SphereGeometry(1.4, 18, 14), matBone);
+  skull.position.set(0, 7.7, 4.4);
+  skull.scale.set(1.2, 0.9, 1.7);
+  g.add(skull);
+  const jaw = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.5, 2.6), matBone);
+  jaw.position.set(0, 6.6, 4.4);
+  g.add(jaw);
+  // eye sockets
+  const eyeMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+  const eyeGeo = new THREE.SphereGeometry(0.28, 10, 8);
+  const eL = new THREE.Mesh(eyeGeo, eyeMat); eL.position.set(0.75, 7.85, 5.2); g.add(eL);
+  const eR = new THREE.Mesh(eyeGeo, eyeMat); eR.position.set(-0.75, 7.85, 5.2); g.add(eR);
+  // tail vertebrae
+  for (let v = 0; v < 6; v++) {
+    const vert = new THREE.Mesh(new THREE.SphereGeometry(0.32, 8, 6), matBone);
+    vert.position.set(0, 7.7 - v * 0.1, -3.5 - v * 0.7);
+    vert.scale.set(0.7, 0.7, 0.7);
+    g.add(vert);
+  }
+  g.position.set(x, 0, z);
+  return g;
+}
+scene.add(makeWhaleArch(-1, 125));
+
+// ============================================================
+//  LANDMARK 6 — UPWARD WATERFALL  (z = 155, beside path)
+// ============================================================
+function makeUpFall(x, z) {
+  const g = new THREE.Group();
+  const basin = new THREE.Mesh(
+    new THREE.CylinderGeometry(2.6, 2.9, 0.6, 18),
+    new THREE.MeshStandardMaterial({ color: 0x223344, roughness: 0.6, emissive: 0x002233, emissiveIntensity: 0.35 })
+  );
+  basin.position.y = 0.3; g.add(basin);
+  const water = new THREE.Mesh(
+    new THREE.CylinderGeometry(2.4, 2.4, 0.05, 18),
+    new THREE.MeshStandardMaterial({
+      color: 0x33aaff, transparent: true, opacity: 0.7,
+      emissive: 0x336688, emissiveIntensity: 0.5
+    })
+  );
+  water.position.y = 0.6; g.add(water);
+
+  const N = 380;
+  const positions = new Float32Array(N * 3);
+  const velocities = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) {
+    const ang = Math.random() * Math.PI * 2;
+    const r = Math.random() * 1.7;
+    positions[i * 3]     = Math.cos(ang) * r;
+    positions[i * 3 + 1] = Math.random() * 14;
+    positions[i * 3 + 2] = Math.sin(ang) * r;
+    velocities[i * 3]     = (Math.random() - 0.5) * 0.35;
+    velocities[i * 3 + 1] = 2.2 + Math.random() * 1.8;
+    velocities[i * 3 + 2] = (Math.random() - 0.5) * 0.35;
+  }
+  const pgeo = new THREE.BufferGeometry();
+  pgeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const pmat = new THREE.PointsMaterial({
+    color: 0x88ddff, size: 0.26, transparent: true, opacity: 0.85,
+    blending: THREE.AdditiveBlending, depthWrite: false
+  });
+  const pts = new THREE.Points(pgeo, pmat);
+  g.add(pts);
+  const lt = new THREE.PointLight(0x66bbff, 2.4, 18);
+  lt.position.y = 5; g.add(lt);
+
+  g.position.set(x, 0, z);
+  animated.push({ type: 'upfall', points: pts, velocities });
+  return g;
+}
+scene.add(makeUpFall(7, 155));
+
+// ============================================================
+//  LANDMARK 7 — STONE FACE CIRCLE  (z = 185, walk through ring)
+// ============================================================
+function makeStoneFace(angle, radius) {
+  const g = new THREE.Group();
+  const matStone = new THREE.MeshStandardMaterial({ color: 0x556677, roughness: 0.95, flatShading: true });
+  const head = new THREE.Mesh(new THREE.BoxGeometry(1.7, 3.4, 1.5), matStone);
+  head.position.y = 1.8; g.add(head);
+  const top = new THREE.Mesh(new THREE.ConeGeometry(0.65, 0.8, 6), matStone);
+  top.position.y = 3.7; g.add(top);
+  const eyeMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+  const eyeGeo = new THREE.SphereGeometry(0.20, 10, 8);
+  const eL = new THREE.Mesh(eyeGeo, eyeMat); eL.position.set(-0.34, 2.1, 0.78); g.add(eL);
+  const eR = new THREE.Mesh(eyeGeo, eyeMat); eR.position.set( 0.34, 2.1, 0.78); g.add(eR);
+  const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.18, 0.1), eyeMat);
+  mouth.position.set(0, 1.35, 0.78); g.add(mouth);
+  const glow = new THREE.PointLight(0xff5522, 0.85, 6);
+  glow.position.set(0, 2.1, 0.85); g.add(glow);
+  const cx = Math.cos(angle) * radius, cz = Math.sin(angle) * radius;
+  g.position.set(cx, 0, cz);
+  // face the center
+  g.rotation.y = -angle + Math.PI / 2;
+  return g;
+}
+{
+  const grp = new THREE.Group();
+  // 6 faces: 0, 60, 120, 180, 240, 300 → none at 90/270 so the path is clear
+  for (let i = 0; i < 6; i++) {
+    grp.add(makeStoneFace((i / 6) * Math.PI * 2, 5));
+  }
+  grp.position.set(-1, 0, 185);
+  scene.add(grp);
+}
+
+// ============================================================
+//  LANDMARK 8 — BURNING PIANO ON PEDESTAL  (z = 215, beside path)
+// ============================================================
+function makeBurningPiano(x, z) {
+  const g = new THREE.Group();
+  const ped = new THREE.Mesh(
+    new THREE.CylinderGeometry(2.1, 2.5, 1.6, 14),
+    new THREE.MeshStandardMaterial({ color: 0x2a2520, roughness: 0.9 })
+  );
+  ped.position.y = 0.8; g.add(ped);
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(3.5, 1.0, 1.7),
+    new THREE.MeshStandardMaterial({ color: 0x101010, roughness: 0.2, metalness: 0.6 })
+  );
+  body.position.y = 2.1; g.add(body);
+  const lid = new THREE.Mesh(
+    new THREE.BoxGeometry(3.5, 0.08, 1.7),
+    new THREE.MeshStandardMaterial({ color: 0x101010, roughness: 0.2, metalness: 0.6 })
+  );
+  lid.position.set(0, 2.7, -0.65);
+  lid.rotation.x = -0.65;
+  g.add(lid);
+  const keys = new THREE.Mesh(
+    new THREE.BoxGeometry(3.1, 0.1, 0.55),
+    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 })
+  );
+  keys.position.set(0, 2.65, 0.6); g.add(keys);
+  for (let k = -7; k <= 7; k++) {
+    if (k % 7 === 0 || k % 7 === 3 || k % 7 === -3) continue;
+    const bk = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.07, 0.32),
+      new THREE.MeshStandardMaterial({ color: 0x000000 }));
+    bk.position.set(k * 0.18, 2.72, 0.45);
+    g.add(bk);
+  }
+  // fire particles
+  const N = 160;
+  const positions = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) {
+    positions[i * 3]     = (Math.random() - 0.5) * 3.2;
+    positions[i * 3 + 1] = 2.7 + Math.random() * 2.6;
+    positions[i * 3 + 2] = (Math.random() - 0.5) * 1.6;
+  }
+  const fgeo = new THREE.BufferGeometry();
+  fgeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const fmat = new THREE.PointsMaterial({
+    color: 0xff5520, size: 0.38, transparent: true, opacity: 0.88,
+    blending: THREE.AdditiveBlending, depthWrite: false
+  });
+  const fire = new THREE.Points(fgeo, fmat);
+  g.add(fire);
+  const fL = new THREE.PointLight(0xff6622, 4.5, 22);
+  fL.position.set(0, 4, 0); g.add(fL);
+  g.position.set(x, 0, z);
+  animated.push({ type: 'fire', points: fire, light: fL });
+  return g;
+}
+scene.add(makeBurningPiano(5, 215));
+
+// ============================================================
+//  LANDMARK 9 — GIANT CLOCK ON THE GROUND  (z = 245, walk across)
+// ============================================================
+function makeGiantClock(x, z) {
+  const g = new THREE.Group();
+  const face = new THREE.Mesh(
+    new THREE.CircleGeometry(5.5, 56),
+    new THREE.MeshStandardMaterial({
+      color: 0xf6e6c2, emissive: 0x665544, emissiveIntensity: 0.32,
+      roughness: 0.7, side: THREE.DoubleSide
+    })
+  );
+  face.rotation.x = -Math.PI / 2;
+  face.position.y = 0.14;
+  g.add(face);
+  const rim = new THREE.Mesh(
+    new THREE.TorusGeometry(5.5, 0.28, 14, 56),
+    new THREE.MeshStandardMaterial({
+      color: 0xb8841f, emissive: 0x442200, emissiveIntensity: 0.45,
+      metalness: 0.7, roughness: 0.4
+    })
+  );
+  rim.rotation.x = -Math.PI / 2;
+  rim.position.y = 0.16; g.add(rim);
+  // markers
+  for (let h = 0; h < 12; h++) {
+    const ang = (h / 12) * Math.PI * 2;
+    const mark = new THREE.Mesh(
+      new THREE.BoxGeometry(0.22, 0.07, h % 3 === 0 ? 1.0 : 0.55),
+      new THREE.MeshStandardMaterial({ color: 0x222222 })
+    );
+    mark.position.set(Math.cos(ang) * 4.7, 0.18, Math.sin(ang) * 4.7);
+    mark.rotation.y = -ang;
+    g.add(mark);
+  }
+  // hour hand pivot
+  const hourPivot = new THREE.Group();
+  const hourBlade = new THREE.Mesh(
+    new THREE.BoxGeometry(0.28, 0.09, 3.2),
+    new THREE.MeshStandardMaterial({ color: 0x111111 })
+  );
+  hourBlade.position.set(0, 0.18, 1.5);
+  hourPivot.add(hourBlade);
+  g.add(hourPivot);
+  // minute hand pivot
+  const minutePivot = new THREE.Group();
+  const minBlade = new THREE.Mesh(
+    new THREE.BoxGeometry(0.20, 0.09, 4.5),
+    new THREE.MeshStandardMaterial({ color: 0x222222 })
+  );
+  minBlade.position.set(0, 0.18, 2.2);
+  minutePivot.add(minBlade);
+  g.add(minutePivot);
+  const cap = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.32, 0.32, 0.25, 14),
+    new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.75 })
+  );
+  cap.position.y = 0.28; g.add(cap);
+  g.position.set(x, 0, z);
+  animated.push({ type: 'clock', hour: hourPivot, minute: minutePivot });
+  return g;
+}
+scene.add(makeGiantClock(0, 245));
+
+// ============================================================
+//  LANDMARK 10 — FLOATING GOLDEN DOORWAY  (z = 275, walk through)
+// ============================================================
+function makeFloatingDoor(x, z) {
+  const g = new THREE.Group();
+  const goldMat = new THREE.MeshStandardMaterial({
+    color: 0xddaa44, emissive: 0xaa6622, emissiveIntensity: 0.5,
+    metalness: 0.75, roughness: 0.3
+  });
+  const fL = new THREE.Mesh(new THREE.BoxGeometry(0.3, 5.2, 0.3), goldMat);
+  fL.position.set(-1.7, 2.6, 0); g.add(fL);
+  const fR = fL.clone(); fR.position.x = 1.7; g.add(fR);
+  const fT = new THREE.Mesh(new THREE.BoxGeometry(3.7, 0.32, 0.3), goldMat);
+  fT.position.set(0, 5.25, 0); g.add(fT);
+  const pane = new THREE.Mesh(
+    new THREE.PlaneGeometry(3.1, 4.9),
+    new THREE.MeshBasicMaterial({
+      color: 0xffeebb, transparent: true, opacity: 0.32,
+      side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false
+    })
+  );
+  pane.position.set(0, 2.6, 0); g.add(pane);
+  const lt = new THREE.PointLight(0xffcc66, 3.2, 22);
+  lt.position.set(0, 2.6, 0); g.add(lt);
+
+  // a small bird perched on top, for memorability
+  const bird = new THREE.Group();
+  const birdBody = new THREE.Mesh(
+    new THREE.SphereGeometry(0.22, 12, 10),
+    new THREE.MeshStandardMaterial({ color: 0x223344, roughness: 0.7 })
+  );
+  bird.add(birdBody);
+  const birdHead = new THREE.Mesh(
+    new THREE.SphereGeometry(0.14, 10, 8),
+    new THREE.MeshStandardMaterial({ color: 0x223344, roughness: 0.7 })
+  );
+  birdHead.position.set(0, 0.18, 0.22);
+  bird.add(birdHead);
+  const beak = new THREE.Mesh(
+    new THREE.ConeGeometry(0.05, 0.18, 6),
+    new THREE.MeshStandardMaterial({ color: 0xffaa22 })
+  );
+  beak.position.set(0, 0.18, 0.4);
+  beak.rotation.x = Math.PI / 2;
+  bird.add(beak);
+  bird.position.set(0.6, 5.55, 0);
+  g.add(bird);
+
+  g.position.set(x, 0.6, z);
+  animated.push({ type: 'door', mesh: g, baseY: 0.6 });
+  return g;
+}
+scene.add(makeFloatingDoor(0, 275));
+
+// ============================================================
+//  LANDMARK 11 — CRYSTAL DOME (END)  (z = 290)
+// ============================================================
+function makeCrystalDome(x, z) {
+  const g = new THREE.Group();
+  const dome = new THREE.Mesh(
+    new THREE.SphereGeometry(5.2, 36, 18, 0, Math.PI * 2, 0, Math.PI / 2),
+    new THREE.MeshStandardMaterial({
+      color: 0xffeeff, transparent: true, opacity: 0.45,
+      emissive: 0x445588, emissiveIntensity: 0.4,
+      roughness: 0.1, metalness: 0.25, side: THREE.DoubleSide
+    })
+  );
+  g.add(dome);
+  // ring of colored crystals
+  for (let i = 0; i < 9; i++) {
+    const ang = (i / 9) * Math.PI * 2;
+    const crystal = new THREE.Mesh(
+      new THREE.ConeGeometry(0.28 + Math.random() * 0.2, 1.4 + Math.random() * 1.6, 6),
+      new THREE.MeshStandardMaterial({
+        color: new THREE.Color().setHSL(i / 9, 0.85, 0.6),
+        emissive: new THREE.Color().setHSL(i / 9, 0.95, 0.4),
+        emissiveIntensity: 0.85, roughness: 0.2, metalness: 0.5
+      })
+    );
+    crystal.position.set(Math.cos(ang) * 1.7, 1.0, Math.sin(ang) * 1.7);
+    g.add(crystal);
+  }
+  // levitating central gem
+  const center = new THREE.Mesh(
+    new THREE.OctahedronGeometry(1.05, 0),
+    new THREE.MeshStandardMaterial({
+      color: 0xffffff, emissive: 0xaaaaff, emissiveIntensity: 1.6,
+      roughness: 0.05, metalness: 0.7
+    })
+  );
+  center.position.y = 2.7;
+  g.add(center);
+  const lt = new THREE.PointLight(0xffffff, 3.5, 28);
+  lt.position.y = 2.7; g.add(lt);
+  g.position.set(x, 0, z);
+  animated.push({ type: 'dome', center });
+  return g;
+}
+scene.add(makeCrystalDome(0, 290));
+
+// ============================================================
+//  CONTROLS / MOVEMENT / OVERLAY
+// ============================================================
+const controls = new PointerLockControls(camera, renderer.domElement);
+const overlay = document.getElementById('overlay');
+const ending = document.getElementById('ending');
+const hud = document.getElementById('hud');
+
+// face the trail (which goes in +z direction)
+camera.rotation.set(0, Math.PI, 0);
+camera.position.set(0, 1.7, -4);
+
+overlay.addEventListener('click', () => controls.lock());
+controls.addEventListener('lock', () => overlay.classList.add('hidden'));
+controls.addEventListener('unlock', () => {
+  if (!ended) overlay.classList.remove('hidden');
+});
+
+const keys = Object.create(null);
+addEventListener('keydown', (e) => { keys[e.code] = true; });
+addEventListener('keyup',   (e) => { keys[e.code] = false; });
+
+const velocity = new THREE.Vector3();
+const dirVec = new THREE.Vector3();
+const SPEED = 42;
+const DAMP = 8;
+
+let ended = false;
+
+// HUD prompts triggered as the player passes z markers
+const hudPrompts = [
+  { z:   3, text: 'walk forward' },
+  { z:  18, text: 'mark the gate' },
+  { z:  38, text: 'the eye watched you pass' },
+  { z:  58, text: 'remember the pink upside-down forest' },
+  { z:  90, text: 'remember the blue mushrooms' },
+  { z: 120, text: 'beneath the whale\'s ribs' },
+  { z: 152, text: 'water that climbs' },
+  { z: 180, text: 'the watchers in stone' },
+  { z: 212, text: 'a piano on fire' },
+  { z: 242, text: 'time underfoot' },
+  { z: 272, text: 'a door and a small black bird' },
+];
+const shownPrompts = new Set();
+function showHud(text) {
+  hud.textContent = text;
+  hud.style.opacity = '0.7';
+  clearTimeout(showHud._t);
+  showHud._t = setTimeout(() => { hud.style.opacity = '0'; }, 4500);
+}
+
+// ============================================================
+//  ANIMATION LOOP
+// ============================================================
+const clock = new THREE.Clock();
+function tick() {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t  = clock.elapsedTime;
+
+  // movement
+  if (controls.isLocked && !ended) {
+    velocity.x -= velocity.x * DAMP * dt;
+    velocity.z -= velocity.z * DAMP * dt;
+    dirVec.x = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0);
+    dirVec.z = (keys.KeyW || keys.ArrowUp    ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0);
+    if (dirVec.lengthSq() > 0) dirVec.normalize();
+    velocity.x += dirVec.x * SPEED * dt;
+    velocity.z += dirVec.z * SPEED * dt;
+    controls.moveRight(velocity.x * dt);
+    controls.moveForward(velocity.z * dt);
+    // simple bounds
+    camera.position.y = 1.7 + Math.sin(t * 6) * 0.05 * Math.min(1, velocity.lengthSq() / 4);
+    camera.position.x = THREE.MathUtils.clamp(camera.position.x, -55, 55);
+    if (camera.position.z < -8) camera.position.z = -8;
+  }
+
+  // hud prompts as we move forward
+  const pz = camera.position.z;
+  for (const h of hudPrompts) {
+    if (!shownPrompts.has(h.z) && pz > h.z) {
+      shownPrompts.add(h.z);
+      showHud(h.text);
+    }
+  }
+
+  // arrival check
+  if (!ended && pz > 287) {
+    ended = true;
+    ending.classList.add('show');
+    hud.style.opacity = '0';
+  }
+
+  // animate landmarks
+  for (const a of animated) {
+    if (a.type === 'lantern') {
+      a.mesh.position.y = a.baseY + Math.sin(t * 1.5 + a.phase) * 0.18;
+      a.light.intensity = 1.4 + Math.sin(t * 5 + a.phase) * 0.35 + Math.sin(t * 11 + a.phase) * 0.15;
+    } else if (a.type === 'eye') {
+      a.mesh.position.y = a.baseY + Math.sin(t * 0.7) * 0.45;
+      a.mesh.rotation.y = Math.sin(t * 0.4) * 0.4;
+      // iris tracks the player
+      const target = new THREE.Vector3();
+      camera.getWorldPosition(target);
+      a.irisGroup.lookAt(target);
+    } else if (a.type === 'mushroom') {
+      a.light.intensity = a.baseInt + Math.sin(t * 1.3 + a.phase) * 0.45;
+    } else if (a.type === 'upfall') {
+      const pos = a.points.geometry.attributes.position.array;
+      const n = a.velocities.length / 3;
+      for (let i = 0; i < n; i++) {
+        pos[i*3]     += a.velocities[i*3]     * dt;
+        pos[i*3 + 1] += a.velocities[i*3 + 1] * dt;
+        pos[i*3 + 2] += a.velocities[i*3 + 2] * dt;
+        if (pos[i*3 + 1] > 14) {
+          const ang = Math.random() * Math.PI * 2;
+          const r = Math.random() * 1.6;
+          pos[i*3]     = Math.cos(ang) * r;
+          pos[i*3 + 1] = 0;
+          pos[i*3 + 2] = Math.sin(ang) * r;
+        }
+      }
+      a.points.geometry.attributes.position.needsUpdate = true;
+    } else if (a.type === 'fire') {
+      const pos = a.points.geometry.attributes.position.array;
+      const n = pos.length / 3;
+      for (let i = 0; i < n; i++) {
+        pos[i*3 + 1] += (1.6 + Math.random() * 0.5) * dt;
+        pos[i*3]     += (Math.random() - 0.5) * dt * 0.4;
+        pos[i*3 + 2] += (Math.random() - 0.5) * dt * 0.4;
+        if (pos[i*3 + 1] > 6.4) {
+          pos[i*3]     = (Math.random() - 0.5) * 3.2;
+          pos[i*3 + 1] = 2.7;
+          pos[i*3 + 2] = (Math.random() - 0.5) * 1.6;
+        }
+      }
+      a.points.geometry.attributes.position.needsUpdate = true;
+      a.light.intensity = 4.0 + Math.sin(t * 15) * 0.7 + Math.sin(t * 7.3) * 0.4;
+    } else if (a.type === 'clock') {
+      a.minute.rotation.y -= dt * 0.45;
+      a.hour.rotation.y   -= dt * 0.04;
+    } else if (a.type === 'door') {
+      a.mesh.position.y = a.baseY + Math.sin(t * 0.7) * 0.22;
+      a.mesh.rotation.y = Math.sin(t * 0.3) * 0.04;
+    } else if (a.type === 'dome') {
+      a.center.rotation.y += dt * 0.6;
+      a.center.rotation.x += dt * 0.25;
+      a.center.position.y = 2.7 + Math.sin(t * 1.2) * 0.18;
+    }
+  }
+
+  renderer.render(scene, camera);
+  requestAnimationFrame(tick);
+}
+tick();
+</script>
+</body>
+</html>

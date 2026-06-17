@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Coalescent Drift Field — a procedural world from DNA</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0e13; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #dfe7f2; }
+  #app { position: fixed; inset: 0; }
+  canvas { display: block; }
+
+  .panel {
+    position: fixed; background: rgba(10,14,20,0.72); border: 1px solid rgba(120,160,220,0.25);
+    border-radius: 10px; padding: 12px 14px; backdrop-filter: blur(8px); pointer-events: none;
+    box-shadow: 0 6px 30px rgba(0,0,0,0.45);
+  }
+  #hud { left: 14px; bottom: 14px; width: 290px; }
+  #title { left: 14px; top: 14px; max-width: 360px; font-size: 12px; line-height: 1.5; }
+  #title h1 { font-size: 14px; margin: 0 0 6px 0; letter-spacing: 0.4px; color: #9fd0ff; }
+  #title p { margin: 4px 0; color: #aebbcf; }
+  #title b { color: #e9eefb; }
+
+  .biome { font-size: 17px; font-weight: 700; color: #fff; letter-spacing: 0.3px; margin-bottom: 2px; }
+  .sub { font-size: 11px; color: #8da0bd; margin-bottom: 8px; }
+  .genes { display: grid; grid-template-columns: 70px 1fr 38px; gap: 4px 8px; align-items: center; font-size: 11px; }
+  .gene-name { color: #9fb0c9; text-align: right; }
+  .bar { height: 9px; border-radius: 5px; background: rgba(255,255,255,0.08); overflow: hidden; }
+  .bar > i { display: block; height: 100%; border-radius: 5px; }
+  .gene-val { color: #cfe; text-align: right; font-variant-numeric: tabular-nums; }
+
+  #divergence { margin-top: 10px; padding-top: 9px; border-top: 1px solid rgba(120,160,220,0.18); font-size: 11px; color: #b9c6db; }
+  #divergence .row { display: flex; justify-content: space-between; }
+  #divergence b { color: #ffd479; font-variant-numeric: tabular-nums; }
+  #divergence .hint { color: #7f90ad; margin-top: 4px; font-size: 10px; }
+
+  #crosshair { position: fixed; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px;
+    border-radius: 50%; background: rgba(255,255,255,0.5); pointer-events: none; }
+  #click2start {
+    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: rgba(6,9,14,0.55); backdrop-filter: blur(3px); cursor: pointer; z-index: 5;
+  }
+  #click2start div { text-align: center; }
+  #click2start .big { font-size: 22px; color: #cfe3ff; margin-bottom: 10px; letter-spacing: 0.5px; }
+  #click2start .small { font-size: 13px; color: #93a6c4; line-height: 1.7; }
+  kbd { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.18); border-radius: 4px; padding: 1px 6px; color: #e6eefc; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<div class="panel" id="title">
+  <h1>◈ COALESCENT DRIFT FIELD</h1>
+  <p>Every location carries a <b>genome</b> sampled from a fractional-Brownian vector field. Spatial distance behaves like <b>evolutionary divergence time</b>: neighbors share their low-frequency genes (similar, not identical); distant places have drifted across <i>every</i> scale (utterly foreign).</p>
+  <p>Topography, palette, and life are all <b>derived</b> from the local genome. Stateless · deterministic · O(1) per point.</p>
+</div>
+
+<div class="panel" id="hud">
+  <div class="biome" id="biomeName">—</div>
+  <div class="sub" id="coords">scanning…</div>
+  <div class="genes" id="genes"></div>
+  <div id="divergence">
+    <div class="row"><span>Spatial Δ from pin</span><b id="dSpace">—</b></div>
+    <div class="row"><span>Genetic Δ from pin</span><b id="dGene">—</b></div>
+    <div class="hint" id="pinHint">Press <kbd>P</kbd> to pin a reference here, then walk away.</div>
+  </div>
+</div>
+
+<div id="crosshair"></div>
+<div id="click2start"><div>
+  <div class="big">▶ Click to explore</div>
+  <div class="small">
+    <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move &nbsp;·&nbsp; mouse look<br/>
+    <kbd>Space</kbd> rise &nbsp;·&nbsp; <kbd>Shift</kbd> boost &nbsp;·&nbsp; <kbd>C</kbd> descend<br/>
+    <kbd>P</kbd> pin a genetic reference &nbsp;·&nbsp; <kbd>Esc</kbd> release mouse
+  </div>
+</div></div>
+
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* ============================================================================
+   1. THE ALGORITHM — Coalescent Drift Field
+   ----------------------------------------------------------------------------
+   A genome G(p) is a vector of GENES genes. Each gene is a fractional-Brownian
+   noise field with its own seed. fBm is self-similar across scales, so the
+   expected squared difference between two genomes grows with the distance
+   between the points: E[||G(a)-G(b)||^2] ~ |a-b|^(2H). That single property is
+   what makes "near = similar, far = foreign" emerge for free — and it is
+   stateless, deterministic, and O(1) in world size (a fixed number of octaves).
+   Everything else (height, color, life) is a pure function of G.
+   ========================================================================== */
+
+// integer hash -> [0,1)  (deterministic, no trig precision issues)
+function hash2(ix, iy, seed) {
+  let h = Math.imul(ix | 0, 374761393) ^ Math.imul(iy | 0, 668265263) ^ Math.imul(seed | 0, 2246822519);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+
+function valueNoise(x, y, seed) {
+  const x0 = Math.floor(x), y0 = Math.floor(y);
+  const fx = x - x0, fy = y - y0;
+  const ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy);
+  const a = hash2(x0, y0, seed),     b = hash2(x0 + 1, y0, seed);
+  const c = hash2(x0, y0 + 1, seed), d = hash2(x0 + 1, y0 + 1, seed);
+  return a * (1 - ux) * (1 - uy) + b * ux * (1 - uy) + c * (1 - ux) * uy + d * ux * uy;
+}
+
+// fractional-Brownian sum -> ~[0,1]
+function fbm(x, y, seed, oct, lac, gain, freq) {
+  let amp = 1, sum = 0, norm = 0, f = freq;
+  for (let o = 0; o < oct; o++) {
+    sum += amp * valueNoise(x * f, y * f, seed + o * 1013);
+    norm += amp; amp *= gain; f *= lac;
+  }
+  return sum / norm;
+}
+
+// ridged multifractal -> sharp mountain ridges, ~[0,1]
+function ridged(x, y, seed, oct, freq) {
+  let amp = 1, sum = 0, norm = 0, f = freq;
+  for (let o = 0; o < oct; o++) {
+    let n = valueNoise(x * f, y * f, seed + o * 2017);
+    n = 1 - Math.abs(2 * n - 1);
+    n *= n;
+    sum += amp * n; norm += amp; amp *= 0.5; f *= 2;
+  }
+  return sum / norm;
+}
+
+const GENES = 6;                 // temp, humidity, mineral, vegetation, uplift, exotic
+const REGION = 760;              // wavelength of the largest gene (defines region size)
+const GENE_SEEDS = [101, 211, 337, 449, 577, 691];
+
+// G(p): the local genome. The fBm here is what creates the drift property.
+function genome(wx, wy) {
+  const g = new Array(GENES);
+  for (let i = 0; i < GENES; i++) {
+    // 4 octaves: octave 0 is the "regional lineage", higher octaves are accumulated mutations
+    g[i] = fbm(wx / REGION, wy / REGION, GENE_SEEDS[i], 4, 2.0, 0.55, 1.0);
+  }
+  return g;
+}
+
+/* ---- derivations: everything below is a pure function of the genome ---- */
+
+const SEA = 3.0;
+
+function terrainHeight(wx, wz) {
+  const g = genome(wx, wz);
+  const uplift = g[4];        // gene 4 = tectonic uplift
+  const rough  = g[2];        // gene 2 = mineral/roughness
+  // gentle continental rolling
+  const base = (fbm(wx, wz, 7, 5, 2.0, 0.5, 1 / 260) - 0.45) * 34;
+  // mountains, gated by the uplift gene so ranges are a regional trait
+  const upl = Math.pow(Math.max(0, uplift - 0.32) / 0.68, 1.6);
+  const mtn = ridged(wx, wz, 11, 6, 1 / 190) * (200 + 180 * rough) * upl;
+  // fine surface detail
+  const detail = (fbm(wx, wz, 23, 3, 2.0, 0.5, 1 / 34) - 0.5) * 6 * (0.4 + rough);
+  return base + mtn + detail;
+}
+
+function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+function hsl2rgb(h, s, l) {
+  h = ((h % 1) + 1) % 1;
+  const a = s * Math.min(l, 1 - l);
+  const f = n => { const k = (n + h * 12) % 12; return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)); };
+  return [f(0), f(8), f(4)];
+}
+
+// biome surface color from genome + elevation + slope
+function biomeColor(g, h, slope, out) {
+  const temp = g[0], hum = g[1], mineral = g[2], veg = g[3], exotic = g[5];
+
+  // base ground hue: warm-dry tan -> lush green -> cold teal
+  let hue;
+  if (temp > 0.5) hue = lerp(0.12, 0.31, hum);
+  else            hue = lerp(0.45, 0.31, hum) - (0.5 - temp) * 0.06;
+  // exotic gene pushes some lineages into alien violets / magentas
+  hue += exotic * exotic * 0.55;
+
+  let sat = clamp(0.30 + 0.42 * hum + 0.30 * exotic - 0.18 * (1 - veg), 0.06, 0.95);
+  let lig = clamp(0.30 + 0.16 * (1 - hum), 0.14, 0.6);
+  lig += clamp((h - SEA) / 520, 0, 0.16);          // higher -> lighter
+
+  let [r, gr, b] = hsl2rgb(hue, sat, lig);
+
+  // rock exposed on steep slopes / mineral-rich lineages
+  const rock = clamp(slope * 2.3 - 0.35 + mineral * 0.25, 0, 1);
+  const rk = hsl2rgb(0.07 + mineral * 0.05, 0.10 + mineral * 0.22, 0.32 + 0.12 * mineral);
+  r = lerp(r, rk[0], rock); gr = lerp(gr, rk[1], rock); b = lerp(b, rk[2], rock);
+
+  // snow — snowline lower in cold lineages
+  const snowline = lerp(70, 250, temp);
+  if (h > snowline) {
+    const t = clamp((h - snowline) / 45, 0, 1) * (1 - rock * 0.6);
+    r = lerp(r, 0.95, t); gr = lerp(gr, 0.96, t); b = lerp(b, 0.99, t);
+  }
+  // beach / sand near the waterline
+  if (h < SEA + 2.2 && h > SEA - 4 && rock < 0.5) {
+    const t = (1 - Math.abs(h - SEA) / 4) * 0.8;
+    r = lerp(r, 0.82, t); gr = lerp(gr, 0.74, t); b = lerp(b, 0.55, t);
+  }
+  out[0] = r; out[1] = gr; out[2] = b;
+}
+
+// procedural biome name so each region reads as a distinct, nameable place
+const ADJ_T = ['Frozen', 'Cold', 'Mild', 'Warm', 'Scorched'];
+const ADJ_H = ['Arid', 'Dry', 'Verdant', 'Lush', 'Drowned'];
+const NOUN_M = ['Flats', 'Steppe', 'Highlands', 'Ridges', 'Spires'];
+const EX = ['', '', 'Glass ', 'Iridescent ', 'Singing '];
+const SYLL = ['ka','tor','vel','un','dra','sho','mi','queth','ral','ze','obi','nu','phel','aro','dwin'];
+function biomeName(g, wx, wz) {
+  const t = ADJ_T[Math.min(4, (g[0] * 5) | 0)];
+  const hh = ADJ_H[Math.min(4, (g[1] * 5) | 0)];
+  const n = NOUN_M[Math.min(4, (g[4] * 5) | 0)];
+  const ex = EX[Math.min(4, (g[5] * 5) | 0)];
+  // a stable proper-noun for the region cell
+  const rx = Math.floor(wx / REGION), rz = Math.floor(wz / REGION);
+  let s = '';
+  for (let i = 0; i < 3; i++) s += SYLL[(hash2(rx, rz, 900 + i) * SYLL.length) | 0];
+  const name = s.charAt(0).toUpperCase() + s.slice(1);
+  return `${ex}${t} ${hh} ${n} of ${name}`;
+}
+
+/* ============================================================================
+   2. THREE.JS SCENE
+   ========================================================================== */
+
+const app = document.getElementById('app');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+app.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const SKY = new THREE.Color(0x8fb4dc);
+scene.background = SKY;
+scene.fog = new THREE.Fog(SKY, 260, 760);
+
+const camera = new THREE.PerspectiveCamera(68, window.innerWidth / window.innerHeight, 0.5, 2200);
+camera.position.set(0, 60, 0);
+
+scene.add(new THREE.HemisphereLight(0xcfe2ff, 0x4a4034, 0.9));
+const sun = new THREE.DirectionalLight(0xfff0d8, 1.25);
+sun.position.set(-0.5, 1, 0.35).multiplyScalar(300);
+scene.add(sun);
+scene.add(new THREE.AmbientLight(0x404a5c, 0.35));
+
+// ---- terrain: a grid that re-centers under the camera (seamless, infinite) ----
+const SPAN = 900, GRIDN = 184, CELL = SPAN / GRIDN;
+const VN = GRIDN + 1;
+const tPos = new Float32Array(VN * VN * 3);
+const tCol = new Float32Array(VN * VN * 3);
+const localXZ = new Float32Array(VN * VN * 2);
+const indices = [];
+for (let j = 0; j < VN; j++) {
+  for (let i = 0; i < VN; i++) {
+    const k = j * VN + i;
+    localXZ[k * 2] = (i / GRIDN - 0.5) * SPAN;
+    localXZ[k * 2 + 1] = (j / GRIDN - 0.5) * SPAN;
+    tPos[k * 3] = localXZ[k * 2];
+    tPos[k * 3 + 2] = localXZ[k * 2 + 1];
+  }
+}
+for (let j = 0; j < GRIDN; j++) {
+  for (let i = 0; i < GRIDN; i++) {
+    const a = j * VN + i, b = a + 1, c = a + VN, d = c + 1;
+    indices.push(a, c, b, b, c, d);
+  }
+}
+const terrainGeo = new THREE.BufferGeometry();
+terrainGeo.setAttribute('position', new THREE.BufferAttribute(tPos, 3));
+terrainGeo.setAttribute('color', new THREE.BufferAttribute(tCol, 3));
+terrainGeo.setIndex(indices);
+const terrain = new THREE.Mesh(
+  terrainGeo,
+  new THREE.MeshLambertMaterial({ vertexColors: true })
+);
+scene.add(terrain);
+
+const heightCache = new Float32Array(VN * VN);
+
+function rebuildTerrain(originX, originZ) {
+  terrain.position.set(originX, 0, originZ);
+  // pass 1: heights
+  for (let k = 0; k < VN * VN; k++) {
+    heightCache[k] = terrainHeight(originX + localXZ[k * 2], originZ + localXZ[k * 2 + 1]);
+  }
+  // pass 2: positions + colors (slope via finite differences)
+  const col = [0, 0, 0];
+  for (let j = 0; j < VN; j++) {
+    for (let i = 0; i < VN; i++) {
+      const k = j * VN + i;
+      const h = heightCache[k];
+      tPos[k * 3 + 1] = h;
+      const hx = heightCache[j * VN + Math.min(VN - 1, i + 1)] - heightCache[j * VN + Math.max(0, i - 1)];
+      const hz = heightCache[Math.min(VN - 1, j + 1) * VN + i] - heightCache[Math.max(0, j - 1) * VN + i];
+      const slope = Math.min(1, Math.sqrt(hx * hx + hz * hz) / (CELL * 2));
+      const g = genome(originX + localXZ[k * 2], originZ + localXZ[k * 2 + 1]);
+      biomeColor(g, h, slope, col);
+      tCol[k * 3] = col[0]; tCol[k * 3 + 1] = col[1]; tCol[k * 3 + 2] = col[2];
+    }
+  }
+  terrainGeo.attributes.position.needsUpdate = true;
+  terrainGeo.attributes.color.needsUpdate = true;
+  terrainGeo.computeVertexNormals();
+  rebuildVegetation(originX, originZ);
+}
+
+// ---- water ----
+const water = new THREE.Mesh(
+  new THREE.PlaneGeometry(4000, 4000),
+  new THREE.MeshLambertMaterial({ color: 0x2f6f9e, transparent: true, opacity: 0.78 })
+);
+water.rotation.x = -Math.PI / 2;
+water.position.y = SEA;
+scene.add(water);
+
+// ---- life forms: instanced trees, rocks, crystals (placed from the genome) ----
+const MAXI = 7000;
+const dummy = new THREE.Object3D();
+
+const treeGeo = new THREE.ConeGeometry(1, 3.4, 6);
+treeGeo.translate(0, 1.7, 0);
+const rockGeo = new THREE.IcosahedronGeometry(1, 0);
+const crystalGeo = new THREE.OctahedronGeometry(1, 0);
+crystalGeo.translate(0, 1, 0);
+
+function makeInst(geo, mat) {
+  const m = new THREE.InstancedMesh(geo, mat, MAXI);
+  m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  m.count = 0;
+  scene.add(m);
+  return m;
+}
+const trees = makeInst(treeGeo, new THREE.MeshLambertMaterial({ vertexColors: false }));
+const rocks = makeInst(rockGeo, new THREE.MeshLambertMaterial());
+const crystals = makeInst(crystalGeo, new THREE.MeshLambertMaterial({ emissiveIntensity: 0.6 }));
+
+const VSPACE = 11;
+function rebuildVegetation(originX, originZ) {
+  let nt = 0, nr = 0, nc = 0;
+  const half = SPAN / 2 - VSPACE;
+  const gx0 = Math.floor((originX - half) / VSPACE);
+  const gx1 = Math.floor((originX + half) / VSPACE);
+  const gz0 = Math.floor((originZ - half) / VSPACE);
+  const gz1 = Math.floor((originZ + half) / VSPACE);
+  const col = new THREE.Color();
+  for (let gz = gz0; gz <= gz1; gz++) {
+    for (let gx = gx0; gx <= gx1; gx++) {
+      // stable jittered position per grid slot
+      const jx = hash2(gx, gz, 1) - 0.5, jz = hash2(gx, gz, 2) - 0.5;
+      const wx = (gx + 0.5 + jx * 0.9) * VSPACE;
+      const wz = (gz + 0.5 + jz * 0.9) * VSPACE;
+      const h = terrainHeight(wx, wz);
+      if (h < SEA + 0.8) continue;                       // no plants in water
+      const g = genome(wx, wz);
+      const temp = g[0], hum = g[1], mineral = g[2], veg = g[3], exotic = g[5];
+      const snowline = lerp(70, 250, temp);
+      if (h > snowline + 8) continue;                    // bare above snow
+
+      const roll = hash2(gx, gz, 3);
+      const density = clamp(0.15 + veg * 1.0 - Math.max(0, (h - snowline + 30) / 90), 0, 0.9);
+      if (roll > density) continue;
+
+      const sel = hash2(gx, gz, 4);
+      const s = 0.7 + hash2(gx, gz, 5) * 1.8;
+      dummy.position.set(wx, h, wz);
+      dummy.rotation.set(0, hash2(gx, gz, 6) * 6.283, 0);
+
+      if (exotic > 0.74 && sel > 0.45) {
+        // crystals — color from the exotic/mineral lineage
+        dummy.scale.set(s * 0.8, s * 1.8, s * 0.8);
+        dummy.updateMatrix();
+        if (nc < MAXI) {
+          crystals.setMatrixAt(nc, dummy.matrix);
+          col.setHSL((0.55 + exotic * 0.4) % 1, 0.8, 0.6);
+          crystals.setColorAt(nc, col);
+          nc++;
+        }
+      } else if (veg > 0.42 && sel > 0.32) {
+        // trees — foliage hue tinted by lineage
+        dummy.scale.set(s * (0.7 + hum * 0.5), s * (1 + veg * 0.8), s * (0.7 + hum * 0.5));
+        dummy.updateMatrix();
+        if (nt < MAXI) {
+          trees.setMatrixAt(nt, dummy.matrix);
+          let hue = lerp(0.33, 0.27, temp) + exotic * exotic * 0.5;
+          col.setHSL(((hue % 1) + 1) % 1, clamp(0.45 + hum * 0.3, 0.2, 0.95), clamp(0.22 + veg * 0.12, 0.12, 0.5));
+          trees.setColorAt(nt, col);
+          nt++;
+        }
+      } else {
+        // rocks
+        dummy.scale.set(s, s * (0.7 + hash2(gx, gz, 7) * 0.6), s);
+        dummy.updateMatrix();
+        if (nr < MAXI) {
+          rocks.setMatrixAt(nr, dummy.matrix);
+          col.setHSL(0.07 + mineral * 0.04, 0.12 + mineral * 0.2, 0.32 + mineral * 0.12);
+          rocks.setColorAt(nr, col);
+          nr++;
+        }
+      }
+    }
+  }
+  trees.count = nt; rocks.count = nr; crystals.count = nc;
+  trees.instanceMatrix.needsUpdate = true; rocks.instanceMatrix.needsUpdate = true; crystals.instanceMatrix.needsUpdate = true;
+  if (trees.instanceColor) trees.instanceColor.needsUpdate = true;
+  if (rocks.instanceColor) rocks.instanceColor.needsUpdate = true;
+  if (crystals.instanceColor) crystals.instanceColor.needsUpdate = true;
+}
+
+/* ============================================================================
+   3. CONTROLS — pointer-lock fly camera
+   ========================================================================== */
+
+const keys = {};
+let yaw = 0, pitch = -0.15, locked = false;
+const overlay = document.getElementById('click2start');
+
+renderer.domElement.addEventListener('click', () => renderer.domElement.requestPointerLock());
+document.addEventListener('pointerlockchange', () => {
+  locked = document.pointerLockElement === renderer.domElement;
+  overlay.style.display = locked ? 'none' : 'flex';
+});
+document.addEventListener('mousemove', e => {
+  if (!locked) return;
+  yaw   -= e.movementX * 0.0022;
+  pitch -= e.movementY * 0.0022;
+  pitch = clamp(pitch, -1.45, 1.45);
+});
+addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (e.code === 'KeyP') pinReference();
+});
+addEventListener('keyup', e => { keys[e.code] = false; });
+
+// genetic reference pin
+let pin = null;
+function pinReference() {
+  pin = { x: camera.position.x, z: camera.position.z, g: genome(camera.position.x, camera.position.z) };
+  document.getElementById('pinHint').textContent = 'Reference pinned. Drift away to watch genetic Δ grow with distance.';
+}
+
+/* ============================================================================
+   4. HUD
+   ========================================================================== */
+
+const geneNames = ['Temperature', 'Humidity', 'Mineral', 'Vegetation', 'Uplift', 'Exotic'];
+const geneHues  = [0.02, 0.55, 0.09, 0.33, 0.75, 0.83];
+const genesEl = document.getElementById('genes');
+const geneBars = [], geneVals = [];
+for (let i = 0; i < GENES; i++) {
+  const name = document.createElement('div'); name.className = 'gene-name'; name.textContent = geneNames[i];
+  const bar = document.createElement('div'); bar.className = 'bar';
+  const fill = document.createElement('i');
+  const [r, g, b] = hsl2rgb(geneHues[i], 0.7, 0.55);
+  fill.style.background = `rgb(${(r*255)|0},${(g*255)|0},${(b*255)|0})`;
+  bar.appendChild(fill);
+  const val = document.createElement('div'); val.className = 'gene-val';
+  genesEl.append(name, bar, val);
+  geneBars.push(fill); geneVals.push(val);
+}
+const biomeEl = document.getElementById('biomeName');
+const coordsEl = document.getElementById('coords');
+const dSpaceEl = document.getElementById('dSpace');
+const dGeneEl = document.getElementById('dGene');
+
+let hudTimer = 0;
+function updateHUD() {
+  const g = genome(camera.position.x, camera.position.z);
+  for (let i = 0; i < GENES; i++) {
+    geneBars[i].style.width = (g[i] * 100).toFixed(0) + '%';
+    geneVals[i].textContent = g[i].toFixed(2);
+  }
+  biomeEl.textContent = biomeName(g, camera.position.x, camera.position.z);
+  coordsEl.textContent = `x ${camera.position.x.toFixed(0)}  z ${camera.position.z.toFixed(0)}  ·  alt ${camera.position.y.toFixed(0)}`;
+  if (pin) {
+    const ds = Math.hypot(camera.position.x - pin.x, camera.position.z - pin.z);
+    let dg = 0; for (let i = 0; i < GENES; i++) { const d = g[i] - pin.g[i]; dg += d * d; }
+    dg = Math.sqrt(dg);
+    dSpaceEl.textContent = ds.toFixed(0) + ' m';
+    dGeneEl.textContent = dg.toFixed(3);
+  }
+}
+
+/* ============================================================================
+   5. MAIN LOOP
+   ========================================================================== */
+
+let lastOX = NaN, lastOZ = NaN;
+const clock = new THREE.Clock();
+const fwd = new THREE.Vector3(), right = new THREE.Vector3();
+
+function maybeRebuild() {
+  const ox = Math.round(camera.position.x / CELL) * CELL;
+  const oz = Math.round(camera.position.z / CELL) * CELL;
+  if (ox !== lastOX || oz !== lastOZ) {
+    rebuildTerrain(ox, oz);
+    lastOX = ox; lastOZ = oz;
+  }
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+
+  // orientation
+  camera.rotation.order = 'YXZ';
+  camera.rotation.y = yaw;
+  camera.rotation.x = pitch;
+
+  // movement
+  const boost = keys['ShiftLeft'] || keys['ShiftRight'] ? 3.2 : 1;
+  const speed = 46 * boost * dt;
+  fwd.set(-Math.sin(yaw), 0, -Math.cos(yaw));
+  right.set(Math.cos(yaw), 0, -Math.sin(yaw));
+  if (keys['KeyW']) camera.position.addScaledVector(fwd, speed);
+  if (keys['KeyS']) camera.position.addScaledVector(fwd, -speed);
+  if (keys['KeyD']) camera.position.addScaledVector(right, speed);
+  if (keys['KeyA']) camera.position.addScaledVector(right, -speed);
+  if (keys['Space']) camera.position.y += speed;
+  if (keys['KeyC']) camera.position.y -= speed;
+
+  // stay above ground
+  const ground = terrainHeight(camera.position.x, camera.position.z) + 2.2;
+  if (camera.position.y < ground) camera.position.y = ground;
+
+  water.position.x = camera.position.x;
+  water.position.z = camera.position.z;
+
+  maybeRebuild();
+
+  hudTimer += dt;
+  if (hudTimer > 0.1) { updateHUD(); hudTimer = 0; }
+
+  renderer.render(scene, camera);
+}
+
+// initial placement: drop the camera onto solid ground
+camera.position.set(120, 0, 120);
+camera.position.y = terrainHeight(120, 120) + 35;
+rebuildTerrain(0, 0);
+lastOX = 0; lastOZ = 0;
+animate();
+
+addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>

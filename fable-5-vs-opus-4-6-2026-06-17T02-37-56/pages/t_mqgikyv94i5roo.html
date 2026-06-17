@@ -1,0 +1,955 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The Way Home — a mnemonic trail walk</title>
+<!--
+  ════════════════════════════════════════════════════════════════════
+  DESIGNED BY INVERSION.
+  Instead of asking "what makes a trail memorable?", we asked
+  "what would guarantee a trail is FORGOTTEN?" — then removed it:
+
+  ✗ Sameness            → 6 distinct biome zones, each a different palette
+  ✗ Repetition          → every landmark appears exactly ONCE
+  ✗ Flatness            → grades, a stream dip, a ravine you cross on a log
+  ✗ Silence             → wind, water, birds, ravens, bone chimes, fire
+  ✗ No sequence         → 10 ordered loci (method of loci / mind palace)
+  ✗ No stakes           → a skull warning, a narrow log over a drop
+  ✗ No destination      → smoke on the horizon you walk toward (home fire)
+  ✗ Randomness          → seeded RNG: the trail is IDENTICAL every visit
+  ✗ Endlessness         → finite valley, walls rise, the walk concludes
+  ✗ Passivity           → you walk it yourself, first person, embodied
+  ════════════════════════════════════════════════════════════════════
+-->
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:Georgia,'Times New Roman',serif;}
+  #app{position:fixed;inset:0;}
+  canvas{display:block;}
+  .overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+    background:radial-gradient(ellipse at center,rgba(20,14,8,.88),rgba(5,3,2,.97));
+    color:#e8d5a8;z-index:20;text-align:center;cursor:pointer;}
+  .overlay .card{max-width:620px;padding:2em 2.4em;}
+  .overlay h1{font-size:2.6em;margin:.1em 0 .3em;color:#f3dfa6;letter-spacing:.06em;font-weight:normal;}
+  .overlay h1 .sub{display:block;font-size:.38em;color:#bda377;letter-spacing:.28em;text-transform:uppercase;margin-top:.7em;}
+  .overlay p{line-height:1.55;color:#cdb98c;font-size:1.02em;margin:.7em 0;}
+  .overlay .keys{margin-top:1.2em;font-size:.95em;color:#9c8a64;}
+  .overlay kbd{background:#2c2418;border:1px solid #5a4a30;border-radius:4px;padding:1px 7px;font-family:inherit;color:#e8d5a8;}
+  .overlay .go{margin-top:1.4em;font-size:1.1em;color:#f3dfa6;animation:pulse 2s infinite;}
+  @keyframes pulse{0%,100%{opacity:.55}50%{opacity:1}}
+  #endOverlay{display:none;cursor:default;}
+  #endOverlay ol{text-align:left;display:inline-block;margin:.8em auto;padding-left:1.4em;line-height:1.75;font-size:1.04em;color:#e8d5a8;}
+  #endOverlay li b{color:#f3dfa6;}
+  #endOverlay button{margin-top:1.1em;font:inherit;font-size:1em;color:#1c140a;background:#e8c878;
+    border:none;border-radius:6px;padding:.55em 1.6em;cursor:pointer;}
+  #hud{position:fixed;inset:0;pointer-events:none;z-index:10;}
+  #cross{position:absolute;left:50%;top:50%;width:5px;height:5px;margin:-2px;border-radius:50%;
+    background:rgba(255,245,220,.75);box-shadow:0 0 4px rgba(0,0,0,.7);}
+  #toast{position:absolute;left:50%;top:11%;transform:translateX(-50%);text-align:center;
+    opacity:0;transition:opacity .5s;max-width:80%;}
+  #toast .locus{font-size:.78em;letter-spacing:.3em;text-transform:uppercase;color:#ffd98a;text-shadow:0 1px 6px #000;}
+  #toast .name{font-size:1.9em;color:#fff3d6;text-shadow:0 2px 10px #000;margin:.12em 0;}
+  #toast .tip{font-size:.95em;font-style:italic;color:#ffe9b8;text-shadow:0 1px 6px #000;}
+  #barWrap{position:absolute;left:50%;bottom:26px;transform:translateX(-50%);width:min(420px,70vw);
+    height:6px;background:rgba(0,0,0,.45);border:1px solid rgba(255,230,180,.35);border-radius:4px;}
+  #bar{height:100%;width:0%;background:linear-gradient(90deg,#c99b4a,#ffd98a);border-radius:4px;transition:width .3s;}
+  #barLabel{position:absolute;left:50%;bottom:38px;transform:translateX(-50%);
+    font-size:.75em;letter-spacing:.22em;color:rgba(255,235,195,.8);text-shadow:0 1px 4px #000;text-transform:uppercase;}
+  #mute{position:absolute;right:16px;bottom:16px;font-size:.8em;color:rgba(255,235,195,.6);text-shadow:0 1px 4px #000;}
+</style>
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+</script>
+</head>
+<body>
+<div id="app"></div>
+
+<div id="hud">
+  <div id="cross"></div>
+  <div id="toast"><div class="locus"></div><div class="name"></div><div class="tip"></div></div>
+  <div id="barLabel">the way home</div>
+  <div id="barWrap"><div id="bar"></div></div>
+  <div id="mute">M — sound</div>
+</div>
+
+<div class="overlay" id="startOverlay">
+  <div class="card">
+    <h1>The Way Home<span class="sub">a mnemonic trail · the method of loci</span></h1>
+    <p>Before maps, before writing, before paper — a human being held an entire
+       journey in memory, or did not make it home. This valley is built the way
+       memory wants it: <b>ten landmarks, in order, each unlike any other.</b></p>
+    <p>Walk the trail once (about a minute). Name each landmark as you pass it.
+       Follow the smoke. When you arrive, try to walk it again with your eyes closed.</p>
+    <p class="keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk &nbsp;·&nbsp; mouse to look
+      &nbsp;·&nbsp; <kbd>Shift</kbd> hurry &nbsp;·&nbsp; <kbd>M</kbd> mute</p>
+    <p class="go">— click to set out —</p>
+  </div>
+</div>
+
+<div class="overlay" id="endOverlay">
+  <div class="card">
+    <h1>You are home.<span class="sub">the fire is lit</span></h1>
+    <p>Now the real walk begins — the one in your head. Close your eyes and pass them in order:</p>
+    <ol>
+      <li>🗿 <b>The Twin Watchers</b> — two stones guard the way in</li>
+      <li>🍎 <b>The Crooked Elder</b> — the bent tree heavy with red fruit</li>
+      <li>💧 <b>The Singing Ford</b> — stepping stones across cold water</li>
+      <li>💀 <b>The Skull Stake</b> — a warning where ravens circle</li>
+      <li>✨ <b>Glowmoss Hollow</b> — blue light beneath dark pines</li>
+      <li>🌉 <b>The Fallen Giant</b> — one log over the ravine</li>
+      <li>🪨 <b>The Three Cairns</b> — stacked by every traveler before you</li>
+      <li>🦴 <b>The Bone Chimes</b> — white birches that rattle in the wind</li>
+      <li>✋ <b>The Painted Wall</b> — the hands of those who walked first</li>
+      <li>🔥 <b>The Home Fire</b> — the smoke you followed</li>
+    </ol>
+    <p>Place a memory at each locus and it will wait there for you.<br>
+       The trail never changes. It is the same valley every time you return.</p>
+    <button id="againBtn">Walk it again</button>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* ───────────────────────── deterministic foundations ─────────────────────────
+   Inversion: a trail that is different on every visit cannot be memorized.
+   So everything — terrain, trees, rocks, grass — comes from a fixed seed.   */
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+const rng = mulberry32(20260611);
+
+function hash2(ix,iz){let n=(Math.imul(ix,374761393)+Math.imul(iz,668265263))|0;n=Math.imul(n^(n>>>13),1274126177);n^=n>>>16;return (n>>>0)/4294967296;}
+function vnoise(x,z){
+  const ix=Math.floor(x),iz=Math.floor(z),fx=x-ix,fz=z-iz;
+  const sx=fx*fx*(3-2*fx),sz=fz*fz*(3-2*fz);
+  const a=hash2(ix,iz),b=hash2(ix+1,iz),c=hash2(ix,iz+1),d=hash2(ix+1,iz+1);
+  return a+(b-a)*sx+(c-a)*sz+(a-b-c+d)*sx*sz;
+}
+function fbm(x,z){let v=0,amp=0.5,f=1;for(let i=0;i<4;i++){v+=amp*vnoise(x*f,z*f);amp*=0.5;f*=2.03;}return v;}
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const smoothstep=(e0,e1,x)=>{const t=clamp((x-e0)/(e1-e0),0,1);return t*t*(3-2*t);};
+
+/* ───────────────────────── the path ─────────────────────────
+   One winding spline, ~310 m. At 4.6 m/s that's roughly a one-minute walk. */
+const ctrl=[[0,14],[0,-12],[-14,-40],[-10,-72],[8,-98],[26,-122],[18,-152],[-2,-178],[-20,-204],[-12,-232],[6,-256],[10,-274]];
+const curve=new THREE.CatmullRomCurve3(ctrl.map(p=>new THREE.Vector3(p[0],0,p[1])),false,'centripetal',0.5);
+const NSAMP=720;
+const pts=curve.getSpacedPoints(NSAMP);           // NSAMP+1 evenly spaced points
+const L=curve.getLength();
+
+function baseTerrain(x,z){
+  return (fbm(x*0.018,z*0.018)-0.5)*9 + (fbm(x*0.07+9,z*0.07+9)-0.5)*2.2;
+}
+// the path's own elevation profile: terrain sampled along it, then heavily smoothed
+const pathY=pts.map(p=>baseTerrain(p.x,p.z));
+for(let pass=0;pass<3;pass++){
+  const src=pathY.slice();
+  for(let i=0;i<=NSAMP;i++){
+    let acc=0,n=0;
+    for(let j=-12;j<=12;j++){acc+=src[clamp(i+j,0,NSAMP)];n++;}
+    pathY[i]=acc/n;
+  }
+}
+function sampleAt(s){
+  const f=clamp(s/L,0,1)*NSAMP, i0=clamp(Math.floor(f),0,NSAMP-1), t=f-i0;
+  const a=pts[i0],b=pts[i0+1];
+  const x=a.x+(b.x-a.x)*t, z=a.z+(b.z-a.z)*t, y=pathY[i0]+(pathY[i0+1]-pathY[i0])*t;
+  const p0=pts[clamp(i0-1,0,NSAMP)],p1=pts[clamp(i0+2,0,NSAMP)];
+  let dx=p1.x-p0.x,dz=p1.z-p0.z;const dl=Math.hypot(dx,dz)||1;dx/=dl;dz/=dl;
+  return {x,y,z,dx,dz,px:-dz,pz:dx};   // (px,pz) = unit perpendicular (left side)
+}
+function nearestPath(x,z){
+  let bi=0,bd=Infinity;
+  for(let i=0;i<=NSAMP;i+=4){
+    const ddx=pts[i].x-x,ddz=pts[i].z-z,dd=ddx*ddx+ddz*ddz;
+    if(dd<bd){bd=dd;bi=i;}
+  }
+  for(let i=Math.max(0,bi-4);i<=Math.min(NSAMP,bi+4);i++){
+    const ddx=pts[i].x-x,ddz=pts[i].z-z,dd=ddx*ddx+ddz*ddz;
+    if(dd<bd){bd=dd;bi=i;}
+  }
+  return {d:Math.sqrt(bd), s:bi/NSAMP*L, y:pathY[bi]};
+}
+
+/* water + ravine features, fixed positions along the path */
+const streamS=0.26*L, ravS=0.56*L;
+const streamC=sampleAt(streamS), ravC=sampleAt(ravS);
+const waterY=streamC.y-0.62;
+const bridgeY=ravC.y+0.15;
+function relLine(x,z,C){     // coords relative to a line through C along its perpendicular
+  const dx=x-C.x,dz=z-C.z;
+  const a=dx*C.px+dz*C.pz;                       // along the feature
+  const wx=dx-a*C.px, wz=dz-a*C.pz;              // across it (≈ along the path)
+  return {a,w:Math.hypot(wx,wz)};
+}
+function groundInfo(x,z){
+  const np=nearestPath(x,z);
+  let h=baseTerrain(x,z);
+  h+=smoothstep(14,46,np.d)*13;                              // valley walls — the world is finite
+  const blend=1-smoothstep(2.2,7,np.d);                      // terrain melts into the trail bed
+  h=h*(1-blend)+np.y*blend;
+  h-=0.3*(1-smoothstep(0,1.9,np.d));                         // worn rut of ten thousand footsteps
+  const rs=relLine(x,z,streamC);
+  const carveS=1.6*Math.exp(-(rs.w/3)*(rs.w/3))*(1-smoothstep(20,32,Math.abs(rs.a)));
+  const rr=relLine(x,z,ravC);
+  const carveR=7.5*Math.exp(-(rr.w/4.2)*(rr.w/4.2))*(1-smoothstep(26,42,Math.abs(rr.a)));
+  h-=carveS+carveR;
+  return {h, d:np.d, s:np.s, carve:carveS+carveR};
+}
+
+/* ───────────────────────── renderer / scene ───────────────────────── */
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.toneMapping=THREE.ACESFilmicToneMapping;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const scene=new THREE.Scene();
+scene.fog=new THREE.Fog(0xeec896, 28, 170);
+
+const camera=new THREE.PerspectiveCamera(72,innerWidth/innerHeight,0.1,900);
+camera.rotation.order='YXZ';
+
+/* golden hour, always — one fixed, emotionally warm light to bind the memory */
+const hemi=new THREE.HemisphereLight(0xbcd4ee,0x6b5638,1.15); scene.add(hemi);
+const sun=new THREE.DirectionalLight(0xffd9a0,2.6);
+sun.castShadow=true;
+sun.shadow.mapSize.set(2048,2048);
+sun.shadow.camera.left=-55; sun.shadow.camera.right=55;
+sun.shadow.camera.top=55; sun.shadow.camera.bottom=-55;
+sun.shadow.camera.near=1; sun.shadow.camera.far=260;
+sun.shadow.bias=-0.0008;
+scene.add(sun); scene.add(sun.target);
+
+/* sky dome with vertex gradient */
+{
+  const g=new THREE.SphereGeometry(420,20,14);
+  const cols=[]; const top=new THREE.Color(0x86a8d8), hor=new THREE.Color(0xf6c98a);
+  const pa=g.attributes.position;
+  const c=new THREE.Color();
+  for(let i=0;i<pa.count;i++){
+    const t=clamp(pa.getY(i)/420,0,1);
+    c.copy(hor).lerp(top,Math.pow(t,0.62));
+    cols.push(c.r,c.g,c.b);
+  }
+  g.setAttribute('color',new THREE.Float32BufferAttribute(cols,3));
+  const sky=new THREE.Mesh(g,new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.BackSide,fog:false}));
+  scene.add(sky);
+}
+/* the sun itself — celestial navigation: it never moves */
+function radialTex(inner,outer){
+  const cv=document.createElement('canvas');cv.width=cv.height=128;
+  const cx=cv.getContext('2d');
+  const gr=cx.createRadialGradient(64,64,4,64,64,64);
+  gr.addColorStop(0,inner);gr.addColorStop(1,outer);
+  cx.fillStyle=gr;cx.fillRect(0,0,128,128);
+  return new THREE.CanvasTexture(cv);
+}
+{
+  const m=new THREE.SpriteMaterial({map:radialTex('rgba(255,244,214,1)','rgba(255,200,120,0)'),fog:false,transparent:true});
+  const sp=new THREE.Sprite(m); sp.position.set(230,150,70); sp.scale.set(130,130,1); scene.add(sp);
+}
+
+/* ───────────────────────── terrain mesh ───────────────────────── */
+const ZONES=[[0,0xd9b95f],[0.16,0x7fb257],[0.36,0x2f6e46],[0.50,0x8e8e90],[0.60,0xa3c87f],[0.78,0xb5764a],[1,0x8a5036]]
+  .map(([t,c])=>[t,new THREE.Color(c)]);
+function zoneColor(t,out){
+  t=clamp(t,0,1);
+  for(let i=0;i<ZONES.length-1;i++){
+    const a=ZONES[i],b=ZONES[i+1];
+    if(t<=b[0]){out.copy(a[1]).lerp(b[1],(t-a[0])/(b[0]-a[0]));return out;}
+  }
+  out.copy(ZONES[ZONES.length-1][1]);return out;
+}
+{
+  const geo=new THREE.PlaneGeometry(160,340,168,356);
+  geo.rotateX(-Math.PI/2);
+  geo.translate(3,0,-133);
+  const pa=geo.attributes.position;
+  const cols=new Float32Array(pa.count*3);
+  const c=new THREE.Color(), dirt=new THREE.Color(0x8a6a48), rock=new THREE.Color(0x6e6a66);
+  for(let i=0;i<pa.count;i++){
+    const x=pa.getX(i),z=pa.getZ(i);
+    const gi=groundInfo(x,z);
+    pa.setY(i,gi.h);
+    zoneColor(gi.s/L,c);
+    c.multiplyScalar(0.82+0.36*vnoise(x*0.33+5,z*0.33+5));
+    if(gi.carve>0.8) c.lerp(rock,clamp((gi.carve-0.8)/2.2,0,1));
+    if(gi.d<1.8) c.lerp(dirt,1-smoothstep(0.7,1.8,gi.d));
+    cols[i*3]=c.r;cols[i*3+1]=c.g;cols[i*3+2]=c.b;
+  }
+  geo.computeVertexNormals();
+  const na=geo.attributes.normal;
+  for(let i=0;i<pa.count;i++){            // slope-shading bakes a cheap ambient occlusion
+    const f=0.55+0.45*Math.max(0,na.getY(i));
+    cols[i*3]*=f;cols[i*3+1]*=f;cols[i*3+2]*=f;
+  }
+  geo.setAttribute('color',new THREE.BufferAttribute(cols,3));
+  const ground=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({vertexColors:true,roughness:1,metalness:0}));
+  ground.receiveShadow=true;
+  scene.add(ground);
+}
+
+/* stream water */
+let water;
+{
+  const g=new THREE.PlaneGeometry(64,8.5);
+  g.rotateX(-Math.PI/2);
+  water=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color:0x3f7fa0,transparent:true,opacity:0.78,roughness:0.12,metalness:0.2}));
+  water.rotation.y=Math.atan2(-streamC.pz,streamC.px);
+  water.position.set(streamC.x,waterY,streamC.z);
+  scene.add(water);
+}
+
+/* ───────────────────────── shared geometries/materials ───────────────────────── */
+const dummy=new THREE.Object3D();
+function makeInstanced(geom,mat,mats,colors){
+  const im=new THREE.InstancedMesh(geom,mat,mats.length);
+  mats.forEach((m,i)=>{
+    im.setMatrixAt(i,m);
+    if(colors) im.setColorAt(i,colors[i]);
+  });
+  im.castShadow=true;
+  if(im.instanceColor) im.instanceColor.needsUpdate=true;
+  scene.add(im);
+  return im;
+}
+function composed(x,y,z,ry,sx,sy,sz,tilt){
+  dummy.position.set(x,y,z);
+  dummy.rotation.set(tilt||0,ry||0,(tilt||0)*0.6);
+  dummy.scale.set(sx,sy,sz);
+  dummy.updateMatrix();
+  return dummy.matrix.clone();
+}
+
+/* ───────────────────────── vegetation & rock scatter ─────────────────────────
+   Each biome zone gets its own species mix — six rooms, six different walls.  */
+const bags={oakT:[],oakF:[],oakFc:[],conT:[],conF:[],birT:[],birF:[],deadT:[],rock:[],rockC:[],grass:[],grassC:[],reed:[],glowF:[]};
+const gcol=new THREE.Color();
+for(let i=0;i<1500;i++){
+  const t=rng();
+  const s=t*L;
+  const side=rng()<0.5?-1:1;
+  const lat=side*(3.2+rng()*14);
+  const sm=sampleAt(s);
+  const x=sm.x+sm.px*lat, z=sm.z+sm.pz*lat;
+  const gi=groundInfo(x,z);
+  if(gi.carve>0.5) continue;                 // never in the stream bed or the ravine
+  const y=gi.h;
+  const r=rng();
+  if(t>0.43 && t<0.49 && gi.d>2.0 && gi.d<11 && r<0.6){   // the hollow's glow comes first
+    bags.glowF.push(composed(x,y+0.22,z,rng()*6.28,1,0.8+rng()*0.7,1));
+    continue;
+  }
+  if(gi.d>2.0 && r<0.62){                    // grass everywhere off-trail
+    bags.grass.push(composed(x,y,z,rng()*6.28,1,0.7+rng()*0.9,1));
+    zoneColor(t,gcol); bags.grassC.push(gcol.clone().multiplyScalar(0.8+rng()*0.5));
+    continue;
+  }
+  if(gi.d<3.4) continue;                     // keep big things off the trail itself
+  if(t<0.16){                                // golden meadow: broad oaks
+    if(r<0.74){const sc=0.8+rng()*0.7;
+      bags.oakT.push(composed(x,y,z,rng()*6.28,sc,sc,sc,(rng()-0.5)*0.12));
+      bags.oakF.push(composed(x,y+3.2*sc,z,rng()*6.28,2.6*sc,2.0*sc,2.6*sc));
+      bags.oakFc.push(new THREE.Color(0x7d9a3e).offsetHSL(0,(rng()-0.5)*0.1,(rng()-0.5)*0.08));
+    } else bags.rock.push(composed(x,y,z,rng()*6.28,0.4+rng()*0.6,0.3+rng()*0.4,0.4+rng()*0.6)),bags.rockC.push(new THREE.Color(0x8d8579));
+  } else if(t<0.36){                         // lush stream valley
+    if(r<0.8){const sc=0.7+rng()*0.8;
+      bags.oakT.push(composed(x,y,z,rng()*6.28,sc,sc,sc,(rng()-0.5)*0.18));
+      bags.oakF.push(composed(x,y+3.2*sc,z,rng()*6.28,2.4*sc,2.4*sc,2.4*sc));
+      bags.oakFc.push(new THREE.Color(0x4f8f3a).offsetHSL(0,(rng()-0.5)*0.1,(rng()-0.5)*0.08));
+    }
+  } else if(t<0.50){                         // dark pine forest + the glowing hollow
+    if(t>0.43 && t<0.49 && gi.d<11 && r<0.55){
+      bags.glowF.push(composed(x,y+0.22,z,rng()*6.28,1,0.8+rng()*0.7,1));
+    } else if(r<0.8){const sc=0.9+rng()*0.9;
+      bags.conT.push(composed(x,y,z,rng()*6.28,sc,sc,sc));
+      bags.conF.push(composed(x,y+2.0*sc,z,rng()*6.28,1.7*sc,3.4*sc,1.7*sc));
+    }
+  } else if(t<0.60){                         // rocky ravine shoulder
+    if(r<0.62) bags.rock.push(composed(x,y,z,rng()*6.28,0.6+rng()*1.3,0.5+rng()*1.1,0.6+rng()*1.3)),bags.rockC.push(new THREE.Color(0x807c78).offsetHSL(0,0,(rng()-0.5)*0.1));
+    else {const sc=0.8+rng()*0.6;
+      bags.conT.push(composed(x,y,z,rng()*6.28,sc,sc,sc));
+      bags.conF.push(composed(x,y+2.0*sc,z,rng()*6.28,1.5*sc,3.0*sc,1.5*sc));}
+  } else if(t<0.78){                         // white birch grove
+    if(r<0.85){const sc=0.8+rng()*0.7;
+      bags.birT.push(composed(x,y,z,rng()*6.28,sc,sc,sc,(rng()-0.5)*0.1));
+      bags.birF.push(composed(x,y+4.4*sc,z,rng()*6.28,1.8*sc,1.5*sc,1.8*sc));}
+  } else {                                   // red ochre approach: dead trees + rock
+    if(r<0.4){const sc=0.7+rng()*0.8;
+      bags.deadT.push(composed(x,y,z,rng()*6.28,sc,sc,sc,(rng()-0.5)*0.4));}
+    else bags.rock.push(composed(x,y,z,rng()*6.28,0.5+rng()*1.0,0.4+rng()*0.9,0.5+rng()*1.0)),bags.rockC.push(new THREE.Color(0x96604a).offsetHSL(0,0,(rng()-0.5)*0.1));
+  }
+}
+/* reeds along the stream banks */
+for(let i=0;i<90;i++){
+  const a=(rng()<0.5?-1:1)*(3.5+rng()*18);
+  const w=(rng()<0.5?-1:1)*(2.0+rng()*2.6);
+  const x=streamC.x+streamC.px*a+streamC.dx*w;
+  const z=streamC.z+streamC.pz*a+streamC.dz*w;
+  bags.reed.push(composed(x,groundInfo(x,z).h,z,rng()*6.28,1,0.8+rng()*0.8,1,(rng()-0.5)*0.25));
+}
+
+const trunkG=new THREE.CylinderGeometry(0.16,0.3,3.6,7); trunkG.translate(0,1.8,0);
+const blobG=new THREE.IcosahedronGeometry(1,1);
+const coneG=new THREE.ConeGeometry(1,1,8); coneG.translate(0,0.5,0);
+const birchTrunkG=new THREE.CylinderGeometry(0.12,0.2,4.8,7); birchTrunkG.translate(0,2.4,0);
+const deadG=new THREE.CylinderGeometry(0.07,0.26,4.4,6); deadG.translate(0,2.2,0);
+const rockG=new THREE.DodecahedronGeometry(1,0);
+const grassG=new THREE.ConeGeometry(0.06,0.55,4); grassG.translate(0,0.27,0);
+const reedG=new THREE.CylinderGeometry(0.025,0.04,1.5,5); reedG.translate(0,0.75,0);
+const glowG=new THREE.IcosahedronGeometry(0.12,1);
+
+makeInstanced(trunkG,new THREE.MeshStandardMaterial({color:0x6b4a2e,roughness:1}),bags.oakT);
+makeInstanced(blobG,new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.95}),bags.oakF,bags.oakFc);
+makeInstanced(trunkG,new THREE.MeshStandardMaterial({color:0x4a3322,roughness:1}),bags.conT);
+makeInstanced(coneG,new THREE.MeshStandardMaterial({color:0x1f4d33,roughness:0.95}),bags.conF);
+makeInstanced(birchTrunkG,new THREE.MeshStandardMaterial({color:0xe8e4da,roughness:0.9}),bags.birT);
+makeInstanced(blobG,new THREE.MeshStandardMaterial({color:0xa8c86a,roughness:0.95}),bags.birF);
+makeInstanced(deadG,new THREE.MeshStandardMaterial({color:0x4f4138,roughness:1}),bags.deadT);
+makeInstanced(rockG,new THREE.MeshStandardMaterial({color:0xffffff,roughness:1}),bags.rock,bags.rockC);
+const grassIM=makeInstanced(grassG,new THREE.MeshStandardMaterial({color:0xffffff,roughness:1}),bags.grass,bags.grassC);
+grassIM.castShadow=false;
+makeInstanced(reedG,new THREE.MeshStandardMaterial({color:0x6f8f3f,roughness:1}),bags.reed);
+const glowIM=makeInstanced(glowG,new THREE.MeshStandardMaterial({color:0x69e7ff,emissive:0x35c8f0,emissiveIntensity:2.2,roughness:0.5}),bags.glowF);
+glowIM.castShadow=false;
+
+/* ───────────────────────── THE TEN LOCI ─────────────────────────
+   Inversion: nothing repeats; each station has its own shape, color,
+   sound, and a touch of story (relief, warning, awe, arrival).        */
+const loci=[]; // {s, pos, num, name, tip, shown}
+function locusAt(s,lat){
+  const sm=sampleAt(s);
+  const x=sm.x+sm.px*lat, z=sm.z+sm.pz*lat;
+  return {sm, x, z, y:groundInfo(x,z).h};
+}
+function registerLocus(num,name,tip,s,pos){loci.push({num,name,tip,s,pos,shown:false});}
+
+const stdMat=(c,r=0.95)=>new THREE.MeshStandardMaterial({color:c,roughness:r});
+
+/* 1 — The Twin Watchers */
+{
+  const s=0.025*L, sm=sampleAt(s);
+  const cv=document.createElement('canvas');cv.width=cv.height=256;
+  const cx=cv.getContext('2d');
+  cx.fillStyle='#7d7a74';cx.fillRect(0,0,256,256);
+  for(let i=0;i<400;i++){cx.fillStyle=`rgba(${60+(rng()*60)|0},${60+(rng()*55)|0},${55+(rng()*50)|0},.35)`;cx.fillRect(rng()*256,rng()*256,3,3);}
+  cx.strokeStyle='#e8dcc0';cx.lineWidth=7;cx.beginPath();
+  for(let a=0;a<6.28*3;a+=0.1){const r=6+a*5.2;cx.lineTo(128+Math.cos(a)*r,128+Math.sin(a)*r);}
+  cx.stroke();
+  const spiralMat=new THREE.MeshStandardMaterial({map:new THREE.CanvasTexture(cv),roughness:1});
+  const stoneG=new THREE.BoxGeometry(1.5,4.8,1.1);
+  for(const side of [-1,1]){
+    const x=sm.x+sm.px*side*2.2, z=sm.z+sm.pz*side*2.2;
+    const st=new THREE.Mesh(stoneG, side<0?spiralMat:stdMat(0x7d7a74));
+    st.position.set(x,groundInfo(x,z).h+2.1,z);
+    st.rotation.set((rng()-0.5)*0.1,Math.atan2(sm.dx,sm.dz),side*0.06);
+    st.castShadow=true; scene.add(st);
+  }
+  registerLocus(1,'The Twin Watchers','Two stones guard the way in. Place your first memory between them.',s,new THREE.Vector3(sm.x,sm.y,sm.z));
+}
+
+/* 2 — The Crooked Elder (bent tree, glowing red fruit) */
+let elderFruit=[];
+{
+  const s=0.115*L, lc=locusAt(s,-3.4);
+  const g=new THREE.Group(); g.position.set(lc.x,lc.y,lc.z);
+  let py=0,px=0,ang=0;
+  for(let i=0;i<5;i++){
+    const seg=new THREE.Mesh(new THREE.CylinderGeometry(0.28-i*0.035,0.34-i*0.035,1.5,7),stdMat(0x5a4028,1));
+    ang+=0.22;
+    seg.position.set(px+Math.sin(ang)*0.7,py+0.7,0);
+    seg.rotation.z=-ang;
+    seg.castShadow=true; g.add(seg);
+    px+=Math.sin(ang)*1.35; py+=Math.cos(ang)*1.3;
+  }
+  const fol=new THREE.Mesh(blobG,stdMat(0x6e8a35));
+  fol.scale.set(2.6,1.9,2.6); fol.position.set(px,py+0.8,0); fol.castShadow=true; g.add(fol);
+  const fruitM=new THREE.MeshStandardMaterial({color:0xd42b1e,emissive:0x801008,emissiveIntensity:0.8,roughness:0.4});
+  for(let i=0;i<11;i++){
+    const f=new THREE.Mesh(new THREE.SphereGeometry(0.14,8,8),fruitM);
+    const a=rng()*6.28, rr=1.4+rng()*1.5;
+    f.position.set(px+Math.cos(a)*rr,py+0.3+rng()*1.4,Math.sin(a)*rr);
+    g.add(f); elderFruit.push(f);
+  }
+  scene.add(g);
+  registerLocus(2,'The Crooked Elder','A bent old tree, heavy with red fruit. Sweetness — or the memory you hang here.',s,new THREE.Vector3(lc.x,lc.y,lc.z));
+}
+
+/* 3 — The Singing Ford (stream, stepping stones) */
+{
+  const stoneM=stdMat(0x9a948a);
+  for(let k=-2;k<=2;k++){
+    const sm=sampleAt(streamS+k*1.45);
+    const st=new THREE.Mesh(rockG,stoneM);
+    st.scale.set(0.62,0.24,0.55);
+    st.position.set(sm.x,waterY+0.14,sm.z);
+    st.rotation.y=rng()*6.28; st.castShadow=true; scene.add(st);
+  }
+  registerLocus(3,'The Singing Ford','Cold water, three quick steps. Hear it before you see it.',streamS,new THREE.Vector3(streamC.x,waterY,streamC.z));
+}
+
+/* 4 — The Skull Stake (warning; ravens circle) */
+let crowGroup;
+{
+  const s=0.36*L, lc=locusAt(s,2.4);
+  const g=new THREE.Group(); g.position.set(lc.x,lc.y,lc.z);
+  const pole=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.1,2.4,6),stdMat(0x4a3a28,1));
+  pole.position.y=1.2; pole.castShadow=true; g.add(pole);
+  const skullM=stdMat(0xe9e2d2,0.7);
+  const skull=new THREE.Mesh(new THREE.SphereGeometry(0.34,10,10),skullM);
+  skull.position.y=2.55; skull.scale.set(1,0.9,1.15); g.add(skull);
+  const snout=new THREE.Mesh(new THREE.BoxGeometry(0.28,0.2,0.4),skullM);
+  snout.position.set(0,2.42,0.4); g.add(snout);
+  const eyeM=new THREE.MeshBasicMaterial({color:0x0a0a0a});
+  for(const sd of [-1,1]){
+    const e=new THREE.Mesh(new THREE.SphereGeometry(0.085,6,6),eyeM);
+    e.position.set(sd*0.14,2.6,0.27); g.add(e);
+  }
+  const hornM=stdMat(0xd8cfb8,0.8);
+  for(const sd of [-1,1]){
+    const h=new THREE.Mesh(new THREE.ConeGeometry(0.06,0.6,6),hornM);
+    h.position.set(sd*0.34,2.8,0); h.rotation.z=-sd*0.9; g.add(h);
+  }
+  scene.add(g);
+  crowGroup=new THREE.Group();
+  crowGroup.position.set(lc.x,lc.y+7,lc.z);
+  for(let i=0;i<3;i++){
+    const crow=new THREE.Group();
+    const wM=new THREE.MeshBasicMaterial({color:0x14110e,side:THREE.DoubleSide});
+    const w1=new THREE.Mesh(new THREE.PlaneGeometry(0.9,0.28),wM); w1.position.x=-0.45;
+    const w2=new THREE.Mesh(new THREE.PlaneGeometry(0.9,0.28),wM); w2.position.x=0.45;
+    crow.add(w1,w2); crow.userData={phase:i*2.1,r:4.5+i*1.2,sp:0.7+i*0.18,w1,w2};
+    crowGroup.add(crow);
+  }
+  scene.add(crowGroup);
+  registerLocus(4,'The Skull Stake','A warning left by older hands. The ravens remember too.',s,new THREE.Vector3(lc.x,lc.y,lc.z));
+}
+
+/* 5 — Glowmoss Hollow */
+let hollowPos, butterflies=[];
+{
+  const s=0.46*L, sm=sampleAt(s);
+  hollowPos=new THREE.Vector3(sm.x,sm.y,sm.z);
+  const pl=new THREE.PointLight(0x46d8ff,7,16,2);
+  pl.position.set(sm.x,sm.y+1.6,sm.z); scene.add(pl);
+  const bMat=new THREE.MeshBasicMaterial({color:0xff9a2e,side:THREE.DoubleSide});
+  for(let i=0;i<7;i++){
+    const b=new THREE.Mesh(new THREE.PlaneGeometry(0.2,0.15),bMat);
+    b.userData={ph:rng()*6.28,r:1.5+rng()*5,h:0.7+rng()*1.6,sp:0.5+rng()*0.8};
+    scene.add(b); butterflies.push(b);
+  }
+  registerLocus(5,'Glowmoss Hollow','Blue light under the dark pines — the strangest sight on the trail. Strange sticks hardest.',s,hollowPos);
+}
+
+/* 6 — The Fallen Giant (log over the ravine) */
+{
+  const logG=new THREE.CylinderGeometry(0.55,0.66,20,11);
+  logG.rotateZ(Math.PI/2);
+  const log=new THREE.Mesh(logG,stdMat(0x6a4f30,1));
+  log.rotation.y=Math.atan2(-ravC.dz,ravC.dx);
+  log.position.set(ravC.x,bridgeY-0.55,ravC.z);
+  log.castShadow=true; scene.add(log);
+  const stubM=stdMat(0x5a4128,1);
+  for(let i=0;i<5;i++){
+    const stub=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.09,0.7,5),stubM);
+    const a=(i/5)*Math.PI*2;
+    stub.position.set(ravC.x+ravC.dx*(i*3-6),bridgeY-0.55+Math.cos(a)*0.55,ravC.z+ravC.dz*(i*3-6));
+    stub.rotation.x=a; scene.add(stub);
+  }
+  for(let i=0;i<10;i++){                       // jagged rocks far below
+    const a=(rng()-0.5)*16, w=(rng()-0.5)*5;
+    const x=ravC.x+ravC.px*a+ravC.dx*w, z=ravC.z+ravC.pz*a+ravC.dz*w;
+    const rk=new THREE.Mesh(rockG,stdMat(0x6a6663));
+    rk.scale.set(0.6+rng(),0.5+rng()*0.9,0.6+rng());
+    rk.position.set(x,groundInfo(x,z).h+0.2,z);
+    rk.rotation.y=rng()*6.28; scene.add(rk);
+  }
+  registerLocus(6,'The Fallen Giant','One dead tree spans the ravine. Your feet will remember the fear.',ravS,new THREE.Vector3(ravC.x,bridgeY,ravC.z));
+}
+
+/* 7 — The Three Cairns */
+{
+  const s=0.66*L;
+  const cairnM=stdMat(0x8e8a82);
+  const offsets=[[0,2.6],[2.5,-2.8],[-2.5,3.4]];
+  for(const [ds,lat] of offsets){
+    const lc=locusAt(s+ds*3,lat);
+    let y=lc.y+0.1;
+    const n=4+((rng()*3)|0);
+    for(let i=0;i<n;i++){
+      const r=0.55*(1-i/n)+0.12;
+      const st=new THREE.Mesh(new THREE.SphereGeometry(r,8,6),cairnM);
+      st.scale.y=0.55;
+      st.position.set(lc.x+(rng()-0.5)*0.1,y+r*0.4,lc.z+(rng()-0.5)*0.1);
+      st.castShadow=true; scene.add(st);
+      y+=r*0.78;
+    }
+  }
+  const lc=locusAt(s,0);
+  registerLocus(7,'The Three Cairns','Stacked stones — every traveler adds one. Add yours in your mind.',s,new THREE.Vector3(lc.x,lc.y,lc.z));
+}
+
+/* 8 — The Bone Chimes */
+let chimeGroups=[];
+{
+  const s=0.76*L;
+  const boneM=stdMat(0xefe9da,0.6);
+  const strM=new THREE.LineBasicMaterial({color:0x3a2f22});
+  for(const [ds,lat] of [[0,-3.0],[4,3.2]]){
+    const lc=locusAt(s+ds,lat);
+    const tr=new THREE.Mesh(birchTrunkG,stdMat(0xe8e4da,0.9));
+    tr.position.set(lc.x,lc.y,lc.z); tr.castShadow=true; scene.add(tr);
+    const fol=new THREE.Mesh(blobG,stdMat(0xa8c86a));
+    fol.scale.set(1.9,1.5,1.9); fol.position.set(lc.x,lc.y+4.6,lc.z); fol.castShadow=true; scene.add(fol);
+    const branch=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.07,2.4,5),stdMat(0xded9cc,0.9));
+    branch.rotation.z=Math.PI/2; branch.position.set(lc.x+1.0,lc.y+3.1,lc.z); scene.add(branch);
+    const cg=new THREE.Group(); cg.position.set(lc.x,lc.y+3.1,lc.z);
+    for(let i=0;i<4;i++){
+      const bx=0.2+i*0.55;
+      const len=0.7+rng()*0.5;
+      const lg=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(bx,0,0),new THREE.Vector3(bx,-len,0)]);
+      cg.add(new THREE.Line(lg,strM));
+      const bone=new THREE.Mesh(new THREE.CapsuleGeometry(0.045,0.3,3,6),boneM);
+      bone.position.set(bx,-len-0.18,0); cg.add(bone);
+    }
+    cg.userData.phase=ds; scene.add(cg); chimeGroups.push(cg);
+  }
+  const lc=locusAt(s,0);
+  registerLocus(8,'The Bone Chimes','White birches hung with bones that rattle in the wind. Sound is a hook for memory.',s,new THREE.Vector3(lc.x,lc.y,lc.z));
+}
+
+/* 9 — The Painted Wall (ochre handprints — the oldest signature) */
+{
+  const s=0.87*L, lc=locusAt(s,-5.4);
+  const cv=document.createElement('canvas');cv.width=512;cv.height=320;
+  const cx=cv.getContext('2d');
+  cx.fillStyle='#b07848';cx.fillRect(0,0,512,320);
+  for(let i=0;i<900;i++){cx.fillStyle=`rgba(${120+(rng()*60)|0},${70+(rng()*40)|0},${40+(rng()*25)|0},.3)`;cx.fillRect(rng()*512,rng()*320,4,4);}
+  function hand(hx,hy,sc,col){
+    cx.fillStyle=col;
+    cx.beginPath();cx.ellipse(hx,hy,13*sc,16*sc,0,0,6.29);cx.fill();
+    for(let f=0;f<5;f++){
+      const a=-2.3+f*0.42;
+      cx.save();cx.translate(hx,hy);cx.rotate(a);
+      cx.beginPath();cx.ellipse(0,-22*sc,4.2*sc,13*sc,0,0,6.29);cx.fill();
+      cx.restore();
+    }
+  }
+  const reds=['rgba(160,30,20,.85)','rgba(190,50,25,.8)','rgba(140,25,18,.9)'];
+  for(let i=0;i<5;i++) hand(70+i*95+(rng()-0.5)*20, 90+(rng()-0.5)*40, 0.9+rng()*0.5, reds[i%3]);
+  cx.strokeStyle='rgba(60,25,15,.9)';cx.lineWidth=6;cx.lineCap='round';   // a bison, in four strokes
+  cx.beginPath();cx.moveTo(150,250);cx.quadraticCurveTo(230,180,330,230);cx.quadraticCurveTo(360,250,355,265);cx.stroke();
+  cx.beginPath();cx.moveTo(180,255);cx.lineTo(180,290);cx.moveTo(310,255);cx.lineTo(310,292);cx.stroke();
+  cx.beginPath();cx.arc(345,215,16,0,6.29);cx.stroke();
+  cx.beginPath();cx.moveTo(350,200);cx.quadraticCurveTo(365,185,372,195);cx.stroke();
+  cx.fillStyle='rgba(60,25,15,.9)';                                       // seven tally dots: a count
+  for(let i=0;i<7;i++){cx.beginPath();cx.arc(395+i*14,290,4,0,6.29);cx.fill();}
+  const wallMat=new THREE.MeshStandardMaterial({map:new THREE.CanvasTexture(cv),roughness:1});
+  const wall=new THREE.Mesh(new THREE.BoxGeometry(11,6.6,1.3),wallMat);
+  wall.position.set(lc.x,lc.y+2.6,lc.z);
+  wall.rotation.y=Math.atan2(lc.sm.px,lc.sm.pz)+Math.PI;
+  wall.rotation.x=-0.07; wall.castShadow=true; scene.add(wall);
+  registerLocus(9,'The Painted Wall','Red hands of those who walked first. Press yours beside them.',s,new THREE.Vector3(lc.x,lc.y,lc.z));
+}
+
+/* 10 — The Home Fire (cave mouth, campfire, the smoke you followed) */
+let firePos, fireLight, flames=[], smokes=[];
+{
+  const s=0.97*L, sm=sampleAt(s);
+  const endX=sm.x+sm.dx*8, endZ=sm.z+sm.dz*8;
+  const endY=groundInfo(endX,endZ).h;
+  const mound=new THREE.Mesh(new THREE.SphereGeometry(10,18,14),stdMat(0x5c4a3a,1));
+  mound.scale.set(1.0,0.68,1.0);
+  mound.position.set(endX,endY+0.5,endZ);
+  mound.castShadow=true; scene.add(mound);
+  const faceA=Math.atan2(-sm.dx,-sm.dz);
+  const upM=stdMat(0x6e655c,1);
+  const doorX=endX-sm.dx*10.4, doorZ=endZ-sm.dz*10.4;
+  const doorY=groundInfo(doorX,doorZ).h;
+  for(const sd of [-1,1]){
+    const up=new THREE.Mesh(new THREE.BoxGeometry(1.8,4.6,2.0),upM);
+    up.position.set(doorX+sm.px*sd*1.9,doorY+2.0,doorZ+sm.pz*sd*1.9);
+    up.rotation.y=faceA; up.castShadow=true; scene.add(up);
+  }
+  const lintel=new THREE.Mesh(new THREE.BoxGeometry(6.2,1.5,2.2),upM);
+  lintel.position.set(doorX,doorY+4.55,doorZ);
+  lintel.rotation.y=faceA; lintel.castShadow=true; scene.add(lintel);
+  const dark=new THREE.Mesh(new THREE.PlaneGeometry(3.4,4.2),new THREE.MeshBasicMaterial({color:0x050403}));
+  dark.position.set(doorX+sm.dx*1.4,doorY+2.0,doorZ+sm.dz*1.4);
+  dark.rotation.y=faceA; scene.add(dark);
+
+  const fx=doorX-sm.dx*4.5, fz=doorZ-sm.dz*4.5;
+  const fy=groundInfo(fx,fz).h;
+  firePos=new THREE.Vector3(fx,fy,fz);
+  const logM=stdMat(0x4a3320,1);
+  for(let i=0;i<4;i++){
+    const lg=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.11,1.5,6),logM);
+    lg.rotation.set(Math.PI/2-0.35,i*1.57+0.4,0);
+    lg.position.set(fx,fy+0.25,fz); scene.add(lg);
+  }
+  const ring=stdMat(0x55504a);
+  for(let i=0;i<8;i++){
+    const a=i/8*6.28;
+    const rk=new THREE.Mesh(rockG,ring);
+    rk.scale.setScalar(0.22);
+    rk.position.set(fx+Math.cos(a)*0.9,fy+0.12,fz+Math.sin(a)*0.9); scene.add(rk);
+  }
+  const flameTex=radialTex('rgba(255,220,140,1)','rgba(255,120,20,0)');
+  for(let i=0;i<6;i++){
+    const f=new THREE.Sprite(new THREE.SpriteMaterial({map:flameTex,color:0xffaa33,transparent:true,blending:THREE.AdditiveBlending,depthWrite:false}));
+    f.userData={ph:i*1.1};
+    f.position.set(fx,fy+0.6,fz); scene.add(f); flames.push(f);
+  }
+  fireLight=new THREE.PointLight(0xff8c2a,16,20,2);
+  fireLight.position.set(fx,fy+1.1,fz); scene.add(fireLight);
+  const smokeTex=radialTex('rgba(200,195,185,0.55)','rgba(180,175,165,0)');
+  for(let i=0;i<14;i++){
+    const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:smokeTex,transparent:true,depthWrite:false}));
+    sp.userData={t:i/14};
+    scene.add(sp); smokes.push(sp);
+  }
+  registerLocus(10,'The Home Fire','The smoke you followed. You made it. Every walk ends here — every recall, too.',s,firePos.clone());
+}
+
+/* ───────────────────────── audio (procedural, WebAudio) ─────────────────────────
+   Inversion: a silent walk is a forgotten walk. Every locus has a voice.       */
+let AC=null,master=null,streamGain=null,fireGain=null,windGain=null,noiseBuf=null,muted=false;
+function makeNoiseBuf(){
+  const b=AC.createBuffer(1,AC.sampleRate*2,AC.sampleRate);
+  const d=b.getChannelData(0);
+  for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1;
+  return b;
+}
+function loopNoise(filterType,freq,q){
+  const src=AC.createBufferSource(); src.buffer=noiseBuf; src.loop=true;
+  const f=AC.createBiquadFilter(); f.type=filterType; f.frequency.value=freq; if(q)f.Q.value=q;
+  const g=AC.createGain(); g.gain.value=0;
+  src.connect(f); f.connect(g); g.connect(master); src.start();
+  return g;
+}
+function initAudio(){
+  if(AC) return;
+  AC=new (window.AudioContext||window.webkitAudioContext)();
+  master=AC.createGain(); master.gain.value=0.9; master.connect(AC.destination);
+  noiseBuf=makeNoiseBuf();
+  windGain=loopNoise('lowpass',360); windGain.gain.value=0.05;
+  const lfo=AC.createOscillator(); lfo.frequency.value=0.11;
+  const lfoG=AC.createGain(); lfoG.gain.value=0.028;
+  lfo.connect(lfoG); lfoG.connect(windGain.gain); lfo.start();
+  streamGain=loopNoise('bandpass',1150,0.8);
+  fireGain=loopNoise('lowpass',520);
+}
+function burst(freq,dur,vol,type='lowpass'){
+  if(!AC)return;
+  const src=AC.createBufferSource(); src.buffer=noiseBuf;
+  src.playbackRate.value=0.8+Math.random()*0.4;
+  const f=AC.createBiquadFilter(); f.type=type; f.frequency.value=freq;
+  const g=AC.createGain();
+  g.gain.setValueAtTime(vol,AC.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+dur);
+  src.connect(f);f.connect(g);g.connect(master);
+  src.start(); src.stop(AC.currentTime+dur+0.05);
+}
+const stepDry=()=>burst(1700,0.09,0.16);
+const stepWet=()=>burst(700,0.3,0.4);
+function tone(fr0,fr1,dur,vol,type='sine'){
+  if(!AC)return;
+  const o=AC.createOscillator(); o.type=type;
+  o.frequency.setValueAtTime(fr0,AC.currentTime);
+  o.frequency.exponentialRampToValueAtTime(fr1,AC.currentTime+dur);
+  const g=AC.createGain();
+  g.gain.setValueAtTime(vol,AC.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+dur);
+  o.connect(g);g.connect(master);o.start();o.stop(AC.currentTime+dur+0.05);
+}
+const chirp=()=>{tone(2300+Math.random()*900,1500,0.16,0.06);setTimeout(()=>tone(2600,1900,0.12,0.05),190);};
+const caw  =()=>tone(420,290,0.22,0.09,'square');
+const chime=()=>tone(1200+Math.random()*900,900,1.1,0.07);
+const drum =()=>{tone(110,55,0.5,0.5);setTimeout(()=>tone(95,50,0.7,0.5),650);};
+
+/* ───────────────────────── player & controls ───────────────────────── */
+const start=sampleAt(2);
+const player=new THREE.Vector3(start.x,start.y+1.7,start.z);
+let yaw=Math.atan2(-start.dx,-start.dz), pitch=0;
+const keys={};
+let locked=false, finished=false, progress=0, stepAcc=0, bobPhase=0;
+
+const startOverlay=document.getElementById('startOverlay');
+const endOverlay=document.getElementById('endOverlay');
+const toast=document.getElementById('toast');
+const bar=document.getElementById('bar');
+let toastTimer=null;
+
+startOverlay.addEventListener('click',()=>{
+  initAudio(); if(AC.state==='suspended')AC.resume();
+  renderer.domElement.requestPointerLock();
+});
+document.addEventListener('pointerlockchange',()=>{
+  locked=document.pointerLockElement===renderer.domElement;
+  if(locked){startOverlay.style.display='none';}
+  else if(!finished){startOverlay.style.display='flex';
+    startOverlay.querySelector('.go').textContent='— click to continue —';}
+});
+document.addEventListener('mousemove',e=>{
+  if(!locked)return;
+  yaw-=e.movementX*0.0022;
+  pitch=clamp(pitch-e.movementY*0.0022,-1.45,1.45);
+});
+addEventListener('keydown',e=>{
+  keys[e.code]=true;
+  if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code))e.preventDefault();
+  if(e.code==='KeyM'&&master){muted=!muted;master.gain.value=muted?0:0.9;}
+});
+addEventListener('keyup',e=>keys[e.code]=false);
+addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+});
+document.getElementById('againBtn').addEventListener('click',()=>{
+  finished=false; progress=0;
+  loci.forEach(l=>l.shown=false);
+  player.set(start.x,start.y+1.7,start.z);
+  yaw=Math.atan2(-start.dx,-start.dz); pitch=0;
+  bar.style.width='0%';
+  endOverlay.style.display='none';
+  renderer.domElement.requestPointerLock();
+});
+
+function showToast(l){
+  toast.querySelector('.locus').textContent=`Locus ${l.num} of 10`;
+  toast.querySelector('.name').textContent=l.name;
+  toast.querySelector('.tip').textContent=l.tip;
+  toast.style.opacity=1;
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>toast.style.opacity=0,4200);
+}
+function finish(){
+  finished=true;
+  drum();
+  document.exitPointerLock();
+  endOverlay.style.display='flex';
+}
+
+/* ambient sound scheduling */
+let nextChirp=2,nextCaw=1,nextChime=1,nextCrackle=0.3;
+
+/* ───────────────────────── main loop ───────────────────────── */
+const clock=new THREE.Clock();
+const fwd=new THREE.Vector3(), rgt=new THREE.Vector3(), mv=new THREE.Vector3();
+
+function animate(){
+  requestAnimationFrame(animate);
+  const dt=Math.min(clock.getDelta(),0.05);
+  const t=clock.elapsedTime;
+
+  if(locked&&!finished){
+    const sprint=keys.ShiftLeft||keys.ShiftRight;
+    const speed=sprint?7.2:4.6;
+    fwd.set(-Math.sin(yaw),0,-Math.cos(yaw));
+    rgt.set(Math.cos(yaw),0,-Math.sin(yaw));
+    mv.set(0,0,0);
+    if(keys.KeyW||keys.ArrowUp)mv.add(fwd);
+    if(keys.KeyS||keys.ArrowDown)mv.sub(fwd);
+    if(keys.KeyD||keys.ArrowRight)mv.add(rgt);
+    if(keys.KeyA||keys.ArrowLeft)mv.sub(rgt);
+    const moving=mv.lengthSq()>0;
+    if(moving){
+      mv.normalize().multiplyScalar(speed*dt);
+      player.x+=mv.x; player.z+=mv.z;
+    }
+    let gi=groundInfo(player.x,player.z);
+    if(gi.d>19){                                  // the valley itself herds you home
+      const sm=sampleAt(gi.s);
+      const ox=player.x-sm.x, oz=player.z-sm.z;
+      const dl=Math.hypot(ox,oz)||1;
+      player.x=sm.x+ox/dl*19; player.z=sm.z+oz/dl*19;
+      gi=groundInfo(player.x,player.z);
+    }
+    let gy=gi.h;
+    const inWater=gi.h<waterY-0.05&&relLine(player.x,player.z,streamC).w<4;
+    if(Math.abs(gi.s-ravS)<10&&gi.d<1.15) gy=Math.max(gy,bridgeY);   // the log carries you
+    const targetY=gy+1.7;
+    player.y+=(targetY-player.y)*Math.min(1,dt*9);
+
+    if(moving){
+      stepAcc+=speed*dt;
+      bobPhase+=speed*dt*1.6;
+      if(stepAcc>2.1){stepAcc=0;(inWater?stepWet:stepDry)();}
+    }
+    camera.position.copy(player);
+    camera.position.y+=Math.sin(bobPhase)*0.05;
+    camera.rotation.set(pitch,yaw,0);
+
+    progress=Math.max(progress,gi.s);
+    bar.style.width=(clamp(progress/L,0,1)*100).toFixed(1)+'%';
+    for(const l of loci){
+      if(!l.shown&&Math.abs(gi.s-l.s)<7&&l.pos.distanceTo(player)<13){l.shown=true;showToast(l);}
+    }
+    if(gi.s>L-12&&gi.d<9&&!finished)finish();
+
+    /* spatial sound mixing */
+    if(AC){
+      const dStream=Math.hypot(player.x-streamC.x,player.z-streamC.z);
+      streamGain.gain.value=0.5/(1+(dStream/8)*(dStream/8));
+      const dFire=player.distanceTo(firePos);
+      fireGain.gain.value=0.35/(1+(dFire/7)*(dFire/7));
+      nextChirp-=dt;
+      if(nextChirp<0){nextChirp=2.5+Math.random()*5;if(gi.s<0.4*L)chirp();}
+      nextCaw-=dt;
+      if(nextCaw<0){nextCaw=2+Math.random()*4;if(Math.abs(gi.s-0.36*L)<22)caw();}
+      nextChime-=dt;
+      if(nextChime<0){nextChime=1.5+Math.random()*3;if(Math.abs(gi.s-0.76*L)<20)chime();}
+      nextCrackle-=dt;
+      if(nextCrackle<0){nextCrackle=0.12+Math.random()*0.3;if(dFire<16)burst(2600,0.05,0.18*(1-dFire/16),'highpass');}
+    }
+  }
+
+  /* world animation (runs even while paused, so the world feels alive) */
+  sun.position.set(player.x+60,player.y+85,player.z+35);
+  sun.target.position.set(player.x,player.y,player.z);
+
+  water.position.y=waterY+Math.sin(t*1.7)*0.03;
+
+  for(const b of butterflies){
+    const u=b.userData;
+    b.position.set(
+      hollowPos.x+Math.cos(t*u.sp+u.ph)*u.r,
+      hollowPos.y+u.h+Math.sin(t*2.3+u.ph)*0.35,
+      hollowPos.z+Math.sin(t*u.sp*0.8+u.ph)*u.r);
+    b.rotation.set(Math.sin(t*14+u.ph)*0.9,t*u.sp+u.ph+1.57,0);
+  }
+  if(crowGroup)for(const crow of crowGroup.children){
+    const u=crow.userData;
+    crow.position.set(Math.cos(t*u.sp+u.phase)*u.r,Math.sin(t*0.6+u.phase)*0.8,Math.sin(t*u.sp+u.phase)*u.r);
+    crow.rotation.y=-(t*u.sp+u.phase)+Math.PI/2;
+    u.w1.rotation.y=Math.sin(t*9+u.phase)*0.55;
+    u.w2.rotation.y=-Math.sin(t*9+u.phase)*0.55;
+  }
+  for(const cg of chimeGroups) cg.rotation.z=Math.sin(t*1.3+cg.userData.phase)*0.13;
+  for(const f of elderFruit) f.position.y+=Math.sin(t*2+f.position.x*3)*0.0006;
+
+  for(const f of flames){
+    const u=f.userData;
+    const s=0.7+0.35*Math.sin(t*11+u.ph)+0.15*Math.sin(t*23+u.ph*2);
+    f.scale.set(s,s*1.5,1);
+    f.position.set(firePos.x+Math.sin(t*7+u.ph)*0.1,firePos.y+0.55+0.2*Math.sin(t*9+u.ph),firePos.z+Math.cos(t*6+u.ph)*0.1);
+  }
+  fireLight.intensity=14+Math.sin(t*11)*3+Math.sin(t*27)*2;
+  for(const sp of smokes){
+    const u=sp.userData;
+    u.t+=dt*0.06; if(u.t>1)u.t-=1;
+    const h=u.t*30;
+    sp.position.set(firePos.x+Math.sin(u.t*9)*1.5*u.t+u.t*3,firePos.y+1+h,firePos.z+Math.cos(u.t*7)*1.5*u.t);
+    const sc=1+u.t*7;
+    sp.scale.set(sc,sc,1);
+    sp.material.opacity=0.5*(1-u.t)*(0.3+0.7*Math.min(1,u.t*8));
+  }
+
+  renderer.render(scene,camera);
+}
+animate();
+</script>
+</body>
+</html>

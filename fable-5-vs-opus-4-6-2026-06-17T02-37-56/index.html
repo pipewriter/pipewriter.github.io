@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fable 5 vs Opus 4.6</title>
+<style>:root { color-scheme: dark; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  color: #f3f4f8;
+  min-height: 100%;
+}
+#bg {
+  position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: -1; display: block;
+}
+main#app {
+  max-width: 1180px; margin: 0 auto; padding: 56px 28px 120px;
+}
+
+.pf-header { text-align: center; margin: 18px 0 46px; }
+.pf-title {
+  font-size: clamp(34px, 6vw, 68px); font-weight: 800; letter-spacing: -0.02em;
+  margin: 0; text-shadow: 0 4px 30px rgba(0,0,0,.5);
+}
+
+.pf-group { margin: 0 0 54px; }
+.pf-group-head { display: flex; align-items: center; gap: 10px; margin: 0 0 20px; }
+.pf-group-title {
+  font-size: clamp(18px, 2.4vw, 28px); font-weight: 700; margin: 0;
+  opacity: .95; text-shadow: 0 2px 16px rgba(0,0,0,.5);
+}
+
+.pf-grid {
+  display: grid; gap: 22px;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+}
+
+.pf-tile { display: flex; flex-direction: column; gap: 8px; }
+.pf-rect {
+  display: block; position: relative; width: 100%; aspect-ratio: 3 / 4;
+  border-radius: 14px; overflow: hidden; cursor: pointer; text-decoration: none;
+  background: rgba(18,20,30,.55);
+  border: 1px solid rgba(255,255,255,.12);
+  box-shadow: 0 10px 30px rgba(0,0,0,.35);
+  backdrop-filter: blur(6px);
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+}
+.pf-rect:hover { transform: translateY(-4px); box-shadow: 0 18px 44px rgba(0,0,0,.5); border-color: rgba(255,255,255,.3); }
+.pf-rect img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pf-rect.empty { display: grid; place-items: center; }
+.pf-rect-empty { text-align: center; padding: 16px; color: #c8ccda; }
+.pf-rect-uri { font-size: 13px; font-weight: 600; word-break: break-all; opacity: .9; }
+.pf-rect-hint { font-size: 11px; opacity: .55; margin-top: 10px; }
+
+.pf-tile-title { font-size: 14px; font-weight: 600; opacity: .92; }
+.pf-tile-meta { display: flex; align-items: center; gap: 6px; }
+.pf-tile-meta .pf-tile-title { flex: 1; min-height: 18px; }
+
+/* editor affordances */
+[contenteditable] { outline: none; cursor: text; border-radius: 6px; transition: background .15s; }
+[contenteditable]:hover { background: rgba(255,255,255,.06); }
+[contenteditable]:focus { background: rgba(255,255,255,.12); box-shadow: 0 0 0 2px rgba(120,160,255,.5); }
+[contenteditable]:empty:before { content: attr(data-ph); opacity: .4; }
+
+.pf-x {
+  background: rgba(255,80,90,.16); color: #ff9aa2; border: 1px solid rgba(255,80,90,.3);
+  border-radius: 8px; width: 28px; height: 28px; cursor: pointer; font-size: 13px; line-height: 1;
+}
+.pf-x.small { width: 22px; height: 22px; font-size: 11px; }
+.pf-x:hover { background: rgba(255,80,90,.3); }
+
+.pf-btn {
+  background: rgba(120,150,255,.22); color: #dfe6ff; border: 1px solid rgba(140,160,255,.4);
+  border-radius: 10px; padding: 10px 16px; cursor: pointer; font-weight: 600; font-size: 14px;
+}
+.pf-btn:hover { background: rgba(120,150,255,.38); }
+.pf-btn:disabled { opacity: .5; cursor: default; }
+
+.pf-addgroup { text-align: center; margin-top: 12px; }
+
+.pf-addtile {
+  border: 1.5px dashed rgba(255,255,255,.25); border-radius: 14px; padding: 12px;
+  justify-content: center; gap: 10px; background: rgba(12,14,22,.4); min-height: 0;
+}
+.pf-ta {
+  width: 100%; min-height: 96px; resize: vertical; border-radius: 10px;
+  background: rgba(0,0,0,.35); color: #eef; border: 1px solid rgba(255,255,255,.16);
+  padding: 8px 10px; font: inherit; font-size: 12px;
+}
+
+.pf-armbadge { display: none; font-size: 11px; color: #ffd479; }
+.pf-tile.armed .pf-armbadge { display: block; animation: pulse 1.1s infinite; }
+.pf-tile.armed .pf-rect { border-color: #ffd479; box-shadow: 0 0 0 2px rgba(255,212,121,.5); }
+@keyframes pulse { 50% { opacity: .4; } }
+</style>
+</head>
+<body>
+<canvas id="bg"></canvas>
+<main id="app"></main>
+<script>/* Seeded WebGL background. Same seed -> same look, forever.
+   Exposes window.startBackground(canvas, seed). */
+(function () {
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  const VERT = `
+    attribute vec2 p;
+    void main() { gl_Position = vec4(p, 0.0, 1.0); }`;
+
+  const FRAG = `
+    precision highp float;
+    uniform vec2 uRes;
+    uniform float uTime;
+    uniform vec3 uA, uB, uC;
+    uniform float uScale, uWarp, uRot;
+
+    mat2 rot(float a){ float c=cos(a), s=sin(a); return mat2(c,-s,s,c); }
+    float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453); }
+    float noise(vec2 p){
+      vec2 i=floor(p), f=fract(p);
+      vec2 u=f*f*(3.0-2.0*f);
+      return mix(mix(hash(i),hash(i+vec2(1,0)),u.x),
+                 mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),u.x),u.y);
+    }
+    float fbm(vec2 p){
+      float v=0.0, a=0.5;
+      for(int i=0;i<6;i++){ v+=a*noise(p); p=rot(uRot)*p*2.0; a*=0.5; }
+      return v;
+    }
+    void main(){
+      vec2 uv=(gl_FragCoord.xy - 0.5*uRes)/uRes.y;
+      uv *= uScale;
+      float t = uTime*0.04;
+      vec2 q = vec2(fbm(uv + vec2(0.0, t)), fbm(uv + vec2(5.2, -t)));
+      vec2 r = vec2(fbm(uv + uWarp*q + vec2(1.7, 9.2) + t),
+                    fbm(uv + uWarp*q + vec2(8.3, 2.8) - t));
+      float f = fbm(uv + uWarp*r);
+      vec3 col = mix(uA, uB, clamp(f*f*1.6, 0.0, 1.0));
+      col = mix(col, uC, clamp(length(q), 0.0, 1.0));
+      col = mix(col, vec3(0.02,0.02,0.05), 0.25); // deepen
+      col += 0.04*hash(gl_FragCoord.xy);           // dither
+      gl_FragColor = vec4(col, 1.0);
+    }`;
+
+  function compile(gl, type, src) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    return s;
+  }
+
+  function hsl(h, s, l) {
+    const a = s * Math.min(l, 1 - l);
+    const f = (n) => {
+      const k = (n + h / 30) % 12;
+      return l - a * Math.max(-1, Math.min(k - 3, Math.min(9 - k, 1)));
+    };
+    return [f(0), f(8), f(4)];
+  }
+
+  window.startBackground = function (canvas, seed) {
+    const rnd = mulberry32((seed | 0) || 1);
+    const baseHue = rnd() * 360;
+    const A = hsl(baseHue, 0.55, 0.18);
+    const B = hsl((baseHue + 40 + rnd() * 60) % 360, 0.6, 0.42);
+    const C = hsl((baseHue + 180 + rnd() * 60) % 360, 0.7, 0.55);
+    const scale = 1.4 + rnd() * 1.8;
+    const warp = 1.2 + rnd() * 2.4;
+    const rotA = 0.4 + rnd() * 1.2;
+
+    const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+    if (!gl) { canvas.style.background = `rgb(${A.map((c) => (c * 255) | 0)})`; return; }
+
+    const prog = gl.createProgram();
+    gl.attachShader(prog, compile(gl, gl.VERTEX_SHADER, VERT));
+    gl.attachShader(prog, compile(gl, gl.FRAGMENT_SHADER, FRAG));
+    gl.linkProgram(prog); gl.useProgram(prog);
+
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+    const loc = gl.getAttribLocation(prog, 'p');
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+
+    const U = (n) => gl.getUniformLocation(prog, n);
+    gl.uniform3fv(U('uA'), A); gl.uniform3fv(U('uB'), B); gl.uniform3fv(U('uC'), C);
+    gl.uniform1f(U('uScale'), scale); gl.uniform1f(U('uWarp'), warp); gl.uniform1f(U('uRot'), rotA);
+
+    function resize() {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.floor(canvas.clientWidth * dpr);
+      canvas.height = Math.floor(canvas.clientHeight * dpr);
+      gl.viewport(0, 0, canvas.width, canvas.height);
+      gl.uniform2f(U('uRes'), canvas.width, canvas.height);
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    const start = performance.now();
+    (function frame() {
+      gl.uniform1f(U('uTime'), (performance.now() - start) / 1000);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      requestAnimationFrame(frame);
+    })();
+  };
+})();
+</script>
+<script>
+window.PORTFOLIO_DATA = {"portfolioTitle":"Fable 5 vs Opus 4.6","seed":638133390,"groups":[{"id":"g_mqgihedq59qkl8","title":"Fable 5","tiles":[{"id":"t_mqgikyv9ui6969","title":"","uri":"/home/parker/Dropbox/repos/june-11/memory-trail/Change-of-Representation/index.html","thumb":"thumbs/t_mqgikyv9ui6969.png","page":"pages/t_mqgikyv9ui6969.html"},{"id":"t_mqgikyv9wpctsh","title":"","uri":"/home/parker/Dropbox/repos/june-11/memory-trail/Divide-and-Conquer/the-way-home.html","thumb":"thumbs/t_mqgikyv9wpctsh.png","page":"pages/t_mqgikyv9wpctsh.html"},{"id":"t_mqgikyv9s50m5e","title":"","uri":"/home/parker/Dropbox/repos/june-11/memory-trail/Exploit-Invariants/index.html","thumb":"thumbs/t_mqgikyv9s50m5e.png","page":"pages/t_mqgikyv9s50m5e.html"},{"id":"t_mqgikyv9nt3yki","title":"","uri":"/home/parker/Dropbox/repos/june-11/memory-trail/Extreme-Cases/index.html","thumb":"thumbs/t_mqgikyv9nt3yki.png","page":"pages/t_mqgikyv9nt3yki.html"},{"id":"t_mqgikyv94i5roo","title":"","uri":"/home/parker/Dropbox/repos/june-11/memory-trail/Inversion/index.html","thumb":"thumbs/t_mqgikyv94i5roo.png","page":"pages/t_mqgikyv94i5roo.html"},{"id":"t_mqgikyv9tu0h6s","title":"","uri":"/home/parker/Dropbox/repos/june-11/memory-trail/Proof-by-Contradiction/index.html","thumb":"thumbs/t_mqgikyv9tu0h6s.png","page":"pages/t_mqgikyv9tu0h6s.html"},{"id":"t_mqgikyv9iiz084","title":"","uri":"/home/parker/Dropbox/repos/june-11/memory-trail/Reduction/index.html","thumb":"thumbs/t_mqgikyv9iiz084.png","page":"pages/t_mqgikyv9iiz084.html"},{"id":"t_mqgikyv99it2i9","title":"","uri":"/home/parker/Dropbox/repos/june-11/memory-trail/Solve-a-Simpler-Problem/index.html","thumb":"thumbs/t_mqgikyv99it2i9.png","page":"pages/t_mqgikyv99it2i9.html"},{"id":"t_mqgikyv9jnnk9a","title":"","uri":"/home/parker/Dropbox/repos/june-11/memory-trail/Working-Backwards/the-way-home.html","thumb":"thumbs/t_mqgikyv9jnnk9a.png","page":"pages/t_mqgikyv9jnnk9a.html"}]},{"id":"g_mqgiv5ani20st8","title":"Opus 4.6","tiles":[{"id":"t_mqhgfz497ti4x6","title":"","uri":"/home/parker/Dropbox/repos/may-10/three-js-vivid-trail-walk/try-10/index.html","thumb":"thumbs/t_mqhgfz497ti4x6.png","page":"pages/t_mqhgfz497ti4x6.html"},{"id":"t_mqhgfz49u1eswp","title":"","uri":"/home/parker/Dropbox/repos/may-10/three-js-vivid-trail-walk/try-1/trail.html","thumb":"thumbs/t_mqhgfz49u1eswp.png","page":"pages/t_mqhgfz49u1eswp.html"},{"id":"t_mqhgfz49w6ylah","title":"","uri":"/home/parker/Dropbox/repos/may-10/three-js-vivid-trail-walk/try-2/vivid-trail.html","thumb":"thumbs/t_mqhgfz49w6ylah.png","page":"pages/t_mqhgfz49w6ylah.html"},{"id":"t_mqhgfz49v889wl","title":"","uri":"/home/parker/Dropbox/repos/may-10/three-js-vivid-trail-walk/try-3/index.html","thumb":"thumbs/t_mqhgfz49v889wl.png","page":"pages/t_mqhgfz49v889wl.html"},{"id":"t_mqhgfz490hlhyt","title":"","uri":"/home/parker/Dropbox/repos/may-10/three-js-vivid-trail-walk/try-4/vivid-trail.html","thumb":"thumbs/t_mqhgfz490hlhyt.png","page":"pages/t_mqhgfz490hlhyt.html"},{"id":"t_mqhgfz49wpu0pq","title":"","uri":"/home/parker/Dropbox/repos/may-10/three-js-vivid-trail-walk/try-5/vivid-trail.html","thumb":"thumbs/t_mqhgfz49wpu0pq.png","page":"pages/t_mqhgfz49wpu0pq.html"},{"id":"t_mqhgfz49vukfkt","title":"","uri":"/home/parker/Dropbox/repos/may-10/three-js-vivid-trail-walk/try-6/index.html","thumb":"thumbs/t_mqhgfz49vukfkt.png","page":"pages/t_mqhgfz49vukfkt.html"},{"id":"t_mqhgfz49p5jfzw","title":"","uri":"/home/parker/Dropbox/repos/may-10/three-js-vivid-trail-walk/try-7/index.html","thumb":"thumbs/t_mqhgfz49p5jfzw.png","page":"pages/t_mqhgfz49p5jfzw.html"},{"id":"t_mqhgfz49lg804v","title":"","uri":"/home/parker/Dropbox/repos/may-10/three-js-vivid-trail-walk/try-8/index.html","thumb":"thumbs/t_mqhgfz49lg804v.png","page":"pages/t_mqhgfz49lg804v.html"},{"id":"t_mqhgfz49jpms0q","title":"","uri":"/home/parker/Dropbox/repos/may-10/three-js-vivid-trail-walk/try-9/vivid-trail.html","thumb":"thumbs/t_mqhgfz49jpms0q.png","page":"pages/t_mqhgfz49jpms0q.html"}]},{"id":"g_mqhf621zz0y5yd","title":"Fable 5 (more)","tiles":[{"id":"t_mqhg5xax2ly7ew","title":"","uri":"/home/parker/Dropbox/repos/june-9/three-js-vivid-trail-walk/try-1/index.html","thumb":"thumbs/t_mqhg5xax2ly7ew.png","page":"pages/t_mqhg5xax2ly7ew.html"},{"id":"t_mqhg5xaxtwig0n","title":"","uri":"/home/parker/Dropbox/repos/june-9/three-js-vivid-trail-walk/try-2/index.html","thumb":"thumbs/t_mqhg5xaxtwig0n.png","page":"pages/t_mqhg5xaxtwig0n.html"},{"id":"t_mqhg5xaxe5309o","title":"","uri":"/home/parker/Dropbox/repos/june-9/three-js-vivid-trail-walk/try-3/index.html","thumb":"thumbs/t_mqhg5xaxe5309o.png","page":"pages/t_mqhg5xaxe5309o.html"},{"id":"t_mqhg5xaxej0yah","title":"","uri":"/home/parker/Dropbox/repos/june-9/three-js-vivid-trail-walk/try-4/index.html","thumb":"thumbs/t_mqhg5xaxej0yah.png","page":"pages/t_mqhg5xaxej0yah.html"},{"id":"t_mqhg5xaxi5fc8e","title":"","uri":"/home/parker/Dropbox/repos/june-9/three-js-vivid-trail-walk/try-5/vivid-trail-walk.html","thumb":"thumbs/t_mqhg5xaxi5fc8e.png","page":"pages/t_mqhg5xaxi5fc8e.html"},{"id":"t_mqhg5xax0ajr74","title":"","uri":"/home/parker/Dropbox/repos/june-9/three-js-vivid-trail-walk/try-7/index.html","thumb":"thumbs/t_mqhg5xax0ajr74.png","page":"pages/t_mqhg5xax0ajr74.html"},{"id":"t_mqhg5xax103695","title":"","uri":"/home/parker/Dropbox/repos/june-9/three-js-vivid-trail-walk/try-8/index.html","thumb":"thumbs/t_mqhg5xax103695.png","page":"pages/t_mqhg5xax103695.html"}]}]};
+window.PORTFOLIO_MODE = 'static';
+</script>
+<script>/* Shared portfolio renderer. Used by the live editor iframe (mode:'edit')
+   and by the published static page (mode:'static').
+
+   renderPortfolio(container, data, opts)
+     opts.mode      'edit' | 'static'
+     opts.thumbUrl(tile) -> url|null
+     opts.pageUrl(tile)  -> url|null
+     opts.edit      (edit mode only) callbacks:
+        setTitle(kind, ids, value)   kind: 'portfolio'|'group'|'tile'
+        addGroup()
+        addTiles(gid, uris[])
+        capture(gid, tid)
+        deleteTile(gid, tid)
+        deleteGroup(gid)
+*/
+(function () {
+  function el(tag, attrs, kids) {
+    const e = document.createElement(tag);
+    if (attrs) for (const k in attrs) {
+      if (k === 'class') e.className = attrs[k];
+      else if (k === 'text') e.textContent = attrs[k];
+      else if (k.startsWith('on') && typeof attrs[k] === 'function') e.addEventListener(k.slice(2), attrs[k]);
+      else if (attrs[k] != null) e.setAttribute(k, attrs[k]);
+    }
+    for (const c of [].concat(kids || [])) if (c != null) e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+    return e;
+  }
+
+  function editable(tag, value, placeholder, onCommit, cls) {
+    const e = el(tag, { class: cls, contenteditable: 'true', 'data-ph': placeholder });
+    e.textContent = value || '';
+    const commit = () => onCommit(e.textContent.trim());
+    e.addEventListener('blur', commit);
+    e.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter' && tag !== 'div') { ev.preventDefault(); e.blur(); }
+    });
+    return e;
+  }
+
+  window.renderPortfolio = function (container, data, opts) {
+    const edit = opts.mode === 'edit' ? opts.edit : null;
+    container.innerHTML = '';
+
+    // Header ---------------------------------------------------------
+    const header = el('header', { class: 'pf-header' });
+    if (edit) {
+      header.appendChild(editable('h1', data.portfolioTitle, 'Portfolio title…',
+        (v) => edit.setTitle('portfolio', {}, v), 'pf-title'));
+    } else {
+      header.appendChild(el('h1', { class: 'pf-title', text: data.portfolioTitle || 'Portfolio' }));
+    }
+    container.appendChild(header);
+
+    // Groups ---------------------------------------------------------
+    data.groups.forEach((g) => {
+      const section = el('section', { class: 'pf-group' });
+      const gh = el('div', { class: 'pf-group-head' });
+      if (edit) {
+        gh.appendChild(editable('h2', g.title, 'Group title…',
+          (v) => edit.setTitle('group', { gid: g.id }, v), 'pf-group-title'));
+        gh.appendChild(el('button', {
+          class: 'pf-x', title: 'Delete group', text: '✕',
+          onclick: () => { if (confirm('Delete this group and its tiles?')) edit.deleteGroup(g.id); },
+        }));
+      } else {
+        gh.appendChild(el('h2', { class: 'pf-group-title', text: g.title || '' }));
+      }
+      section.appendChild(gh);
+
+      const grid = el('div', { class: 'pf-grid' });
+      g.tiles.forEach((t) => grid.appendChild(tileEl(g, t)));
+      if (edit) grid.appendChild(addTileCard(g));
+      section.appendChild(grid);
+      container.appendChild(section);
+    });
+
+    if (edit) {
+      container.appendChild(el('div', { class: 'pf-addgroup' }, [
+        el('button', { class: 'pf-btn', text: '+ Add group', onclick: () => edit.addGroup() }),
+      ]));
+    }
+
+    // Tile -----------------------------------------------------------
+    function tileEl(g, t) {
+      const wrap = el('div', { class: 'pf-tile' });
+      const thumb = opts.thumbUrl(t);
+      const page = opts.pageUrl(t);
+
+      const rect = el('a', { class: 'pf-rect' + (thumb ? '' : ' empty') });
+      if (page && !edit) { rect.setAttribute('href', page); rect.setAttribute('target', '_blank'); }
+      if (thumb) {
+        rect.appendChild(el('img', { src: thumb, alt: t.title || t.uri, loading: 'lazy' }));
+      } else {
+        rect.appendChild(el('div', { class: 'pf-rect-empty' }, [
+          el('div', { class: 'pf-rect-uri', text: shortUri(t.uri) }),
+          el('div', { class: 'pf-rect-hint', text: edit ? 'Click to open & capture thumbnail' : 'Open page' }),
+        ]));
+      }
+
+      if (edit) {
+        rect.addEventListener('click', (ev) => {
+          ev.preventDefault();
+          if (page) window.open(page, '_blank');
+          edit.capture(g.id, t.id);
+          wrap.classList.add('armed');
+        });
+        wrap.setAttribute('data-tid', t.id);
+      }
+      wrap.appendChild(rect);
+
+      if (edit) {
+        const meta = el('div', { class: 'pf-tile-meta' });
+        meta.appendChild(editable('div', t.title, 'Page title…',
+          (v) => edit.setTitle('tile', { gid: g.id, tid: t.id }, v), 'pf-tile-title'));
+        meta.appendChild(el('button', {
+          class: 'pf-x small', title: 'Remove tile', text: '✕',
+          onclick: () => { if (confirm('Remove this tile?')) edit.deleteTile(g.id, t.id); },
+        }));
+        wrap.appendChild(meta);
+        wrap.appendChild(el('div', { class: 'pf-armbadge', text: '● waiting for clipboard image…' }));
+      } else if (t.title) {
+        wrap.appendChild(el('div', { class: 'pf-tile-title', text: t.title }));
+      }
+      return wrap;
+    }
+
+    function addTileCard(g) {
+      const card = el('div', { class: 'pf-tile pf-addtile' });
+      const ta = el('textarea', { class: 'pf-ta', placeholder: 'Paste page URLs / file paths\n(one per line)…' });
+      const btn = el('button', {
+        class: 'pf-btn', text: '+ Add tiles',
+        onclick: () => {
+          const uris = ta.value.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+          if (uris.length) { btn.textContent = 'Cloning…'; btn.disabled = true; edit.addTiles(g.id, uris); }
+        },
+      });
+      card.appendChild(ta);
+      card.appendChild(btn);
+      return card;
+    }
+  };
+
+  function shortUri(u) {
+    if (!u) return '';
+    try { const x = new URL(u); return (x.hostname + x.pathname).replace(/\/$/, '') || u; }
+    catch { return u.length > 48 ? '…' + u.slice(-46) : u; }
+  }
+})();
+</script>
+<script>
+  startBackground(document.getElementById('bg'), window.PORTFOLIO_DATA.seed);
+  renderPortfolio(document.getElementById('app'), window.PORTFOLIO_DATA, {
+    mode: 'static',
+    thumbUrl: (t) => t.thumb,
+    pageUrl: (t) => t.page,
+  });
+</script>
+</body>
+</html>

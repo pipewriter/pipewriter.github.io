@@ -1,0 +1,1092 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>The Vale Path — a one-minute memory trail</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:Georgia,'Times New Roman',serif;}
+  #c{display:block;width:100%;height:100%;}
+  .overlay{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    background:radial-gradient(ellipse at center,rgba(20,14,8,.88),rgba(0,0,0,.96));color:#e8d9b8;text-align:center;
+    z-index:20;padding:24px;transition:opacity .6s;}
+  .overlay.hidden{opacity:0;pointer-events:none;}
+  .overlay h1{font-size:42px;margin:0 0 6px;letter-spacing:4px;color:#f4e3b8;text-shadow:0 0 30px rgba(255,180,80,.35);}
+  .overlay .sub{font-style:italic;color:#c9b98f;margin-bottom:22px;}
+  .overlay p{max-width:560px;line-height:1.55;color:#d8c9a4;}
+  .overlay .keys{margin:14px 0 20px;color:#b8a87f;font-size:14px;letter-spacing:1px;}
+  .overlay button{font-family:inherit;font-size:18px;letter-spacing:2px;padding:12px 34px;cursor:pointer;
+    background:#2e2113;color:#f4e3b8;border:1px solid #8a6c3a;border-radius:4px;}
+  .overlay button:hover{background:#46331c;}
+  #banner{position:fixed;top:9%;left:0;right:0;text-align:center;z-index:10;pointer-events:none;
+    opacity:0;transition:opacity .8s;}
+  #banner .locusNum{font-size:13px;letter-spacing:5px;color:#ffd98a;text-transform:uppercase;text-shadow:0 1px 6px #000;}
+  #banner .locusName{font-size:34px;color:#fff3da;letter-spacing:3px;text-shadow:0 2px 14px rgba(0,0,0,.9),0 0 26px rgba(255,190,90,.45);}
+  #banner .locusHint{font-size:14px;font-style:italic;color:#e8d4a8;text-shadow:0 1px 6px #000;margin-top:4px;}
+  #hud{position:fixed;bottom:22px;left:0;right:0;display:flex;flex-direction:column;align-items:center;gap:8px;z-index:10;pointer-events:none;}
+  #beads{display:flex;gap:9px;}
+  .bead{width:11px;height:11px;border-radius:50%;border:1px solid rgba(244,227,184,.55);background:transparent;transition:all .5s;}
+  .bead.lit{background:#ffcf7a;box-shadow:0 0 9px #ffb84d;}
+  #barWrap{width:300px;height:4px;background:rgba(255,255,255,.14);border-radius:2px;overflow:hidden;}
+  #bar{height:100%;width:0;background:linear-gradient(90deg,#c98c3f,#ffd98a);transition:width .3s;}
+  #dot{position:fixed;left:50%;top:50%;width:4px;height:4px;margin:-2px;border-radius:50%;background:rgba(255,255,255,.55);z-index:10;pointer-events:none;}
+  #vig{position:fixed;inset:0;pointer-events:none;z-index:5;
+    background:radial-gradient(ellipse at center,transparent 58%,rgba(10,5,0,.42) 100%);}
+  #end ol{text-align:left;color:#e6d6ac;line-height:1.7;font-size:15px;margin:10px 0 22px;}
+  #end ol b{color:#ffd98a;}
+  #mute{position:fixed;top:14px;right:18px;z-index:11;color:#c9b98f;font-size:12px;letter-spacing:1px;pointer-events:none;text-shadow:0 1px 4px #000;}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="vig"></div>
+<div id="dot" style="display:none"></div>
+<div id="mute">M — sound on</div>
+
+<div id="banner"><div class="locusNum"></div><div class="locusName"></div><div class="locusHint"></div></div>
+
+<div id="hud" style="display:none">
+  <div id="beads"></div>
+  <div id="barWrap"><div id="bar"></div></div>
+</div>
+
+<div class="overlay" id="intro">
+  <h1>THE VALE PATH</h1>
+  <div class="sub">a one-minute walk your mind will keep</div>
+  <p>Before maps, before writing, a path home lived only in memory — as a chain of
+  landmarks, each strange enough to stick. This trail has <b>ten loci</b>.
+  As you pass each one, say its name. When you reach the hearth, recall them in order.</p>
+  <div class="keys">W A S D — walk &nbsp;·&nbsp; SHIFT — jog &nbsp;·&nbsp; MOUSE — look &nbsp;·&nbsp; M — mute</div>
+  <button id="begin">Set out</button>
+</div>
+
+<div class="overlay hidden" id="paused">
+  <h1>PAUSED</h1><p>Click to take up the path again.</p><button id="resume">Resume</button>
+</div>
+
+<div class="overlay hidden" id="end">
+  <h1>YOU ARE HOME</h1>
+  <div class="sub" id="endSub"></div>
+  <p>Close your eyes and walk it backward: fire, eye, flowers, bones, arch, glow, water, stones, red tree, antlers.
+  This path is now a memory palace — hang one fact on each locus and walk to retrieve them.</p>
+  <ol id="recall"></ol>
+  <button onclick="location.reload()">Walk again</button>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+
+/* ============ seeded rng & math helpers ============ */
+let seed = 1234567;
+function rnd(){ seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+  t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }
+const lerp  = (a,b,t)=>a+(b-a)*t;
+const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+const sstep = (a,b,v)=>{ const t = clamp((v-a)/(b-a),0,1); return t*t*(3-2*t); };
+
+/* ============ the path ============ */
+const ctrl = [
+  [0,8],[0,-28],[10,-58],[32,-82],[42,-115],[24,-148],[-8,-168],
+  [-34,-198],[-30,-238],[-2,-262],[26,-286],[34,-316]
+].map(p => new THREE.Vector3(p[0], 0, p[1]));
+const curve = new THREE.CatmullRomCurve3(ctrl, false, 'centripetal', 0.5);
+const NS = 700;
+const samples = curve.getSpacedPoints(NS);   // uniform spacing along arc
+
+/* ============ terrain functions ============ */
+function streamDip(x, z){
+  const fade = sstep(5,15,x) * (1 - sstep(70,80,x));
+  const dz = z + 115;
+  return -1.35 * Math.exp(-(dz*dz)/16) * fade;
+}
+function smoothH(x, z){
+  return 2.2*Math.sin(x*0.021)*Math.cos(z*0.017)
+       + 1.6*Math.sin(x*0.045+1.7)*Math.sin(z*0.036+0.4)
+       + streamDip(x,z);
+}
+function baseH(x, z){
+  return smoothH(x,z) + 0.5*Math.sin(x*0.12+2.0)*Math.cos(z*0.1);
+}
+for(const p of samples) p.y = smoothH(p.x, p.z);
+const tangents = samples.map((p,i)=>{
+  const a = samples[Math.max(0,i-1)], b = samples[Math.min(NS,i+1)];
+  return new THREE.Vector3(b.x-a.x, 0, b.z-a.z).normalize();
+});
+function findNearest(x, z){
+  let bi = 0, bd = Infinity;
+  for(let i=0;i<=NS;i++){
+    const dx = samples[i].x-x, dz = samples[i].z-z, d = dx*dx+dz*dz;
+    if(d < bd){ bd = d; bi = i; }
+  }
+  return { i: bi, d: Math.sqrt(bd) };
+}
+function groundH(x, z, near){
+  const n = near || findNearest(x, z);
+  const t = sstep(1.6, 8.5, n.d);
+  return lerp(samples[n.i].y, baseH(x,z), t);
+}
+
+/* the forest's hue drifts along the walk — each stretch has its own colour (spatial-sequence cue) */
+const zoneStops = [
+  [0.00,0x4d7a3a],[0.10,0x6e5a35],[0.22,0x5e7350],[0.34,0x4f7a42],
+  [0.46,0x1e4a44],[0.58,0x8a7a40],[0.70,0x9a9a80],[0.80,0xa07435],
+  [0.90,0x6a5070],[1.00,0x7a5a35]
+];
+const _za = new THREE.Color(), _zb = new THREE.Color();
+function zoneColor(t, out){
+  t = clamp(t, 0, 1);
+  for(let i=0;i<zoneStops.length-1;i++){
+    if(t <= zoneStops[i+1][0]){
+      const f = (t - zoneStops[i][0]) / (zoneStops[i+1][0] - zoneStops[i][0]);
+      _za.setHex(zoneStops[i][1]); _zb.setHex(zoneStops[i+1][1]);
+      return out.copy(_za).lerp(_zb, clamp(f,0,1));
+    }
+  }
+  return out.setHex(zoneStops[zoneStops.length-1][1]);
+}
+
+/* ============ renderer / scene / light ============ */
+const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('c'), antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.12;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(new THREE.Color(0xeec994), 36, 210);
+
+const camera = new THREE.PerspectiveCamera(72, innerWidth/innerHeight, 0.1, 900);
+
+const sunDir = new THREE.Vector3(-1, 0.27, -0.45).normalize();
+const sun = new THREE.DirectionalLight(0xffd9a0, 2.6);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.left = -55; sun.shadow.camera.right = 55;
+sun.shadow.camera.top = 55;   sun.shadow.camera.bottom = -55;
+sun.shadow.camera.near = 1;   sun.shadow.camera.far = 240;
+sun.shadow.bias = -0.0015;
+scene.add(sun, sun.target);
+scene.add(new THREE.HemisphereLight(0xa8c0ff, 0x5a4a32, 0.95));
+
+/* sky dome with golden-hour gradient + sun disc */
+const sky = new THREE.Mesh(
+  new THREE.SphereGeometry(440, 24, 14),
+  new THREE.ShaderMaterial({
+    side: THREE.BackSide, fog: false, depthWrite: false,
+    uniforms: { sunDir: { value: sunDir } },
+    vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position);
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+    fragmentShader: `varying vec3 vDir; uniform vec3 sunDir;
+      void main(){
+        float h = max(vDir.y, 0.0);
+        vec3 zen = vec3(0.18, 0.30, 0.55);
+        vec3 hor = vec3(0.99, 0.74, 0.48);
+        vec3 col = mix(hor, zen, pow(h, 0.55));
+        float d = max(dot(vDir, sunDir), 0.0);
+        col += vec3(1.0, 0.75, 0.40) * pow(d, 180.0) * 0.9;   // halo
+        col += vec3(1.0, 0.92, 0.70) * smoothstep(0.9993, 0.9997, d) * 4.0; // disc
+        gl_FragColor = vec4(col, 1.0);
+      }`
+  })
+);
+scene.add(sky);
+
+/* ============ loci definitions ============ */
+function P(t){ const i = Math.round(clamp(t,0,1)*NS); return { p: samples[i].clone(), tan: tangents[i].clone(), i }; }
+function perp(tan){ return new THREE.Vector3(-tan.z, 0, tan.x); }
+
+const LOCI = [
+  { t:0.018, name:'The Gate of Antlers',  hint:'two bone-white trunks and a grinning skull — the trail begins', note:0 },
+  { t:0.125, name:'The Crimson Sentinel', hint:'a blood-red tree banded in white spirals', note:2 },
+  { t:0.240, name:'The Whispering Stones',hint:'a ring of standing stones; one carries a burning rune', note:4 },
+  { t:0.358, name:'The Singing Brook',    hint:'cold water over stepping stones — listen before you see it', note:7 },
+  { t:0.480, name:'The Glow Hollow',      hint:'a dark dell lit by mushrooms taller than a child', note:9 },
+  { t:0.600, name:'The Sky Window',       hint:'a stone arch that frames the evening light', note:12 },
+  { t:0.715, name:'The Bone Chimes',      hint:'a dead tree hung with clicking bones', note:14 },
+  { t:0.820, name:'The Fire Meadow',      hint:'a field of ember-orange flowers, sparks adrift', note:16 },
+  { t:0.905, name:'The Watcher',          hint:'a boulder with one unblinking eye', note:19 },
+  { t:0.985, name:'The Hearth',           hint:'smoke, firelight, home', note:24 },
+];
+for(const L of LOCI){ const q = P(L.t); L.pos = q.p; L.tan = q.tan; L.visited = false; }
+
+/* ============ ground ============ */
+{
+  const SZ = 480, SEG = 220;
+  const g = new THREE.PlaneGeometry(SZ, SZ, SEG, SEG);
+  g.rotateX(-Math.PI/2);
+  g.translate(0, 0, -154); // centre on the trail's extent
+  const pos = g.attributes.position;
+  const colors = new Float32Array(pos.count * 3);
+  const c = new THREE.Color(), zc = new THREE.Color();
+  for(let i=0;i<pos.count;i++){
+    const x = pos.getX(i), z = pos.getZ(i);
+    const n = findNearest(x, z);
+    pos.setY(i, groundH(x, z, n));
+    zoneColor(n.i/NS, zc);
+    const v = 0.82 + 0.36*Math.sin(x*1.7)*Math.cos(z*1.3) * 0.5;
+    c.setRGB(zc.r*0.38, zc.g*0.46, zc.b*0.30).multiplyScalar(v);
+    // moss-green base blended with zone hue
+    c.lerp(zc, 0.45).multiplyScalar(0.9);
+    colors[i*3] = c.r; colors[i*3+1] = c.g; colors[i*3+2] = c.b;
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  g.computeVertexNormals();
+  const ground = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }));
+  ground.receiveShadow = true;
+  scene.add(ground);
+}
+
+/* ============ trail ribbon ============ */
+{
+  const W = 2.5;
+  const verts = [], cols = [], idx = [];
+  const c = new THREE.Color();
+  for(let i=0;i<=NS;i++){
+    const p = samples[i], pp = perp(tangents[i]);
+    const wob = 1 + 0.18*Math.sin(i*0.23);
+    for(const s of [-1, 1]){
+      verts.push(p.x + pp.x*W/2*s*wob, p.y + 0.055, p.z + pp.z*W/2*s*wob);
+      const v = 0.85 + 0.3*rnd();
+      c.setRGB(0.42*v, 0.32*v, 0.22*v);
+      cols.push(c.r, c.g, c.b);
+    }
+    if(i){ const a = (i-1)*2; idx.push(a, a+1, a+2, a+1, a+3, a+2); }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  const trail = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }));
+  trail.receiveShadow = true;
+  scene.add(trail);
+}
+
+/* ============ shared geometries / materials ============ */
+const rockMat  = new THREE.MeshStandardMaterial({ color: 0x8a8378, roughness: 0.95, flatShading: true });
+/* soft round sprite for all particle points */
+const discTex = (() => {
+  const cv = document.createElement('canvas'); cv.width = cv.height = 64;
+  const x = cv.getContext('2d');
+  const grad = x.createRadialGradient(32, 32, 2, 32, 32, 30);
+  grad.addColorStop(0, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.5, 'rgba(255,255,255,0.45)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  x.fillStyle = grad; x.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(cv);
+})();
+const boneMat  = new THREE.MeshStandardMaterial({ color: 0xe8e0cc, roughness: 0.7 });
+const woodMat  = new THREE.MeshStandardMaterial({ color: 0x5a4228, roughness: 1 });
+
+function addShadow(o){ o.traverse(m => { if(m.isMesh){ m.castShadow = true; m.receiveShadow = true; } }); return o; }
+
+/* ============ cairns — the old wayfinding marks ============ */
+{
+  const geo = new THREE.IcosahedronGeometry(1, 0);
+  const cairn = new THREE.InstancedMesh(geo, rockMat, 3 * 11);
+  const M = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3();
+  let k = 0;
+  for(let j=1;j<=11;j++){
+    const i = Math.round(j * NS/12);
+    const p = samples[i], pp = perp(tangents[i]);
+    const side = (j%2 ? 1 : -1);
+    const bx = p.x + pp.x*2.1*side, bz = p.z + pp.z*2.1*side;
+    let y = groundH(bx, bz);
+    const sizes = [0.42, 0.3, 0.19];
+    for(let m=0;m<3;m++){
+      y += sizes[m]*0.8;
+      q.setFromEuler(new THREE.Euler(rnd()*0.4, rnd()*6.28, rnd()*0.4));
+      s.setScalar(sizes[m]);
+      M.compose(new THREE.Vector3(bx, y, bz), q, s);
+      cairn.setMatrixAt(k++, M);
+      y += sizes[m]*0.55;
+    }
+  }
+  cairn.castShadow = true;
+  scene.add(cairn);
+}
+
+/* ============ locus builders ============ */
+const dynamic = { chimes: null, fire: null, fireLight: null, water: null,
+                  fireflyHollow: null, fireflyMeadow: null, smoke: null };
+
+function gateOfAntlers(L){
+  const g = new THREE.Group();
+  const pp = perp(L.tan);
+  for(const s of [-1, 1]){
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.3, 5.4, 6), boneMat);
+    post.position.set(pp.x*2.0*s, 2.4, pp.z*2.0*s);
+    post.rotation.z = -0.18*s; post.rotation.x = 0.05;
+    g.add(post);
+    for(let b=0;b<3;b++){ // antler tines
+      const tine = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.11, 1.6, 5), boneMat);
+      tine.position.set(pp.x*(2.0 - 0.5*b)*s, 3.6 + b*0.7, pp.z*(2.0-0.5*b)*s);
+      tine.rotation.z = (0.8 - b*0.35)*s;
+      g.add(tine);
+    }
+  }
+  const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 4.6, 6), boneMat);
+  bar.position.y = 4.9;
+  bar.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), pp);
+  g.add(bar);
+  const skull = new THREE.Mesh(new THREE.SphereGeometry(0.42, 10, 8), boneMat);
+  skull.position.y = 5.5; skull.scale.set(1, 1.1, 0.9);
+  g.add(skull);
+  const eyeMat = new THREE.MeshBasicMaterial({ color: 0x140c06 });
+  for(const s of [-1, 1]){ // sockets face the approaching walker
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.11, 6, 6), eyeMat);
+    eye.position.set(s*0.16*pp.x - L.tan.x*0.38, 5.55, s*0.16*pp.z - L.tan.z*0.38);
+    g.add(eye);
+  }
+  g.position.copy(L.pos);
+  return addShadow(g);
+}
+
+function crimsonSentinel(L){
+  const g = new THREE.Group();
+  const off = perp(L.tan).multiplyScalar(4.5);
+  const redBark = new THREE.MeshStandardMaterial({ color: 0xa82418, roughness: 0.8, emissive: 0x2a0402 });
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 1.4, 15, 9), redBark);
+  trunk.position.y = 7.5;
+  g.add(trunk);
+  for(let i=0;i<6;i++){ // white spiral bands
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(lerp(1.32, 0.78, i/5), 0.12, 6, 18), boneMat);
+    ring.position.y = 1.6 + i*2.2;
+    ring.rotation.x = Math.PI/2; ring.rotation.y = i*0.9; ring.rotation.z = 0.28;
+    g.add(ring);
+  }
+  const leaf = new THREE.MeshStandardMaterial({ color: 0x7a1a30, roughness: 1 });
+  for(let i=0;i<3;i++){
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(4.6 - i*1.2, 4.2, 9), leaf);
+    cone.position.y = 13.5 + i*2.4;
+    g.add(cone);
+  }
+  g.position.set(L.pos.x + off.x, L.pos.y, L.pos.z + off.z);
+  return addShadow(g);
+}
+
+function whisperingStones(L){
+  const g = new THREE.Group();
+  g.position.copy(L.pos);
+  for(let i=0;i<7;i++){
+    const a = i/7*Math.PI*2;
+    const r = 6.2;
+    const sx = Math.cos(a)*r, sz = Math.sin(a)*r;
+    if(findNearest(L.pos.x + sx, L.pos.z + sz).d < 2.4) continue; // never block the path
+    const st = new THREE.Mesh(new THREE.BoxGeometry(1.1, 3.4 + rnd()*1.2, 0.7), rockMat);
+    st.position.set(sx, 1.4, sz);
+    st.rotation.y = a + rnd()*0.5; st.rotation.z = (rnd()-0.5)*0.16;
+    g.add(st);
+  }
+  const mono = new THREE.Mesh(new THREE.BoxGeometry(1.6, 6.2, 1.1), rockMat);
+  const off = perp(L.tan).multiplyScalar(5.2);
+  mono.position.set(off.x, 2.9, off.z);
+  g.add(mono);
+  // glowing rune on the monolith
+  const cv = document.createElement('canvas'); cv.width = cv.height = 128;
+  const x = cv.getContext('2d');
+  x.strokeStyle = '#9fe8ff'; x.lineWidth = 9; x.lineCap = 'round';
+  x.beginPath(); x.moveTo(40,18); x.lineTo(88,40); x.lineTo(40,64); x.lineTo(88,88); x.lineTo(40,110);
+  x.moveTo(64,18); x.lineTo(64,110); x.stroke();
+  const tex = new THREE.CanvasTexture(cv);
+  const rune = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 2.2),
+    new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide }));
+  rune.position.set(off.x*0.88, 3.4, off.z*0.88);
+  g.add(rune);
+  rune.lookAt(L.pos.x, L.pos.y + 3.4, L.pos.z); // face the circle's centre on the trail
+  const glow = new THREE.PointLight(0x66d9ff, 6, 14, 2);
+  glow.position.set(off.x*0.8, 3.6, off.z*0.8);
+  g.add(glow);
+  return addShadow(g);
+}
+
+function singingBrook(L){
+  const g = new THREE.Group();
+  const yCross = smoothH(L.pos.x, L.pos.z);
+  // flowing water (animated canvas stripes)
+  const cv = document.createElement('canvas'); cv.width = 256; cv.height = 64;
+  const x = cv.getContext('2d');
+  x.fillStyle = '#2e7f9e'; x.fillRect(0,0,256,64);
+  for(let i=0;i<60;i++){
+    x.fillStyle = `rgba(${180+Math.floor(Math.random()*60)},230,255,${0.10+Math.random()*0.22})`;
+    x.fillRect(Math.random()*256, Math.random()*64, 18+Math.random()*40, 1.6);
+  }
+  const tex = new THREE.CanvasTexture(cv);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(5, 1);
+  const water = new THREE.Mesh(new THREE.PlaneGeometry(72, 8.5),
+    new THREE.MeshStandardMaterial({ map: tex, transparent: true, opacity: 0.86,
+      roughness: 0.15, metalness: 0.35, color: 0xbfe8ff }));
+  water.rotation.x = -Math.PI/2;
+  water.position.set(43, yCross + 0.07, -115);
+  g.add(water);
+  dynamic.water = tex;
+  // stepping stones across the ford — centred on the stream line, not the locus point
+  let crossIdx = Math.round(L.t*NS);
+  let bestDz = Infinity;
+  for(let i=180;i<320;i++){
+    const dz = Math.abs(samples[i].z + 115);
+    if(dz < bestDz){ bestDz = dz; crossIdx = i; }
+  }
+  for(let m=-2;m<=2;m++){
+    const st = new THREE.Mesh(new THREE.CylinderGeometry(0.55 + rnd()*0.2, 0.7, 0.5, 7), rockMat);
+    const i = clamp(crossIdx + m*4, 0, NS);
+    st.position.set(samples[i].x + (rnd()-0.5)*0.5, samples[i].y + 0.18, samples[i].z + (rnd()-0.5)*0.5);
+    st.rotation.y = rnd()*6.28;
+    addShadow(st);
+    g.add(st);
+  }
+  // reeds along the banks
+  const reedMat = new THREE.MeshStandardMaterial({ color: 0x5a7a2a, roughness: 1 });
+  for(let i=0;i<40;i++){
+    const reed = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.045, 1.4 + rnd(), 4), reedMat);
+    const rx = 14 + rnd()*58, rz = -115 + (rnd()<0.5?-1:1)*(4.5 + rnd()*2.5);
+    reed.position.set(rx, groundH(rx, rz) + 0.7, rz);
+    reed.rotation.z = (rnd()-0.5)*0.2;
+    g.add(reed);
+  }
+  return g;
+}
+
+function glowHollow(L){
+  const g = new THREE.Group();
+  const capMat  = new THREE.MeshStandardMaterial({ color: 0x1a8a8a, emissive: 0x18c8c0, emissiveIntensity: 1.4, roughness: 0.5 });
+  const stemMat = new THREE.MeshStandardMaterial({ color: 0xd8e8d0, roughness: 0.9 });
+  for(let i=0;i<26;i++){
+    const big = i === 0;
+    const h = big ? 3.2 : 0.4 + rnd()*1.1;
+    const r = big ? 2.0 : 0.25 + rnd()*0.55;
+    const a = rnd()*6.28, d = big ? 4.5 : 2.8 + rnd()*9;
+    const mx = L.pos.x + Math.cos(a)*d, mz = L.pos.z + Math.sin(a)*d;
+    const near = findNearest(mx, mz);
+    if(!big && near.d < 2.0) continue; // keep the path walkable
+    const my = groundH(mx, mz, near);
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(r*0.32, r*0.45, h, 7), stemMat);
+    stem.position.set(mx, my + h/2, mz);
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(r, 10, 7, 0, Math.PI*2, 0, Math.PI/2), capMat);
+    cap.position.set(mx, my + h, mz);
+    addShadow(stem);
+    g.add(stem, cap);
+  }
+  const glow = new THREE.PointLight(0x22e8d8, 10, 24, 2);
+  glow.position.set(L.pos.x, L.pos.y + 3, L.pos.z);
+  g.add(glow);
+  // fireflies
+  const N = 70, posArr = new Float32Array(N*3), base = [];
+  for(let i=0;i<N;i++){
+    const a = rnd()*6.28, d = rnd()*11;
+    const fx = L.pos.x + Math.cos(a)*d, fz = L.pos.z + Math.sin(a)*d;
+    const fy = groundH(fx, fz) + 0.5 + rnd()*3;
+    base.push(fx, fy, fz, rnd()*6.28);
+    posArr.set([fx, fy, fz], i*3);
+  }
+  const pg = new THREE.BufferGeometry();
+  pg.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
+  const pts = new THREE.Points(pg, new THREE.PointsMaterial({ color: 0x9fffe8, size: 0.22, map: discTex,
+    transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false }));
+  g.add(pts);
+  dynamic.fireflyHollow = { pts, base, n: N };
+  return g;
+}
+
+function skyWindow(L){
+  const g = new THREE.Group();
+  const arch = new THREE.Mesh(new THREE.TorusGeometry(4.6, 1.5, 8, 14, Math.PI), rockMat);
+  arch.position.y = 0.4;
+  arch.rotation.y = Math.atan2(L.tan.x, L.tan.z); // legs astride the trail, opening faces the walker
+  g.add(arch);
+  for(const s of [-1, 1]){ // rubble at the feet
+    for(let i=0;i<3;i++){
+      const rk = new THREE.Mesh(new THREE.IcosahedronGeometry(0.5 + rnd()*0.6, 0), rockMat);
+      const pp = perp(L.tan);
+      rk.position.set(pp.x*(4.2 + rnd()*1.4)*s + (rnd()-0.5)*2, 0.3, pp.z*(4.2 + rnd()*1.4)*s + (rnd()-0.5)*2);
+      rk.rotation.set(rnd()*3, rnd()*3, rnd()*3);
+      g.add(rk);
+    }
+  }
+  g.position.copy(L.pos);
+  return addShadow(g);
+}
+
+function boneChimes(L){
+  const g = new THREE.Group();
+  const off = perp(L.tan).multiplyScalar(2.8);
+  const deadMat = new THREE.MeshStandardMaterial({ color: 0x3a3028, roughness: 1 });
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.5, 7, 7), deadMat);
+  trunk.position.y = 3.5;
+  g.add(trunk);
+  const chimes = [];
+  for(let b=0;b<4;b++){
+    const br = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.14, 3.4, 5), deadMat);
+    const a = b*1.7;
+    br.position.set(Math.cos(a)*1.2, 4.6 + b*0.6, Math.sin(a)*1.2);
+    br.rotation.z = Math.cos(a)*1.15; br.rotation.x = Math.sin(a)*1.15;
+    g.add(br);
+    for(let k=0;k<3;k++){
+      const pivot = new THREE.Group();
+      pivot.position.set(Math.cos(a)*(1.6 + k*0.7), 4.6 + b*0.6 + k*0.18, Math.sin(a)*(1.6 + k*0.7));
+      const str = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.9, 3),
+        new THREE.MeshBasicMaterial({ color: 0x222222 }));
+      str.position.y = -0.45;
+      const bone = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 0.55, 5), boneMat);
+      bone.position.y = -1.1;
+      pivot.add(str, bone);
+      g.add(pivot);
+      chimes.push({ pivot, ph: rnd()*6.28 });
+    }
+  }
+  dynamic.chimes = chimes;
+  g.position.set(L.pos.x + off.x, L.pos.y, L.pos.z + off.z);
+  return addShadow(g);
+}
+
+function fireMeadow(L){
+  const g = new THREE.Group();
+  const N = 320;
+  const stemGeo = new THREE.CylinderGeometry(0.025, 0.035, 1, 4);
+  const headGeo = new THREE.SphereGeometry(0.14, 6, 5);
+  const stemMat = new THREE.MeshStandardMaterial({ color: 0x4a6a20, roughness: 1 });
+  const headMat = new THREE.MeshStandardMaterial({ color: 0xff7a10, emissive: 0xff5a00, emissiveIntensity: 0.9, roughness: 0.6 });
+  const stems = new THREE.InstancedMesh(stemGeo, stemMat, N);
+  const heads = new THREE.InstancedMesh(headGeo, headMat, N);
+  const M = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), s = new THREE.Vector3();
+  for(let i=0;i<N;i++){
+    const a = rnd()*6.28, d = 2.5 + Math.sqrt(rnd())*16;
+    const fx = L.pos.x + Math.cos(a)*d, fz = L.pos.z + Math.sin(a)*d;
+    const n = findNearest(fx, fz);
+    if(n.d < 1.8){ // keep the path itself clear
+      M.makeScale(0,0,0); stems.setMatrixAt(i, M); heads.setMatrixAt(i, M); continue;
+    }
+    const fy = groundH(fx, fz, n);
+    const h = 0.5 + rnd()*0.7;
+    q.setFromEuler(new THREE.Euler((rnd()-0.5)*0.25, 0, (rnd()-0.5)*0.25));
+    s.set(1, h, 1);
+    M.compose(v.set(fx, fy + h/2, fz), q, s);
+    stems.setMatrixAt(i, M);
+    s.setScalar(0.8 + rnd()*0.7);
+    M.compose(v.set(fx, fy + h, fz), q, s);
+    heads.setMatrixAt(i, M);
+  }
+  g.add(stems, heads);
+  // drifting embers
+  const FN = 60, posArr = new Float32Array(FN*3), base = [];
+  for(let i=0;i<FN;i++){
+    const a = rnd()*6.28, d = rnd()*16;
+    const fx = L.pos.x + Math.cos(a)*d, fz = L.pos.z + Math.sin(a)*d;
+    const fy = groundH(fx, fz) + 0.6 + rnd()*2.5;
+    base.push(fx, fy, fz, rnd()*6.28);
+    posArr.set([fx, fy, fz], i*3);
+  }
+  const pg = new THREE.BufferGeometry();
+  pg.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
+  const pts = new THREE.Points(pg, new THREE.PointsMaterial({ color: 0xffb050, size: 0.2, map: discTex,
+    transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }));
+  g.add(pts);
+  dynamic.fireflyMeadow = { pts, base, n: FN };
+  return g;
+}
+
+function watcher(L){
+  const g = new THREE.Group();
+  const off = perp(L.tan).multiplyScalar(4.2);
+  const rock = new THREE.Mesh(new THREE.IcosahedronGeometry(3.2, 1), rockMat);
+  rock.scale.set(1.15, 0.95, 1);
+  rock.position.y = 1.9;
+  g.add(rock);
+  const eye = new THREE.Group();
+  const white = new THREE.Mesh(new THREE.CircleGeometry(1.05, 24),
+    new THREE.MeshStandardMaterial({ color: 0xf2ead8, roughness: 0.6 }));
+  const iris = new THREE.Mesh(new THREE.CircleGeometry(0.52, 24),
+    new THREE.MeshStandardMaterial({ color: 0x2a6adf, emissive: 0x1030a0, emissiveIntensity: 0.7 }));
+  iris.position.z = 0.012;
+  const pupil = new THREE.Mesh(new THREE.CircleGeometry(0.22, 20),
+    new THREE.MeshBasicMaterial({ color: 0x080808 }));
+  pupil.position.z = 0.024;
+  eye.add(white, iris, pupil);
+  eye.position.y = 2.4;
+  g.add(eye);
+  g.position.set(L.pos.x + off.x, L.pos.y, L.pos.z + off.z);
+  // aim the eye back at the trail
+  eye.position.add(new THREE.Vector3().subVectors(L.pos, g.position).normalize().multiplyScalar(2.95));
+  eye.lookAt(L.pos.x, L.pos.y + 1.7, L.pos.z);
+  return addShadow(g);
+}
+
+function hearth(L){
+  const g = new THREE.Group();
+  const fwd = L.tan.clone();
+  const cavePos = new THREE.Vector3().copy(L.pos).addScaledVector(fwd, 10);
+  // hill over the cave
+  const hill = new THREE.Mesh(new THREE.SphereGeometry(9, 14, 10),
+    new THREE.MeshStandardMaterial({ color: 0x6a6053, roughness: 1, flatShading: true }));
+  hill.scale.set(1.3, 0.85, 1.1);
+  hill.position.copy(cavePos).y += 0.5;
+  g.add(hill);
+  // cave mouth — dark disc + stone lintel
+  const mouth = new THREE.Mesh(new THREE.CircleGeometry(2.4, 20),
+    new THREE.MeshBasicMaterial({ color: 0x050302 }));
+  mouth.position.copy(cavePos).addScaledVector(fwd, -10.5); // just proud of the hill's face
+
+  mouth.position.y = L.pos.y + 1.8;
+  mouth.lookAt(mouth.position.clone().addScaledVector(fwd, -3));
+  g.add(mouth);
+  const lintel = new THREE.Mesh(new THREE.BoxGeometry(5.2, 1.0, 1.4), rockMat);
+  lintel.position.copy(mouth.position); lintel.position.y += 2.6;
+  lintel.rotation.y = Math.atan2(fwd.x, fwd.z);
+  g.add(lintel);
+  // fire ring — on the clearing in front of the cave mouth, not inside the hill
+  const firePos = new THREE.Vector3().copy(L.pos).addScaledVector(fwd, -4.2);
+  firePos.y = groundH(firePos.x, firePos.z);
+  for(let i=0;i<9;i++){
+    const a = i/9*6.28;
+    const st = new THREE.Mesh(new THREE.IcosahedronGeometry(0.3, 0), rockMat);
+    st.position.set(firePos.x + Math.cos(a)*1.2, firePos.y + 0.18, firePos.z + Math.sin(a)*1.2);
+    g.add(st);
+  }
+  for(let i=0;i<3;i++){
+    const log = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 1.6, 6), woodMat);
+    log.position.set(firePos.x, firePos.y + 0.25, firePos.z);
+    log.rotation.set(Math.PI/2.3, i*2.1, 0);
+    g.add(log);
+  }
+  const flame = new THREE.Mesh(new THREE.ConeGeometry(0.55, 1.5, 8),
+    new THREE.MeshBasicMaterial({ color: 0xffa030, transparent: true, opacity: 0.92 }));
+  flame.position.set(firePos.x, firePos.y + 0.95, firePos.z);
+  g.add(flame);
+  const inner = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.9, 8),
+    new THREE.MeshBasicMaterial({ color: 0xfff0a0 }));
+  inner.position.set(firePos.x, firePos.y + 0.75, firePos.z);
+  g.add(inner);
+  const fl = new THREE.PointLight(0xff8830, 14, 30, 2);
+  fl.position.set(firePos.x, firePos.y + 1.4, firePos.z);
+  g.add(fl);
+  dynamic.fire = { flame, inner, pos: firePos };
+  dynamic.fireLight = fl;
+  // smoke
+  const SN = 26, posArr = new Float32Array(SN*3), life = [];
+  for(let i=0;i<SN;i++){
+    life.push(rnd());
+    posArr.set([firePos.x, firePos.y + 1 + rnd()*7, firePos.z], i*3);
+  }
+  const pg = new THREE.BufferGeometry();
+  pg.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
+  const smoke = new THREE.Points(pg, new THREE.PointsMaterial({ color: 0x9a9a9a, size: 2.2, map: discTex,
+    transparent: true, opacity: 0.28, depthWrite: false }));
+  g.add(smoke);
+  dynamic.smoke = { pts: smoke, life, n: SN, origin: firePos };
+  addShadow(hill);
+  return g;
+}
+
+const builders = [gateOfAntlers, crimsonSentinel, whisperingStones, singingBrook,
+                  glowHollow, skyWindow, boneChimes, fireMeadow, watcher, hearth];
+LOCI.forEach((L, i) => scene.add(builders[i](L)));
+
+/* ============ forest (instanced) ============ */
+{
+  const TN = 380;
+  const trunkGeo = new THREE.CylinderGeometry(0.22, 0.38, 4.4, 6);
+  const cone1Geo = new THREE.ConeGeometry(2.3, 5.2, 7);
+  const cone2Geo = new THREE.ConeGeometry(1.5, 3.6, 7);
+  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x6a4a2e, roughness: 1 });
+  const leafMat  = new THREE.MeshStandardMaterial({ roughness: 1, flatShading: true });
+  const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, TN);
+  const c1 = new THREE.InstancedMesh(cone1Geo, leafMat, TN);
+  const c2 = new THREE.InstancedMesh(cone2Geo, leafMat, TN);
+  const M = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), s = new THREE.Vector3();
+  const zc = new THREE.Color(), cc = new THREE.Color();
+  let placed = 0, guard = 0;
+  while(placed < TN && guard++ < TN*30){
+    const t = rnd();
+    const i = Math.round(t*NS);
+    const pp = perp(tangents[i]);
+    const side = rnd() < 0.5 ? -1 : 1;
+    const off = 7 + rnd()*52;
+    const tx = samples[i].x + pp.x*off*side + (rnd()-0.5)*10;
+    const tz = samples[i].z + pp.z*off*side + (rnd()-0.5)*10;
+    const n = findNearest(tx, tz);
+    if(n.d < 6) continue;
+    let nearLocus = false;
+    for(const L of LOCI){
+      const dx = L.pos.x - tx, dz = L.pos.z - tz;
+      if(dx*dx + dz*dz < 13*13){ nearLocus = true; break; }
+    }
+    if(nearLocus) continue;
+    const ty = groundH(tx, tz, n);
+    const tT = n.i/NS;
+    const inHollow = tT > 0.43 && tT < 0.55;
+    const sc = (0.8 + rnd()*0.8) * (inHollow ? 1.55 : 1);
+    q.setFromEuler(new THREE.Euler(0, rnd()*6.28, (rnd()-0.5)*0.06));
+    M.compose(v.set(tx, ty + 2.2*sc, tz), q, s.setScalar(sc));
+    trunks.setMatrixAt(placed, M);
+    M.compose(v.set(tx, ty + (4.4 + 2.6)*sc, tz), q, s.setScalar(sc));
+    c1.setMatrixAt(placed, M);
+    M.compose(v.set(tx, ty + (4.4 + 5.4)*sc, tz), q, s.setScalar(sc));
+    c2.setMatrixAt(placed, M);
+    zoneColor(tT, zc);
+    cc.setHex(0x2e5a26).lerp(zc, 0.55).multiplyScalar(0.75 + rnd()*0.4);
+    c1.setColorAt(placed, cc);
+    c2.setColorAt(placed, cc.multiplyScalar(1.15));
+    placed++;
+  }
+  trunks.count = c1.count = c2.count = placed;
+  trunks.castShadow = c1.castShadow = c2.castShadow = true;
+  scene.add(trunks, c1, c2);
+
+  /* scattered rocks */
+  const RN = 130;
+  const rocks = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 0), rockMat, RN);
+  for(let i=0;i<RN;i++){
+    const t = rnd(), j = Math.round(t*NS);
+    const pp = perp(tangents[j]);
+    const side = rnd() < 0.5 ? -1 : 1;
+    const off = 4 + rnd()*40;
+    const rx = samples[j].x + pp.x*off*side, rz = samples[j].z + pp.z*off*side;
+    const n = findNearest(rx, rz);
+    if(n.d < 3.2){ M.makeScale(0,0,0); rocks.setMatrixAt(i, M); continue; }
+    const sc = 0.25 + rnd()*0.9;
+    q.setFromEuler(new THREE.Euler(rnd()*3, rnd()*3, rnd()*3));
+    M.compose(v.set(rx, groundH(rx, rz, n) + sc*0.4, rz), q, s.setScalar(sc));
+    rocks.setMatrixAt(i, M);
+  }
+  rocks.castShadow = true;
+  scene.add(rocks);
+
+  /* grass / fern tufts */
+  const GN = 750;
+  const tuftMat = new THREE.MeshStandardMaterial({ roughness: 1, flatShading: true });
+  const tufts = new THREE.InstancedMesh(new THREE.ConeGeometry(0.5, 1.1, 5), tuftMat, GN);
+  for(let i=0;i<GN;i++){
+    const t = rnd(), j = Math.round(t*NS);
+    const pp = perp(tangents[j]);
+    const side = rnd() < 0.5 ? -1 : 1;
+    const off = 2.2 + rnd()*30;
+    const gx = samples[j].x + pp.x*off*side + (rnd()-0.5)*6;
+    const gz = samples[j].z + pp.z*off*side + (rnd()-0.5)*6;
+    const n = findNearest(gx, gz);
+    if(n.d < 1.7){ M.makeScale(0,0,0); tufts.setMatrixAt(i, M); continue; }
+    const sc = 0.5 + rnd()*0.9;
+    q.setFromEuler(new THREE.Euler((rnd()-0.5)*0.3, rnd()*6.28, (rnd()-0.5)*0.3));
+    M.compose(v.set(gx, groundH(gx, gz, n) + 0.45*sc, gz), q, s.set(sc, sc, sc));
+    tufts.setMatrixAt(i, M);
+    zoneColor(n.i/NS, zc);
+    cc.setHex(0x5a8a30).lerp(zc, 0.5).multiplyScalar(0.8 + rnd()*0.5);
+    tufts.setColorAt(i, cc);
+  }
+  scene.add(tufts);
+}
+
+/* ============ audio ============ */
+const AU = { ctx: null, muted: false, master: null, brookGain: null, fireGain: null, windGain: null };
+function initAudio(){
+  if(AU.ctx) { AU.ctx.resume(); return; }
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  AU.ctx = ctx;
+  AU.master = ctx.createGain(); AU.master.gain.value = 0.9; AU.master.connect(ctx.destination);
+  const noiseBuf = ctx.createBuffer(1, ctx.sampleRate*2, ctx.sampleRate);
+  const d = noiseBuf.getChannelData(0);
+  for(let i=0;i<d.length;i++) d[i] = Math.random()*2 - 1;
+  function noiseSrc(){ const s = ctx.createBufferSource(); s.buffer = noiseBuf; s.loop = true; s.start(); return s; }
+  // wind
+  const wf = ctx.createBiquadFilter(); wf.type = 'lowpass'; wf.frequency.value = 320; wf.Q.value = 0.6;
+  AU.windGain = ctx.createGain(); AU.windGain.gain.value = 0.05;
+  noiseSrc().connect(wf); wf.connect(AU.windGain); AU.windGain.connect(AU.master);
+  const lfo = ctx.createOscillator(), lg = ctx.createGain();
+  lfo.frequency.value = 0.13; lg.gain.value = 0.025;
+  lfo.connect(lg); lg.connect(AU.windGain.gain); lfo.start();
+  // brook
+  const bf = ctx.createBiquadFilter(); bf.type = 'bandpass'; bf.frequency.value = 1400; bf.Q.value = 0.8;
+  AU.brookGain = ctx.createGain(); AU.brookGain.gain.value = 0;
+  noiseSrc().connect(bf); bf.connect(AU.brookGain); AU.brookGain.connect(AU.master);
+  // fire crackle bed
+  const ff = ctx.createBiquadFilter(); ff.type = 'highpass'; ff.frequency.value = 2400;
+  AU.fireGain = ctx.createGain(); AU.fireGain.gain.value = 0;
+  noiseSrc().connect(ff); ff.connect(AU.fireGain); AU.fireGain.connect(AU.master);
+}
+function chime(semitone){
+  if(!AU.ctx || AU.muted) return;
+  const ctx = AU.ctx, t0 = ctx.currentTime;
+  const f = 261.63 * Math.pow(2, semitone/12);
+  for(const [mult, amp] of [[1, 0.22],[2.01, 0.07],[2.99, 0.03]]){
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = 'sine'; o.frequency.value = f*mult;
+    g.gain.setValueAtTime(amp, t0);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 2.4);
+    o.connect(g); g.connect(AU.master);
+    o.start(t0); o.stop(t0 + 2.5);
+  }
+}
+function drum(){
+  if(!AU.ctx || AU.muted) return;
+  const ctx = AU.ctx, t0 = ctx.currentTime;
+  const o = ctx.createOscillator(), g = ctx.createGain();
+  o.type = 'sine';
+  o.frequency.setValueAtTime(140, t0);
+  o.frequency.exponentialRampToValueAtTime(46, t0 + 0.45);
+  g.gain.setValueAtTime(0.55, t0);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.9);
+  o.connect(g); g.connect(AU.master);
+  o.start(t0); o.stop(t0 + 1);
+}
+function tinkle(){
+  if(!AU.ctx || AU.muted) return;
+  const ctx = AU.ctx, t0 = ctx.currentTime;
+  const o = ctx.createOscillator(), g = ctx.createGain();
+  o.type = 'triangle'; o.frequency.value = 1700 + Math.random()*1100;
+  g.gain.setValueAtTime(0.045, t0);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.5);
+  o.connect(g); g.connect(AU.master);
+  o.start(t0); o.stop(t0 + 0.55);
+}
+function footstep(run){
+  if(!AU.ctx || AU.muted) return;
+  const ctx = AU.ctx, t0 = ctx.currentTime;
+  const s = ctx.createBufferSource();
+  const len = Math.floor(ctx.sampleRate * 0.07);
+  const b = ctx.createBuffer(1, len, ctx.sampleRate);
+  const d = b.getChannelData(0);
+  for(let i=0;i<len;i++) d[i] = (Math.random()*2-1) * (1 - i/len);
+  s.buffer = b;
+  const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 700;
+  const g = ctx.createGain(); g.gain.value = run ? 0.12 : 0.07;
+  s.connect(f); f.connect(g); g.connect(AU.master);
+  s.start(t0);
+}
+
+/* ============ player / controls ============ */
+const player = {
+  pos: new THREE.Vector3(samples[0].x, 0, samples[0].z),
+  yaw: Math.atan2(-tangents[0].x, -tangents[0].z), // face along the trail
+  pitch: 0, vel: new THREE.Vector3(), bob: 0, lastStep: 0
+};
+const EYE = 1.7;
+const keys = {};
+let locked = false, started = false, finished = false;
+let maxProgress = 0, visitedCount = 0;
+const startTime = { v: 0 };
+
+addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if(e.code === 'KeyM'){
+    AU.muted = !AU.muted;
+    if(AU.master) AU.master.gain.value = AU.muted ? 0 : 0.9;
+    document.getElementById('mute').textContent = AU.muted ? 'M — sound off' : 'M — sound on';
+  }
+});
+addEventListener('keyup', e => keys[e.code] = false);
+addEventListener('mousemove', e => {
+  if(!locked) return;
+  player.yaw   -= e.movementX * 0.0023;
+  player.pitch -= e.movementY * 0.0023;
+  player.pitch = clamp(player.pitch, -1.35, 1.35);
+});
+const canvas = document.getElementById('c');
+function lock(){ canvas.requestPointerLock(); }
+document.addEventListener('pointerlockchange', () => {
+  locked = document.pointerLockElement === canvas;
+  if(locked){
+    document.getElementById('paused').classList.add('hidden');
+    document.getElementById('dot').style.display = 'block';
+  } else if(started && !finished){
+    document.getElementById('paused').classList.remove('hidden');
+    document.getElementById('dot').style.display = 'none';
+  }
+});
+document.getElementById('begin').addEventListener('click', () => {
+  started = true;
+  startTime.v = performance.now();
+  initAudio();
+  document.getElementById('intro').classList.add('hidden');
+  document.getElementById('hud').style.display = 'flex';
+  lock();
+});
+document.getElementById('resume').addEventListener('click', lock);
+
+/* HUD beads */
+const beadsEl = document.getElementById('beads');
+const beadEls = LOCI.map(() => {
+  const b = document.createElement('div');
+  b.className = 'bead';
+  beadsEl.appendChild(b);
+  return b;
+});
+let bannerTimer = 0;
+function showBanner(L, idx){
+  const b = document.getElementById('banner');
+  b.querySelector('.locusNum').textContent = `Locus ${idx+1} of ${LOCI.length}`;
+  b.querySelector('.locusName').textContent = L.name;
+  b.querySelector('.locusHint').textContent = L.hint;
+  b.style.opacity = 1;
+  bannerTimer = 4.2;
+}
+function finish(){
+  finished = true;
+  document.exitPointerLock();
+  drum();
+  setTimeout(drum, 420);
+  const secs = Math.round((performance.now() - startTime.v)/1000);
+  document.getElementById('endSub').textContent =
+    `${visitedCount} of ${LOCI.length} loci witnessed · ${secs} seconds on the path`;
+  const ol = document.getElementById('recall');
+  ol.innerHTML = LOCI.map(L =>
+    `<li>${L.visited ? '✓' : '·'} <b>${L.name}</b> — ${L.hint}</li>`).join('');
+  document.getElementById('end').classList.remove('hidden');
+  document.getElementById('hud').style.display = 'none';
+  document.getElementById('dot').style.display = 'none';
+}
+
+/* ============ main loop ============ */
+const clock = new THREE.Clock();
+let tinkleTimer = 0;
+
+function animate(){
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const T = clock.elapsedTime;
+
+  if(locked && started && !finished){
+    const run = keys.ShiftLeft || keys.ShiftRight;
+    const speed = run ? 8.6 : 5.6; // ~70 s end-to-end at a walk
+    const fwd = new THREE.Vector3(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));
+    const right = new THREE.Vector3(Math.cos(player.yaw), 0, -Math.sin(player.yaw));
+    const wish = new THREE.Vector3();
+    if(keys.KeyW) wish.add(fwd);
+    if(keys.KeyS) wish.sub(fwd);
+    if(keys.KeyD) wish.add(right);
+    if(keys.KeyA) wish.sub(right);
+    if(wish.lengthSq() > 0) wish.normalize().multiplyScalar(speed);
+    player.vel.lerp(wish, 1 - Math.exp(-10*dt));
+    player.pos.addScaledVector(player.vel, dt);
+
+    // keep the walker inside the vale
+    const near = findNearest(player.pos.x, player.pos.z);
+    if(near.d > 42){
+      const s = samples[near.i];
+      const back = new THREE.Vector3(s.x - player.pos.x, 0, s.z - player.pos.z).normalize();
+      player.pos.addScaledVector(back, (near.d - 42));
+    }
+    const gy = groundH(player.pos.x, player.pos.z, near);
+
+    // head bob + footsteps
+    const sp = player.vel.length();
+    if(sp > 0.5){
+      player.bob += dt * sp * 1.9;
+      const cycle = Math.floor(player.bob / Math.PI);
+      if(cycle !== player.lastStep){ player.lastStep = cycle; footstep(run); }
+    }
+    const bobY = Math.sin(player.bob) * 0.055 * clamp(sp/4.4, 0, 1.4);
+
+    camera.position.set(player.pos.x, gy + EYE + bobY, player.pos.z);
+    camera.rotation.order = 'YXZ';
+    camera.rotation.y = player.yaw;
+    camera.rotation.x = player.pitch;
+    camera.rotation.z = Math.sin(player.bob*0.5) * 0.004 * clamp(sp/4.4,0,1);
+
+    // progress + loci triggers
+    maxProgress = Math.max(maxProgress, near.i/NS);
+    document.getElementById('bar').style.width = (maxProgress*100).toFixed(1) + '%';
+    LOCI.forEach((L, idx) => {
+      if(L.visited) return;
+      const dx = L.pos.x - player.pos.x, dz = L.pos.z - player.pos.z;
+      if(dx*dx + dz*dz < 11*11){
+        L.visited = true; visitedCount++;
+        beadEls[idx].classList.add('lit');
+        showBanner(L, idx);
+        chime(L.note);
+      }
+    });
+
+    // spatialised ambience
+    if(AU.ctx && !AU.muted){
+      const brookD = Math.hypot(player.pos.x - 43, player.pos.z + 115);
+      AU.brookGain.gain.value = clamp(1 - brookD/38, 0, 1) * 0.16;
+      if(dynamic.fire){
+        const fd = player.pos.distanceTo(dynamic.fire.pos);
+        AU.fireGain.gain.value = clamp(1 - fd/26, 0, 1) * (0.05 + Math.random()*0.05);
+      }
+      const chimeL = LOCI[6];
+      const cd = Math.hypot(player.pos.x - chimeL.pos.x, player.pos.z - chimeL.pos.z);
+      if(cd < 15){
+        tinkleTimer -= dt;
+        if(tinkleTimer <= 0){ tinkle(); tinkleTimer = 0.5 + Math.random()*1.6; }
+      }
+    }
+
+    // arrival home
+    if(dynamic.fire && player.pos.distanceTo(dynamic.fire.pos) < 3.2) finish();
+
+    // shadow camera follows the walker
+    sun.position.copy(player.pos).addScaledVector(sunDir, 110);
+    sun.target.position.copy(player.pos);
+  }
+
+  // banner fade
+  if(bannerTimer > 0){
+    bannerTimer -= dt;
+    if(bannerTimer <= 0) document.getElementById('banner').style.opacity = 0;
+  }
+
+  /* ambient animation */
+  if(dynamic.water) dynamic.water.offset.x -= dt * 0.35;
+  if(dynamic.chimes){
+    for(const ch of dynamic.chimes){
+      ch.pivot.rotation.z = Math.sin(T*1.7 + ch.ph) * 0.22;
+      ch.pivot.rotation.x = Math.cos(T*1.3 + ch.ph) * 0.16;
+    }
+  }
+  if(dynamic.fire){
+    const f = 1 + Math.sin(T*11)*0.12 + Math.sin(T*23 + 1)*0.08;
+    dynamic.fire.flame.scale.set(f, 1/f + 0.15*Math.sin(T*17), f);
+    dynamic.fire.inner.scale.copy(dynamic.fire.flame.scale);
+    dynamic.fireLight.intensity = 12 + Math.sin(T*13)*2.5 + Math.sin(T*29)*1.5;
+  }
+  for(const key of ['fireflyHollow', 'fireflyMeadow']){
+    const ff = dynamic[key];
+    if(!ff) continue;
+    const arr = ff.pts.geometry.attributes.position.array;
+    for(let i=0;i<ff.n;i++){
+      const bx = ff.base[i*4], by = ff.base[i*4+1], bz = ff.base[i*4+2], ph = ff.base[i*4+3];
+      arr[i*3]   = bx + Math.sin(T*0.7 + ph)*1.1;
+      arr[i*3+1] = by + Math.sin(T*1.1 + ph*2)*0.6;
+      arr[i*3+2] = bz + Math.cos(T*0.6 + ph)*1.1;
+    }
+    ff.pts.geometry.attributes.position.needsUpdate = true;
+  }
+  if(dynamic.smoke){
+    const arr = dynamic.smoke.pts.geometry.attributes.position.array;
+    const o = dynamic.smoke.origin;
+    for(let i=0;i<dynamic.smoke.n;i++){
+      dynamic.smoke.life[i] += dt * 0.12;
+      if(dynamic.smoke.life[i] > 1) dynamic.smoke.life[i] = 0;
+      const l = dynamic.smoke.life[i];
+      arr[i*3]   = o.x + Math.sin(l*9 + i)*l*1.6 + l*2.2;     // drift downwind
+      arr[i*3+1] = o.y + 0.8 + l*9;
+      arr[i*3+2] = o.z + Math.cos(l*7 + i)*l*1.4;
+    }
+    dynamic.smoke.pts.geometry.attributes.position.needsUpdate = true;
+  }
+  sky.position.copy(camera.position);
+
+  renderer.render(scene, camera);
+}
+
+/* spawn camera before start */
+{
+  const gy = groundH(player.pos.x, player.pos.z);
+  camera.position.set(player.pos.x, gy + EYE, player.pos.z);
+  camera.rotation.order = 'YXZ';
+  camera.rotation.y = player.yaw;
+}
+addEventListener('resize', () => {
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+animate();
+</script>
+</body>
+</html>

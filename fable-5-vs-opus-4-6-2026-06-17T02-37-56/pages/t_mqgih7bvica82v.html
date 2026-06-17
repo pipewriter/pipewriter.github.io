@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LINEAGE NOISE · heritable genome worldgen</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#0b0e12;font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;}
+  canvas{display:block;}
+  #panel{
+    position:fixed;top:14px;left:14px;width:380px;max-width:calc(100vw - 28px);
+    background:rgba(10,14,18,.74);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+    border:1px solid rgba(255,255,255,.09);border-radius:14px;padding:14px 16px;
+    color:#cfd6df;font-size:12.5px;line-height:1.45;user-select:none;
+  }
+  #title{font-size:13px;font-weight:700;letter-spacing:.14em;color:#e9eef5;}
+  #title span{font-weight:400;letter-spacing:.02em;color:#7e8a99;font-size:11.5px;}
+  #regionName{font-size:21px;font-weight:700;color:#fff;margin-top:8px;letter-spacing:.02em;}
+  #regionSub{color:#7e8a99;font-size:11px;margin-bottom:8px;}
+  #dna{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;letter-spacing:.06em;
+       display:flex;flex-wrap:wrap;gap:3px 7px;margin:6px 0 8px;}
+  #dna .gene{white-space:nowrap;}
+  #dna i{font-style:normal;opacity:.92;}
+  #dna i.A{color:#6fdc8c;} #dna i.C{color:#5ab2ff;} #dna i.G{color:#ffb84d;} #dna i.T{color:#ff6b6b;}
+  #dna i.mut{background:rgba(255,255,255,.16);border-radius:3px;outline:1px solid rgba(255,255,255,.22);}
+  #divline{margin:2px 0 8px;color:#9aa6b4;}
+  #divline b{color:#fff;}
+  #bars{display:grid;grid-template-columns:auto 1fr;gap:3px 8px;align-items:center;margin-bottom:10px;}
+  #bars label{font-size:10px;letter-spacing:.08em;color:#7e8a99;}
+  #bars .bar{height:5px;background:rgba(255,255,255,.07);border-radius:3px;overflow:hidden;}
+  #bars .bar div{height:100%;border-radius:3px;background:linear-gradient(90deg,#3f8cff,#7adfa0);}
+  .btns{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;}
+  button{
+    background:rgba(255,255,255,.08);color:#dfe6ee;border:1px solid rgba(255,255,255,.12);
+    border-radius:8px;padding:5px 9px;font-size:11.5px;cursor:pointer;
+  }
+  button:hover{background:rgba(255,255,255,.16);}
+  details{margin:4px 0;color:#9aa6b4;}
+  details summary{cursor:pointer;color:#7e8a99;font-size:11px;letter-spacing:.06em;}
+  details p{font-size:11.5px;margin:6px 0 2px;}
+  #hint{color:#5e6a78;font-size:10.5px;margin-top:6px;}
+  #load{color:#7adfa0;font-size:10.5px;margin-top:4px;min-height:14px;}
+  #legend{
+    position:fixed;right:14px;bottom:12px;color:#7e8a99;font-size:11px;
+    background:rgba(10,14,18,.6);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.08);
+    border-radius:10px;padding:6px 10px;font-family:ui-monospace,Menlo,Consolas,monospace;
+  }
+  #legend i{font-style:normal;}
+  #err{
+    display:none;position:fixed;inset:0;color:#fff;background:#15191f;z-index:50;
+    align-items:center;justify-content:center;text-align:center;padding:40px;font-size:15px;line-height:1.7;
+  }
+</style>
+</head>
+<body>
+<div id="err"></div>
+
+<div id="panel">
+  <div id="title">LINEAGE NOISE <span>· heritable genome worldgen</span></div>
+  <div id="regionName">—</div>
+  <div id="regionSub">—</div>
+  <div id="dna"></div>
+  <div id="divline">⚑ vs marked: <b id="divPct">0%</b> <span id="divNote"></span></div>
+  <div id="bars"></div>
+  <div class="btns">
+    <button id="bMark">⚑ mark this region</button>
+    <button id="bHop">hop to neighbor</button>
+    <button id="bFar">⤳ teleport 40 km</button>
+    <button id="bHome">⌂ home</button>
+    <button id="bAuto">✈ autopilot: on</button>
+  </div>
+  <details>
+    <summary>HOW IT WORKS</summary>
+    <p>Every region is a cell of a jittered lattice. A 16-gene genome is a slowly-drifting
+    random field (correlation length ≈ 16 km) sampled once at the cell's nucleus, plus a tiny
+    per-region mutation, then quantized into the 48-letter A/C/G/T strand above. Terrain shape,
+    palette, snowline, flora and rock are decoded <em>purely from that strand</em>, with parameters
+    blended between neighboring nuclei so the land is seamless. Nearby regions inherit nearly the
+    same strand — a few mutated letters. Distant regions share no ancestry. Stateless,
+    deterministic, O(1) per sample, infinite domain.</p>
+  </details>
+  <div id="hint">drag = look · WASD fly · E/Q up/down · Shift boost · N hop · T far · M mark · P autopilot</div>
+  <div id="load"></div>
+</div>
+
+<div id="legend">
+  <i style="color:#6fdc8c">A</i> <i style="color:#5ab2ff">C</i>
+  <i style="color:#ffb84d">G</i> <i style="color:#ff6b6b">T</i>
+  &nbsp;·&nbsp; 16 genes × 3 letters &nbsp;·&nbsp; bright = mutated vs ⚑
+</div>
+
+<script type="module">
+const errBox = document.getElementById('err');
+let THREE;
+try {
+  THREE = await import('https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js');
+} catch (e) {
+  errBox.style.display = 'flex';
+  errBox.textContent = 'This demo loads three.js from a CDN — an internet connection is required the first time. (' + e.message + ')';
+  throw e;
+}
+
+/* ============================================================
+   LINEAGE NOISE — heritable genome worldgen
+   genome field  ->  crystallized at region nuclei  ->  mutated
+   ->  quantized to a 48-letter strand  ->  world decoded from it
+   ============================================================ */
+
+// ---------- tiny deterministic math kit ----------
+const clamp01 = v => v < 0 ? 0 : v > 1 ? 1 : v;
+const sstep = (a, b, x) => { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+
+function uhash(x, y, s) {
+  let h = (Math.imul(x, 374761393) + Math.imul(y, 668265263) + Math.imul(s, 2246822519)) | 0;
+  h = Math.imul(h ^ (h >>> 15), 2654435761);
+  h = Math.imul(h ^ (h >>> 13), 2246822519);
+  return (h ^ (h >>> 16)) >>> 0;
+}
+const r01 = (x, y, s) => uhash(x, y, s) / 4294967296;
+
+function vnoise(x, y, s) {
+  const xi = Math.floor(x), yi = Math.floor(y);
+  const xf = x - xi, yf = y - yi;
+  const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+  const a = r01(xi, yi, s), b = r01(xi + 1, yi, s);
+  const c = r01(xi, yi + 1, s), d = r01(xi + 1, yi + 1, s);
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;   // 0..1
+}
+function fbm(x, y, s, oct, gain = 0.5) {
+  let a = 1, f = 1, sum = 0, norm = 0;
+  for (let i = 0; i < oct; i++) {
+    sum += a * vnoise(x * f, y * f, s + i * 101);
+    norm += a; a *= gain; f *= 2.03;
+  }
+  return sum / norm;                                                // 0..1
+}
+function ridged(x, y) {
+  let a = 1, f = 1, sum = 0, norm = 0;
+  for (let i = 0; i < 5; i++) {
+    let n = vnoise(x * f, y * f, 6201 + i * 77) * 2 - 1;
+    n = 1 - Math.abs(n); n *= n;
+    sum += n * a; norm += a; a *= 0.5; f *= 2.07;
+  }
+  return sum / norm;                                                // 0..1, sharp crests
+}
+
+// ---------- the genome ----------
+const GENE_COUNT  = 16;
+const GENE_SCALE  = 16000;   // heredity correlation length (m)
+const MUTATION    = 0.016;   // per-region "sun damage"
+const REGION      = 420;     // region cell size (m)
+const KR          = REGION * 0.62;
+const BASE        = ['A', 'C', 'G', 'T'];
+const GENE_NAMES  = ['ELEVATION','RELIEF','RIDGEDNESS','LAND SCALE','WARP','TERRACE',
+                     'SOIL HUE','FLORA HUE','SATURATION','FLORA DENSITY','FLORA STATURE',
+                     'FLORA FORM','ROCKINESS','SNOWLINE','ROUGHNESS','ALBEDO'];
+const SYL = ['ka','ve','ru','tho','sa','mi','on','el','dra','um','ish','or','ba','que','ly','zor'];
+const SUF = ['a','ai','un','or'];
+
+// the heritable field: slow drift, sampled at region nuclei only
+function geneField(i, x, z) {
+  return fbm(x / GENE_SCALE, z / GENE_SCALE, 7000 + i * 61, 3, 0.5);
+}
+
+// decode a quantized genome (16 genes, 6-bit each) into world parameters
+const _C = null; // set after THREE import below (Color helper)
+function decodeGenome(q) {
+  const g = i => (q[i] + 0.5) / 64;
+  const p = {};
+  p.elev  = (g(0) - 0.34) * 170;
+  p.amp   = 14 + 250 * Math.pow(g(1), 1.7);
+  p.ridge = g(2);
+  p.freq  = 0.0042 * Math.pow(2, (g(3) - 0.5) * 1.6);
+  p.warp  = g(4) * 170;
+  p.terr  = sstep(0.55, 0.92, g(5));
+  const hue = g(6), hue2 = g(7), sat = 0.25 + 0.6 * g(8), luma = g(15);
+  p.vegd  = Math.pow(g(9), 1.1);
+  p.vegh  = 0.6 + 1.7 * g(10);
+  p.vegf  = g(11);
+  p.rock  = g(12);
+  p.snow  = 170 - 115 * g(13);
+  p.rough = g(14) * 6;
+  const C = new THREE.Color(), CS = THREE.SRGBColorSpace;
+  C.setHSL(hue, sat, 0.24 + 0.20 * luma, CS);                 p.clR = C.r; p.clG = C.g; p.clB = C.b; // soil
+  C.setHSL((hue + 0.06) % 1, sat * 0.45, 0.38 + 0.22 * luma, CS); p.chR = C.r; p.chG = C.g; p.chB = C.b; // rock face
+  C.setHSL((hue + 0.04) % 1, sat * 0.50, 0.52 + 0.12 * luma, CS); p.saR = C.r; p.saG = C.g; p.saB = C.b; // shore
+  p.vegHue = hue2;
+  p.vegSat = Math.min(0.9, sat + 0.18);
+  p.vegLum = 0.30 + 0.12 * luma;
+  return p;
+}
+
+// region = crystallized genome at a jittered-lattice nucleus
+const regionCache = new Map();
+function regionByCell(cx, cz) {
+  const key = cx + ',' + cz;
+  let r = regionCache.get(key);
+  if (r) return r;
+  if (regionCache.size > 20000) regionCache.clear();
+  const jx = (r01(cx, cz, 911) - 0.5) * 0.78;
+  const jz = (r01(cx, cz, 977) - 0.5) * 0.78;
+  const sx = (cx + 0.5 + jx) * REGION;
+  const sz = (cz + 0.5 + jz) * REGION;
+  const q = new Uint8Array(GENE_COUNT);
+  for (let i = 0; i < GENE_COUNT; i++) {
+    const inherited = 0.5 + (geneField(i, sx, sz) - 0.5) * 2.6;          // heredity
+    const mutated   = inherited + (r01(cx, cz, 1300 + i * 17) - 0.5) * 2 * MUTATION; // sun damage
+    q[i] = Math.max(0, Math.min(63, Math.floor(clamp01(mutated) * 64)));
+  }
+  const letters = [];
+  for (let i = 0; i < GENE_COUNT; i++) letters.push((q[i] >> 4) & 3, (q[i] >> 2) & 3, q[i] & 3);
+  const nm = SYL[q[6] >> 2] + SYL[q[0] >> 2] + SYL[q[9] >> 2] + SUF[uhash(cx, cz, 5) & 3];
+  r = {
+    key, cx, cz, sx, sz, q, letters,
+    name: nm.charAt(0).toUpperCase() + nm.slice(1),
+    p: decodeGenome(q),
+  };
+  regionCache.set(key, r);
+  return r;
+}
+
+function regionAtPoint(x, z) {
+  const cx = Math.floor(x / REGION), cz = Math.floor(z / REGION);
+  let best = null, bd = Infinity;
+  for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+    const r = regionByCell(cx + dx, cz + dz);
+    const d = (x - r.sx) * (x - r.sx) + (z - r.sz) * (z - r.sz);
+    if (d < bd) { bd = d; best = r; }
+  }
+  return best;
+}
+
+// blended decoded parameters at any point (seamless across region borders)
+const P = {};
+function blendAt(x, z, P) {
+  const cx = Math.floor(x / REGION), cz = Math.floor(z / REGION);
+  let sw = 0, sc = 0;
+  let elev = 0, amp = 0, rdg = 0, frq = 0, wrp = 0, ter = 0, rgh = 0, snw = 0;
+  let clR = 0, clG = 0, clB = 0, chR = 0, chG = 0, chB = 0, saR = 0, saG = 0, saB = 0;
+  let F1 = Infinity, F2 = Infinity, nearest = null;
+  for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+    const r = regionByCell(cx + dx, cz + dz);
+    const ddx = x - r.sx, ddz = z - r.sz;
+    const d = Math.sqrt(ddx * ddx + ddz * ddz);
+    if (d < F1) { F2 = F1; F1 = d; nearest = r; } else if (d < F2) F2 = d;
+    const qd = d / KR, w = 1 / (1 + qd * qd * qd * qd);   // soft kernel: terrain shape
+    const w2 = w * w * w;                                  // sharp kernel: palette identity
+    const p = r.p;
+    elev += p.elev * w; amp += p.amp * w; rdg += p.ridge * w; frq += p.freq * w;
+    wrp += p.warp * w; ter += p.terr * w; rgh += p.rough * w; snw += p.snow * w;
+    clR += p.clR * w2; clG += p.clG * w2; clB += p.clB * w2;
+    chR += p.chR * w2; chG += p.chG * w2; chB += p.chB * w2;
+    saR += p.saR * w2; saG += p.saG * w2; saB += p.saB * w2;
+    sw += w; sc += w2;
+  }
+  const i1 = 1 / sw, i2 = 1 / sc;
+  P.elev = elev * i1; P.amp = amp * i1; P.ridge = rdg * i1; P.freq = frq * i1;
+  P.warp = wrp * i1; P.terr = ter * i1; P.rough = rgh * i1; P.snow = snw * i1;
+  P.clR = clR * i2; P.clG = clG * i2; P.clB = clB * i2;
+  P.chR = chR * i2; P.chG = chG * i2; P.chB = chB * i2;
+  P.saR = saR * i2; P.saG = saG * i2; P.saB = saB * i2;
+  P.border = clamp01((F2 - F1) / (REGION * 0.12));
+  P.nearest = nearest;
+}
+
+function heightFromParams(x, z, P) {
+  const wx = x + (fbm(x * 0.0011,       z * 0.0011,       5001, 3) - 0.5) * 2 * P.warp;
+  const wz = z + (fbm(x * 0.0011 + 7.3, z * 0.0011 + 3.1, 5002, 3) - 0.5) * 2 * P.warp;
+  const fx = wx * P.freq, fz = wz * P.freq;
+  const billow = fbm(fx, fz, 6001, 5);
+  const crest  = ridged(fx * 0.85, fz * 0.85);
+  const shape  = billow + (crest - billow) * P.ridge;
+  let h = P.elev + P.amp * (shape - 0.32) * 1.6;
+  if (P.terr > 0.02) {
+    const stp = 15, f = h / stp, fl = Math.floor(f);
+    h += ((fl + sstep(0.32, 0.68, f - fl)) * stp - h) * P.terr * 0.85;
+  }
+  h += (vnoise(x * 0.045, z * 0.045, 6101) - 0.5) * 2 * P.rough;
+  return h;
+}
+function sampleHeight(x, z) { blendAt(x, z, P); return heightFromParams(x, z, P); }
+
+// ---------- three.js scene ----------
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.5, 4500);
+camera.rotation.order = 'YXZ';
+
+const FOG_BASE = new THREE.Color(0xd7dde6);
+scene.fog = new THREE.Fog(FOG_BASE.clone(), 120, 980);
+
+scene.add(new THREE.HemisphereLight(0xbcd4ff, 0x3a3226, 1.0));
+const sunDir = new THREE.Vector3(0.45, 0.55, 0.28).normalize();
+const sun = new THREE.DirectionalLight(0xfff2dd, 2.2);
+sun.position.copy(sunDir);
+scene.add(sun);
+
+// gradient sky dome with a sun disc
+const skyMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide, depthWrite: false, fog: false,
+  uniforms: {
+    uHorizon: { value: FOG_BASE.clone() },
+    uZenith:  { value: new THREE.Color(0x3f6bb5) },
+    uSun:     { value: sunDir },
+  },
+  vertexShader: `varying vec3 vDir;
+    void main(){ vDir = position;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: `varying vec3 vDir;
+    uniform vec3 uHorizon, uZenith, uSun;
+    void main(){
+      vec3 d = normalize(vDir);
+      float t = clamp(d.y*0.5+0.5, 0.0, 1.0);
+      vec3 col = mix(uHorizon, uZenith, pow(t, 0.8));
+      float s = max(dot(d, uSun), 0.0);
+      col += vec3(1.0,0.85,0.6)*(pow(s,600.0)*1.4 + pow(s,8.0)*0.22);
+      gl_FragColor = vec4(col, 1.0);
+    }`,
+});
+const sky = new THREE.Mesh(new THREE.SphereGeometry(3600, 24, 14), skyMat);
+sky.frustumCulled = false;
+scene.add(sky);
+
+const water = new THREE.Mesh(
+  new THREE.PlaneGeometry(3600, 3600).rotateX(-Math.PI / 2),
+  new THREE.MeshPhongMaterial({
+    color: 0x1c4f66, specular: 0x9fc3cf, shininess: 110,
+    transparent: true, opacity: 0.78, depthWrite: false,
+  })
+);
+water.position.y = 0.15;
+scene.add(water);
+
+// ---------- flora & rock archetypes (decoded per region from the strand) ----------
+function mergeGeos(parts) {
+  const pos = [], norm = [], col = [];
+  for (const { geo, color } of parts) {
+    const g = geo.toNonIndexed();
+    const p = g.attributes.position.array, n = g.attributes.normal.array;
+    for (let i = 0; i < p.length; i++) { pos.push(p[i]); norm.push(n[i]); }
+    for (let i = 0; i < p.length / 3; i++) col.push(color[0], color[1], color[2]);
+    g.dispose(); geo.dispose();
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  out.setAttribute('normal',   new THREE.Float32BufferAttribute(norm, 3));
+  out.setAttribute('color',    new THREE.Float32BufferAttribute(col, 3));
+  return out;
+}
+const geoConifer = mergeGeos([
+  { geo: new THREE.CylinderGeometry(0.12, 0.2, 1.2, 5).translate(0, 0.6, 0), color: [0.45, 0.33, 0.24] },
+  { geo: new THREE.ConeGeometry(1.05, 3.4, 7).translate(0, 2.6, 0),          color: [1, 1, 1] },
+]);
+const geoBlob = mergeGeos([
+  { geo: new THREE.CylinderGeometry(0.16, 0.26, 1.7, 5).translate(0, 0.85, 0),            color: [0.42, 0.30, 0.22] },
+  { geo: new THREE.IcosahedronGeometry(1.4, 0).scale(1, 0.85, 1).translate(0, 2.25, 0),   color: [1, 1, 1] },
+]);
+const geoCrystal = new THREE.OctahedronGeometry(0.9, 0); geoCrystal.scale(1, 2.8, 1); geoCrystal.translate(0, 1.7, 0);
+const geoRock = new THREE.DodecahedronGeometry(1, 0);    geoRock.scale(1, 0.72, 1);
+
+const matVeg  = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+const matCrys = new THREE.MeshPhongMaterial({ color: 0xffffff, flatShading: true, shininess: 90, emissive: 0x141a26 });
+const matRock = new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true });
+const matLand = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.96, metalness: 0 });
+
+// ---------- chunked terrain (stateless: any chunk regenerable from coordinates) ----------
+const CHUNK = 256, SEG = 64, ST = CHUNK / SEG;
+const PAD = SEG + 3, N = SEG + 1;
+const VIEW = 1056;
+const Hbuf = new Float32Array(PAD * PAD);
+const Cbuf = new Float32Array(PAD * PAD * 11); // clRGB, chRGB, saRGB, snow, border
+const IDX = (() => {
+  const a = new Uint32Array(SEG * SEG * 6);
+  let k = 0;
+  for (let j = 0; j < SEG; j++) for (let i = 0; i < SEG; i++) {
+    const v = j * N + i;
+    a[k++] = v; a[k++] = v + N; a[k++] = v + 1;
+    a[k++] = v + 1; a[k++] = v + N; a[k++] = v + N + 1;
+  }
+  return a;
+})();
+
+const M4 = new THREE.Matrix4(), QT = new THREE.Quaternion(), V3 = new THREE.Vector3(),
+      SV = new THREE.Vector3(), CC = new THREE.Color(), UP = new THREE.Vector3(0, 1, 0);
+function makeInstanced(geo, mat, list, group) {
+  if (!list.length) return;
+  const m = new THREE.InstancedMesh(geo, mat, list.length);
+  for (let i = 0; i < list.length; i++) {
+    const o = list[i];
+    QT.setFromAxisAngle(UP, o.ry);
+    SV.set(o.s, o.sy, o.s); V3.set(o.x, o.y, o.z);
+    M4.compose(V3, QT, SV);
+    m.setMatrixAt(i, M4);
+    CC.setRGB(o.r, o.g, o.b);
+    m.setColorAt(i, CC);
+  }
+  m.instanceMatrix.needsUpdate = true;
+  if (m.instanceColor) m.instanceColor.needsUpdate = true;
+  group.add(m);
+}
+
+function buildChunk(cx, cz) {
+  const ox = cx * CHUNK, oz = cz * CHUNK;
+  const group = new THREE.Group();
+  group.position.set(ox, 0, oz);
+
+  // pass 1: heights + blended palette over a padded grid
+  for (let jz = 0; jz < PAD; jz++) for (let jx = 0; jx < PAD; jx++) {
+    const x = ox + (jx - 1) * ST, z = oz + (jz - 1) * ST;
+    blendAt(x, z, P);
+    const k = jz * PAD + jx;
+    Hbuf[k] = heightFromParams(x, z, P);
+    const c = k * 11;
+    Cbuf[c] = P.clR; Cbuf[c + 1] = P.clG; Cbuf[c + 2] = P.clB;
+    Cbuf[c + 3] = P.chR; Cbuf[c + 4] = P.chG; Cbuf[c + 5] = P.chB;
+    Cbuf[c + 6] = P.saR; Cbuf[c + 7] = P.saG; Cbuf[c + 8] = P.saB;
+    Cbuf[c + 9] = P.snow; Cbuf[c + 10] = P.border;
+  }
+
+  // pass 2: mesh attributes
+  const positions = new Float32Array(N * N * 3);
+  const normals   = new Float32Array(N * N * 3);
+  const colors    = new Float32Array(N * N * 3);
+  for (let jz = 1; jz <= N; jz++) for (let jx = 1; jx <= N; jx++) {
+    const k = jz * PAD + jx, vi = ((jz - 1) * N + (jx - 1)) * 3;
+    const h = Hbuf[k];
+    let nx = (Hbuf[k - 1] - Hbuf[k + 1]) / (2 * ST);
+    let nz = (Hbuf[k - PAD] - Hbuf[k + PAD]) / (2 * ST);
+    const il = 1 / Math.sqrt(nx * nx + 1 + nz * nz);
+    const nY = il;
+    positions[vi] = (jx - 1) * ST; positions[vi + 1] = h; positions[vi + 2] = (jz - 1) * ST;
+    normals[vi] = nx * il; normals[vi + 1] = il; normals[vi + 2] = nz * il;
+
+    const c = k * 11;
+    const snow = Cbuf[c + 9], border = Cbuf[c + 10];
+    let r = Cbuf[c], g = Cbuf[c + 1], b = Cbuf[c + 2];
+    const steep = sstep(0.86, 0.62, nY);
+    const rockm = Math.min(1, steep + sstep(snow * 0.5, snow * 0.95, h) * 0.7);
+    r += (Cbuf[c + 3] - r) * rockm; g += (Cbuf[c + 4] - g) * rockm; b += (Cbuf[c + 5] - b) * rockm;
+    const sn = clamp01(sstep(snow, snow + 14, h) * sstep(0.6, 0.82, nY) + sstep(snow + 26, snow + 50, h));
+    r += (0.93 - r) * sn; g += (0.94 - g) * sn; b += (0.97 - b) * sn;
+    const sa = sstep(3.5, 0.8, h) * (1 - steep);
+    r += (Cbuf[c + 6] - r) * sa; g += (Cbuf[c + 7] - g) * sa; b += (Cbuf[c + 8] - b) * sa;
+    if (h < 0) {
+      const t = sstep(0, -26, h);
+      r += (0.05 - r) * t; g += (0.14 - g) * t * 0.92; b += (0.19 - b) * t * 0.82;
+    }
+    const tint = (0.92 + 0.16 * r01(cx * SEG + jx, cz * SEG + jz, 33)) * (0.88 + 0.12 * border);
+    colors[vi] = r * tint; colors[vi + 1] = g * tint; colors[vi + 2] = b * tint;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('normal',   new THREE.BufferAttribute(normals, 3));
+  geo.setAttribute('color',    new THREE.BufferAttribute(colors, 3));
+  geo.setIndex(new THREE.BufferAttribute(IDX.slice(), 1));
+  const land = new THREE.Mesh(geo, matLand);
+  land.userData.own = true;
+  group.add(land);
+
+  // flora & rock — each instance decoded from its region's strand (sharp biome edges)
+  const conifers = [], blobs = [], crystals = [], rocks = [];
+  const CELLS = CHUNK / 8;
+  for (let vz = 0; vz < CELLS; vz++) for (let vx = 0; vx < CELLS; vx++) {
+    const gx = cx * CELLS + vx, gz = cz * CELLS + vz;
+    const px = ox + (vx + r01(gx, gz, 61)) * 8;
+    const pz = oz + (vz + r01(gx, gz, 67)) * 8;
+    const reg = regionAtPoint(px, pz), p = reg.p;
+    const patch = sstep(0.3, 0.7, vnoise(px * 0.008, pz * 0.008, 4321));
+    const isRock = r01(gx, gz, 73) < p.rock * 0.10;
+    const isTree = r01(gx, gz, 71) < (0.035 + p.vegd * 0.6) * (0.3 + 0.7 * patch);
+    if (!isRock && !isTree) continue;
+    const h = sampleHeight(px, pz);
+    if (h < 2.2) continue;
+    const slope = Math.hypot(sampleHeight(px + 3, pz) - h, sampleHeight(px, pz + 3) - h) / 3;
+    const rnd = r01(gx, gz, 83), rnd2 = r01(gx, gz, 89);
+    if (isRock) {
+      const lum = 0.4 + 0.3 * rnd2;
+      rocks.push({ x: px - ox, y: h + 0.15, z: pz - oz, s: 0.6 + 1.9 * rnd, sy: (0.6 + 1.9 * rnd) * (0.55 + 0.4 * rnd2),
+        ry: rnd * 6.28, r: (p.chR + lum) * 0.5, g: (p.chG + lum) * 0.5, b: (p.chB + lum) * 0.5 });
+      continue;
+    }
+    if (h > p.snow - 6) continue;
+    const t = p.vegf * 0.9 + r01(gx, gz, 79) * 0.2;
+    const isCrystal = t >= 0.68;
+    if (slope > (isCrystal ? 1.0 : 0.55)) continue;
+    CC.setHSL((p.vegHue + (rnd - 0.5) * 0.04 + 1) % 1,
+              isCrystal ? 0.75 : p.vegSat,
+              isCrystal ? 0.55 + 0.15 * rnd2 : clamp01(p.vegLum * (0.85 + 0.4 * rnd2)),
+              THREE.SRGBColorSpace);
+    const o = { x: px - ox, y: h - 0.35, z: pz - oz, ry: rnd * 6.28, r: CC.r, g: CC.g, b: CC.b };
+    const s = p.vegh * (0.75 + 0.6 * rnd2);
+    if (t < 0.38)      { o.s = s * 1.15; o.sy = s * 1.5;  conifers.push(o); }
+    else if (!isCrystal){ o.s = s;        o.sy = s;        blobs.push(o); }
+    else               { o.s = s * 0.9;  o.sy = s * 1.25; crystals.push(o); }
+  }
+  makeInstanced(geoConifer, matVeg,  conifers, group);
+  makeInstanced(geoBlob,    matVeg,  blobs,    group);
+  makeInstanced(geoCrystal, matCrys, crystals, group);
+  makeInstanced(geoRock,    matRock, rocks,    group);
+
+  scene.add(group);
+  return group;
+}
+
+const chunks = new Map();
+function chunkKey(cx, cz) { return cx + ',' + cz; }
+function updateChunks(budgetMs) {
+  const ccx = Math.round(camera.position.x / CHUNK), ccz = Math.round(camera.position.z / CHUNK);
+  const R = Math.ceil(VIEW / CHUNK);
+  const wanted = [];
+  for (let dz = -R; dz <= R; dz++) for (let dx = -R; dx <= R; dx++) {
+    const cx = ccx + dx, cz = ccz + dz;
+    const d = Math.hypot((cx + 0.5) * CHUNK - camera.position.x, (cz + 0.5) * CHUNK - camera.position.z);
+    if (d < VIEW && !chunks.has(chunkKey(cx, cz))) wanted.push({ cx, cz, d });
+  }
+  wanted.sort((a, b) => a.d - b.d);
+  const t0 = performance.now();
+  for (const w of wanted) {
+    chunks.set(chunkKey(w.cx, w.cz), buildChunk(w.cx, w.cz));
+    if (performance.now() - t0 > budgetMs) break;
+  }
+  for (const [key, group] of chunks) {
+    const d = Math.hypot(group.position.x + CHUNK / 2 - camera.position.x,
+                         group.position.z + CHUNK / 2 - camera.position.z);
+    if (d > VIEW + 320) {
+      group.traverse(o => {
+        if (o.isMesh && o.userData.own) o.geometry.dispose();
+        if (o.isInstancedMesh) o.dispose();
+      });
+      scene.remove(group);
+      chunks.delete(key);
+    }
+  }
+  return wanted.length;
+}
+
+// ---------- controls / autopilot ----------
+let yaw = 0.4, pitch = -0.22, auto = true;
+const keys = {};
+addEventListener('keydown', e => {
+  if (e.target.tagName === 'BUTTON') return;
+  keys[e.code] = true;
+  if (['KeyW','KeyA','KeyS','KeyD','KeyE','KeyQ','Space'].includes(e.code)) setAuto(false);
+  if (e.code === 'KeyP') setAuto(!auto);
+  if (e.code === 'KeyM') markRegion();
+  if (e.code === 'KeyN') hopNeighbor();
+  if (e.code === 'KeyT') teleportFar();
+  if (e.code === 'KeyH') goHome();
+  if (e.code === 'Space') e.preventDefault();
+});
+addEventListener('keyup', e => { keys[e.code] = false; });
+let dragging = false, lx = 0, ly = 0;
+renderer.domElement.addEventListener('pointerdown', e => { dragging = true; lx = e.clientX; ly = e.clientY; });
+addEventListener('pointerup', () => { dragging = false; });
+addEventListener('pointermove', e => {
+  if (!dragging) return;
+  setAuto(false);
+  yaw   -= (e.clientX - lx) * 0.0032;
+  pitch -= (e.clientY - ly) * 0.0032;
+  pitch = Math.max(-1.45, Math.min(1.45, pitch));
+  lx = e.clientX; ly = e.clientY;
+});
+renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
+
+function setAuto(v) {
+  auto = v;
+  document.getElementById('bAuto').textContent = '✈ autopilot: ' + (auto ? 'on' : 'off');
+}
+
+// ---------- HUD ----------
+const elName = document.getElementById('regionName');
+const elSub  = document.getElementById('regionSub');
+const elDna  = document.getElementById('dna');
+const elPct  = document.getElementById('divPct');
+const elNote = document.getElementById('divNote');
+const elBars = document.getElementById('bars');
+const elLoad = document.getElementById('load');
+const BAR_GENES = [[1,'RELIEF'],[2,'PEAKS'],[0,'ELEV'],[5,'TERRACE'],[9,'FLORA'],[11,'FORM']];
+let marked = null, hudKey = '';
+
+function markRegion() {
+  const r = regionAtPoint(camera.position.x, camera.position.z);
+  marked = { name: r.name, letters: r.letters.slice(), x: r.sx, z: r.sz };
+  hudKey = '';
+  refreshHUD(true);
+}
+function strandHTML(r) {
+  let html = '';
+  for (let gi = 0; gi < GENE_COUNT; gi++) {
+    html += `<span class="gene" title="${GENE_NAMES[gi]}">`;
+    for (let li = 0; li < 3; li++) {
+      const idx = gi * 3 + li, v = r.letters[idx];
+      const mut = marked && marked.letters[idx] !== v ? ' mut' : '';
+      html += `<i class="${BASE[v]}${mut}">${BASE[v]}</i>`;
+    }
+    html += '</span>';
+  }
+  return html;
+}
+function refreshHUD(force) {
+  const r = regionAtPoint(camera.position.x, camera.position.z);
+  elSub.textContent = `region (${r.cx}, ${r.cz}) · x ${Math.round(camera.position.x)} · z ${Math.round(camera.position.z)}`;
+  if (!force && r.key === hudKey) return;
+  hudKey = r.key;
+  elName.textContent = r.name;
+  elDna.innerHTML = strandHTML(r);
+  if (marked) {
+    let diff = 0;
+    for (let i = 0; i < 48; i++) if (marked.letters[i] !== r.letters[i]) diff++;
+    const km = Math.hypot(r.sx - marked.x, r.sz - marked.z) / 1000;
+    elPct.textContent = Math.round(100 * diff / 48) + '%';
+    elNote.textContent = `(${diff}/48 letters mutated vs ${marked.name} · ${km.toFixed(1)} km away)`;
+  }
+  let bars = '';
+  for (const [gi, label] of BAR_GENES) {
+    bars += `<label>${label}</label><div class="bar"><div style="width:${((r.q[gi] + 0.5) / 64 * 100).toFixed(0)}%"></div></div>`;
+  }
+  elBars.innerHTML = bars;
+}
+
+function hopNeighbor() {
+  const r = regionAtPoint(camera.position.x, camera.position.z);
+  const dirs = [[1,0],[0,1],[-1,0],[0,-1]];
+  const d = dirs[(Math.random() * 4) | 0];
+  const nb = regionByCell(r.cx + d[0], r.cz + d[1]);
+  camera.position.set(nb.sx, sampleHeight(nb.sx, nb.sz) + 65, nb.sz + 120);
+  refreshHUD(true);
+}
+function teleportFar() {
+  const a = Math.random() * Math.PI * 2;
+  let nx = camera.position.x + Math.cos(a) * 40000;
+  let nz = camera.position.z + Math.sin(a) * 40000;
+  nx = Math.max(-150000, Math.min(150000, nx));
+  nz = Math.max(-150000, Math.min(150000, nz));
+  camera.position.set(nx, sampleHeight(nx, nz) + 80, nz);
+  refreshHUD(true);
+}
+function goHome() {
+  camera.position.set(0, sampleHeight(0, 0) + 70, 0);
+  refreshHUD(true);
+}
+document.getElementById('bMark').onclick = markRegion;
+document.getElementById('bHop').onclick  = hopNeighbor;
+document.getElementById('bFar').onclick  = teleportFar;
+document.getElementById('bHome').onclick = goHome;
+document.getElementById('bAuto').onclick = () => setAuto(!auto);
+
+// ---------- main loop ----------
+const hashPos = location.hash.match(/(-?\d+),(-?\d+)/);
+const startX = hashPos ? +hashPos[1] : 0, startZ = hashPos ? +hashPos[2] : 0;
+camera.position.set(startX, sampleHeight(startX, startZ) + 70, startZ);
+updateChunks(180);            // synchronous head start near spawn
+markRegion();                 // home strand is the comparison baseline
+
+const fogTarget = FOG_BASE.clone();
+const fwd = new THREE.Vector3();
+let last = performance.now(), hudTimer = 0;
+
+function tick(now) {
+  requestAnimationFrame(tick);
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  const t = now / 1000;
+
+  if (auto) {
+    yaw += (vnoise(t * 0.018, 11.3, 4242) - 0.5) * 0.022;
+    pitch += (-0.16 - pitch) * 0.02;
+    const speed = 30;
+    camera.position.x -= Math.sin(yaw) * speed * dt;
+    camera.position.z -= Math.cos(yaw) * speed * dt;
+    const hHere  = sampleHeight(camera.position.x, camera.position.z);
+    const hAhead = sampleHeight(camera.position.x - Math.sin(yaw) * 150, camera.position.z - Math.cos(yaw) * 150);
+    camera.position.y += (Math.max(hHere, hAhead, -4) + 38 - camera.position.y) * 0.018;
+  } else {
+    const speed = (keys.ShiftLeft || keys.ShiftRight) ? 170 : 48;
+    fwd.set(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
+    if (keys.KeyW) camera.position.addScaledVector(fwd, speed * dt);
+    if (keys.KeyS) camera.position.addScaledVector(fwd, -speed * dt);
+    if (keys.KeyA) { camera.position.x -= Math.cos(yaw) * speed * dt; camera.position.z += Math.sin(yaw) * speed * dt; }
+    if (keys.KeyD) { camera.position.x += Math.cos(yaw) * speed * dt; camera.position.z -= Math.sin(yaw) * speed * dt; }
+    if (keys.KeyE || keys.Space) camera.position.y += speed * dt;
+    if (keys.KeyQ) camera.position.y -= speed * dt;
+  }
+  const ground = sampleHeight(camera.position.x, camera.position.z);
+  if (camera.position.y < ground + 2.5) camera.position.y = ground + 2.5;
+  camera.rotation.y = yaw;
+  camera.rotation.x = pitch;
+
+  const pending = updateChunks(12);
+  elLoad.textContent = pending > 1 ? `synthesizing terrain from genome… (${pending} chunks)` : '';
+
+  sky.position.copy(camera.position);
+  water.position.x = Math.round(camera.position.x / 8) * 8;
+  water.position.z = Math.round(camera.position.z / 8) * 8;
+
+  // horizon & fog drift toward the local region's palette
+  const reg = P.nearest;
+  if (reg) {
+    fogTarget.setRGB(
+      FOG_BASE.r * 0.85 + reg.p.clR * 0.32,
+      FOG_BASE.g * 0.85 + reg.p.clG * 0.32,
+      FOG_BASE.b * 0.85 + reg.p.clB * 0.32
+    );
+    scene.fog.color.lerp(fogTarget, 0.02);
+    skyMat.uniforms.uHorizon.value.copy(scene.fog.color);
+  }
+
+  hudTimer += dt;
+  if (hudTimer > 0.16) { hudTimer = 0; refreshHUD(false); }
+
+  renderer.render(scene, camera);
+}
+requestAnimationFrame(tick);
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>

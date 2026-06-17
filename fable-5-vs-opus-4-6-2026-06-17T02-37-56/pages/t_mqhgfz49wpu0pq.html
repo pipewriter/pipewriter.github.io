@@ -1,0 +1,1120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>The Vivid Trail</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; }
+  body { background: #000; overflow: hidden; font-family: Georgia, "Times New Roman", serif; color: #fff; }
+  canvas { display: block; }
+
+  #overlay {
+    position: fixed; inset: 0; background: rgba(8,5,2,0.93);
+    color: #f4e6c8; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; padding: 24px;
+    cursor: pointer; z-index: 10; text-align: center;
+    transition: opacity 0.6s;
+  }
+  #overlay h1 {
+    font-size: clamp(28px, 5vw, 46px); letter-spacing: 6px;
+    color: #ffcb6b; margin-bottom: 28px; font-weight: normal;
+  }
+  #overlay p {
+    max-width: 580px; font-size: clamp(14px, 1.6vw, 17px);
+    line-height: 1.7; margin-bottom: 14px; opacity: 0.92;
+  }
+  #start-btn {
+    margin-top: 32px; padding: 14px 34px;
+    border: 2px solid #ffcb6b; color: #ffcb6b;
+    font-size: 16px; letter-spacing: 3px;
+  }
+
+  #hud {
+    position: fixed; top: 16px; left: 18px;
+    font-size: 12px; opacity: 0.55;
+    pointer-events: none; z-index: 5;
+    letter-spacing: 1px;
+  }
+
+  #landmark-name {
+    position: fixed; bottom: 80px; left: 50%;
+    transform: translateX(-50%);
+    font-size: clamp(20px, 3vw, 30px);
+    font-style: italic; letter-spacing: 5px;
+    color: #ffe6a0;
+    text-shadow: 0 0 14px #000, 0 2px 8px #000;
+    opacity: 0; transition: opacity 0.7s;
+    pointer-events: none; z-index: 5;
+    text-align: center; white-space: nowrap;
+  }
+
+  #progress-bar {
+    position: fixed; bottom: 28px; left: 50%;
+    transform: translateX(-50%);
+    width: 60vw; max-width: 480px; height: 3px;
+    background: rgba(255,255,255,0.14);
+    border-radius: 2px; overflow: hidden;
+    z-index: 5; pointer-events: none;
+  }
+  #progress-fill {
+    height: 100%; width: 0%;
+    background: linear-gradient(90deg, #ffcb6b, #ff7b54);
+    transition: width 0.4s;
+  }
+
+  #crosshair {
+    position: fixed; top: 50%; left: 50%;
+    transform: translate(-50%,-50%);
+    width: 4px; height: 4px; border-radius: 50%;
+    background: rgba(255,255,255,0.35);
+    pointer-events: none; z-index: 5;
+  }
+
+  #end-screen {
+    position: fixed; inset: 0; display: flex;
+    flex-direction: column; align-items: center; justify-content: center;
+    background: rgba(8,5,2,0.88); color: #f4e6c8;
+    padding: 40px; text-align: center;
+    opacity: 0; transition: opacity 2.2s;
+    pointer-events: none; z-index: 7;
+    overflow-y: auto;
+  }
+  #end-screen h2 {
+    font-size: clamp(26px, 4vw, 40px);
+    color: #ffcb6b; margin-bottom: 20px;
+    letter-spacing: 5px; font-weight: normal;
+  }
+  #end-screen p {
+    font-size: 16px; margin-bottom: 16px;
+    max-width: 560px; line-height: 1.6; opacity: 0.85;
+  }
+  #end-screen ol {
+    text-align: left; font-size: 16px;
+    line-height: 1.85; color: #ffe6a0;
+    margin-top: 8px; columns: 2; column-gap: 50px;
+    padding-left: 20px;
+  }
+  #end-screen ol li { margin-bottom: 2px; break-inside: avoid; }
+  #replay {
+    margin-top: 28px; padding: 12px 28px;
+    border: 2px solid #ffcb6b; color: #ffcb6b;
+    font-size: 14px; letter-spacing: 2px;
+    cursor: pointer; background: transparent;
+    font-family: inherit;
+  }
+</style>
+</head>
+<body>
+
+<div id="overlay">
+  <h1>THE VIVID TRAIL</h1>
+  <p>You are walking home.</p>
+  <p>There are no maps. No paper. No stars to read tonight.<br>
+     Only the path, and the strange things that grow along it.</p>
+  <p>Burn each landmark into your memory.<br>
+     One day you may need to find your way back.</p>
+  <div id="start-btn">CLICK TO BEGIN &nbsp;·&nbsp; WASD to walk &nbsp;·&nbsp; MOUSE to look</div>
+</div>
+
+<div id="hud">WASD — walk &nbsp;·&nbsp; MOUSE — look &nbsp;·&nbsp; ESC — pause</div>
+<div id="landmark-name"></div>
+<div id="progress-bar"><div id="progress-fill"></div></div>
+<div id="crosshair"></div>
+
+<div id="end-screen">
+  <h2>YOU ARE HOME</h2>
+  <p>You walked the trail. Your mind keeps the stations.</p>
+  <p>Recall them in order:</p>
+  <ol id="trail-list"></ol>
+  <button id="replay">WALK IT AGAIN</button>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+
+// =============================================================
+// SCENE / CAMERA / RENDERER
+// =============================================================
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x9bb8d6);
+scene.fog = new THREE.Fog(0xa8c0d8, 35, 190);
+
+const camera = new THREE.PerspectiveCamera(72, innerWidth/innerHeight, 0.1, 700);
+camera.position.set(0, 1.7, 0);
+camera.lookAt(0, 1.7, -1);
+
+const renderer = new THREE.WebGLRenderer({antialias: true});
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// =============================================================
+// LIGHTING
+// =============================================================
+scene.add(new THREE.HemisphereLight(0xc0d8f0, 0x4a4030, 0.85));
+const sun = new THREE.DirectionalLight(0xfff0d0, 1.1);
+sun.position.set(60, 120, 50);
+scene.add(sun);
+
+const sunDisk = new THREE.Mesh(
+  new THREE.SphereGeometry(15, 24, 18),
+  new THREE.MeshBasicMaterial({color: 0xffeec0, fog: false})
+);
+sunDisk.position.set(180, 140, -250);
+scene.add(sunDisk);
+
+// =============================================================
+// GROUND
+// =============================================================
+const groundGeo = new THREE.PlaneGeometry(900, 900, 180, 180);
+groundGeo.rotateX(-Math.PI/2);
+{
+  const colArr = [];
+  const cGrass = new THREE.Color(0x4a7035);
+  const cGrassLight = new THREE.Color(0x6e9442);
+  const cDirt = new THREE.Color(0x6b4f30);
+  const cMoss = new THREE.Color(0x3a5d28);
+  const tmpC = new THREE.Color();
+  const posA = groundGeo.attributes.position;
+  for (let i = 0; i < posA.count; i++) {
+    const x = posA.getX(i), z = posA.getZ(i);
+    const n = Math.sin(x*0.12)*Math.cos(z*0.09) + Math.sin(x*0.31+z*0.27)*0.6;
+    if (n < -0.4) tmpC.copy(cDirt);
+    else if (n < 0.3) tmpC.copy(cGrass);
+    else if (n < 1.0) tmpC.copy(cGrassLight);
+    else tmpC.copy(cMoss);
+    const j = Math.sin(x*1.7+z*1.3)*0.04;
+    colArr.push(tmpC.r+j, tmpC.g+j, tmpC.b+j);
+  }
+  groundGeo.setAttribute('color', new THREE.Float32BufferAttribute(colArr, 3));
+}
+const ground = new THREE.Mesh(groundGeo, new THREE.MeshLambertMaterial({vertexColors: true}));
+ground.position.y = -0.01;
+scene.add(ground);
+
+// =============================================================
+// PATH (winding curve)
+// =============================================================
+const upY = new THREE.Vector3(0, 1, 0);
+const pathPts = [
+  new THREE.Vector3(  0, 0,    0),
+  new THREE.Vector3(  0, 0,  -10),
+  new THREE.Vector3(  4, 0,  -24),
+  new THREE.Vector3( -4, 0,  -40),
+  new THREE.Vector3(  8, 0,  -56),
+  new THREE.Vector3( 22, 0,  -70),
+  new THREE.Vector3( 30, 0,  -90),
+  new THREE.Vector3( 22, 0, -112),
+  new THREE.Vector3(  4, 0, -124),
+  new THREE.Vector3(-14, 0, -138),
+  new THREE.Vector3(-24, 0, -160),
+  new THREE.Vector3(-15, 0, -182),
+  new THREE.Vector3(  6, 0, -196),
+  new THREE.Vector3( 26, 0, -210),
+  new THREE.Vector3( 34, 0, -230),
+  new THREE.Vector3( 22, 0, -250),
+  new THREE.Vector3(  4, 0, -264),
+  new THREE.Vector3(-10, 0, -276),
+];
+const curve = new THREE.CatmullRomCurve3(pathPts, false, 'catmullrom', 0.4);
+const totalLen = curve.getLength();
+
+// Path ribbon mesh
+const SEGS = 360;
+const halfW = 1.4;
+{
+  const pts = [];
+  const idx = [];
+  for (let i = 0; i <= SEGS; i++) {
+    const t = i / SEGS;
+    const p = curve.getPointAt(t);
+    const tan = curve.getTangentAt(t);
+    const right = new THREE.Vector3().crossVectors(tan, upY).normalize();
+    pts.push(p.x - right.x*halfW, 0.025, p.z - right.z*halfW);
+    pts.push(p.x + right.x*halfW, 0.025, p.z + right.z*halfW);
+  }
+  for (let i = 0; i < SEGS; i++) {
+    const a = i*2;
+    idx.push(a, a+2, a+1, a+1, a+2, a+3);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  scene.add(new THREE.Mesh(geo, new THREE.MeshLambertMaterial({color: 0xb89860})));
+}
+
+// Edge stones along the path
+{
+  const stoneMat = new THREE.MeshLambertMaterial({color: 0x6a6258});
+  for (let i = 1; i < SEGS; i += 7) {
+    const t = i / SEGS;
+    const p = curve.getPointAt(t);
+    const tan = curve.getTangentAt(t);
+    const right = new THREE.Vector3().crossVectors(tan, upY).normalize();
+    for (const side of [-1, 1]) {
+      const s = new THREE.Mesh(
+        new THREE.DodecahedronGeometry(0.16 + Math.random()*0.14, 0),
+        stoneMat
+      );
+      s.position.set(
+        p.x + right.x*side*(halfW+0.18),
+        0.1,
+        p.z + right.z*side*(halfW+0.18)
+      );
+      s.rotation.set(Math.random(), Math.random(), Math.random());
+      scene.add(s);
+    }
+  }
+}
+
+// =============================================================
+// BACKGROUND TREES + DISTANT MOUNTAINS
+// =============================================================
+function rng(seed) {
+  let s = seed;
+  return () => { s = (s*9301+49297) % 233280; return s/233280; };
+}
+const rand = rng(1337);
+
+const sampledPath = [];
+for (let k = 0; k < 80; k++) sampledPath.push(curve.getPointAt(k/79));
+function distToPath(x, z) {
+  let m = 1e9;
+  for (const p of sampledPath) {
+    const dx = p.x - x, dz = p.z - z;
+    const d = dx*dx + dz*dz;
+    if (d < m) m = d;
+  }
+  return Math.sqrt(m);
+}
+
+{
+  const trunkGeo = new THREE.CylinderGeometry(0.22, 0.36, 4, 6);
+  const conifA = new THREE.ConeGeometry(2.2, 5.5, 7);
+  const conifB = new THREE.ConeGeometry(1.6, 3.6, 7);
+  const trunkMat = new THREE.MeshLambertMaterial({color: 0x4a3520});
+  const leafA = new THREE.MeshLambertMaterial({color: 0x2c5a30});
+  const leafB = new THREE.MeshLambertMaterial({color: 0x3d7035});
+  const grp = new THREE.Group();
+  for (let i = 0; i < 500; i++) {
+    const x = (rand()-0.5)*420;
+    const z = -rand()*340 + 30;
+    if (distToPath(x, z) < 7) continue;
+    const tg = new THREE.Group();
+    const tr = new THREE.Mesh(trunkGeo, trunkMat);
+    tr.position.y = 2;
+    const top = new THREE.Mesh(rand() < 0.5 ? conifA : conifB, rand() < 0.5 ? leafA : leafB);
+    top.position.y = 5 + rand()*0.8;
+    tg.add(tr); tg.add(top);
+    tg.position.set(x, 0, z);
+    tg.scale.setScalar(0.7 + rand()*1.0);
+    tg.rotation.y = rand()*Math.PI*2;
+    grp.add(tg);
+  }
+  scene.add(grp);
+}
+
+// Distant mountain silhouettes
+{
+  const mountMat = new THREE.MeshBasicMaterial({color: 0x687a98, fog: false});
+  for (let i = 0; i < 24; i++) {
+    const r = 360;
+    const a = -Math.PI*0.5 - 1.7 + (i/24)*3.4;
+    const m = new THREE.Mesh(
+      new THREE.ConeGeometry(28 + rand()*22, 28 + rand()*22, 6),
+      mountMat
+    );
+    m.position.set(Math.cos(a)*r, 12, Math.sin(a)*r - 100);
+    scene.add(m);
+  }
+}
+
+// =============================================================
+// LANDMARKS
+// =============================================================
+const landmarks = [];
+const animated = [];
+
+function addLandmark(t, name, builder) {
+  const pos = curve.getPointAt(t);
+  const tan = curve.getTangentAt(t);
+  const yaw = Math.atan2(tan.x, tan.z);
+  const group = new THREE.Group();
+  group.position.copy(pos);
+  group.rotation.y = yaw;
+  // In local coordinates: +Z = forward along path, +X = right of path
+  builder(group);
+  scene.add(group);
+  landmarks.push({t, name, group, pos: pos.clone(), triggered: false});
+}
+
+// ----- 1. CRIMSON MUSHROOMS -----
+addLandmark(0.04, 'The Crimson Mushrooms', (g) => {
+  const stemMat = new THREE.MeshLambertMaterial({color: 0xefe2c2});
+  const redCap = new THREE.MeshLambertMaterial({color: 0xc41818});
+  const blueCap = new THREE.MeshLambertMaterial({color: 0x4060d0});
+  const dotMat = new THREE.MeshLambertMaterial({color: 0xffffff});
+  const mush = [];
+  for (let i = 0; i < 28; i++) {
+    const side = i % 2 === 0 ? -1 : 1;
+    const lat = side * (2.6 + Math.random()*4);
+    const fwd = (Math.random()-0.5) * 14;
+    const m = new THREE.Group();
+    const stemH = 0.6 + Math.random()*1.6;
+    const stemR = 0.12 + Math.random()*0.06;
+    const stem = new THREE.Mesh(
+      new THREE.CylinderGeometry(stemR, stemR*1.4, stemH, 8),
+      stemMat
+    );
+    stem.position.y = stemH/2;
+    const capR = 0.42 + Math.random()*0.55;
+    const cap = new THREE.Mesh(
+      new THREE.SphereGeometry(capR, 14, 8, 0, Math.PI*2, 0, Math.PI/2),
+      side < 0 ? redCap : blueCap
+    );
+    cap.position.y = stemH;
+    cap.scale.y = 0.55;
+    m.add(stem); m.add(cap);
+    if (side < 0) {
+      for (let d = 0; d < 5; d++) {
+        const dot = new THREE.Mesh(new THREE.SphereGeometry(0.07, 6, 4), dotMat);
+        const a = Math.random()*Math.PI*2;
+        const rd = Math.random()*capR*0.85;
+        dot.position.set(Math.cos(a)*rd, stemH + 0.55*capR*0.6, Math.sin(a)*rd);
+        m.add(dot);
+      }
+    }
+    m.position.set(lat, 0, fwd);
+    m.userData.phase = Math.random()*Math.PI*2;
+    g.add(m);
+    mush.push(m);
+  }
+  animated.push((t) => {
+    for (const m of mush) {
+      m.rotation.z = Math.sin(t*1.4 + m.userData.phase)*0.06;
+    }
+  });
+});
+
+// ----- 2. WATCHER TREE -----
+addLandmark(0.12, 'The Watcher Tree', (g) => {
+  const cx = -5;
+  const blackMat = new THREE.MeshLambertMaterial({color: 0x14100c});
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.5, 0.9, 6.8, 8),
+    blackMat
+  );
+  trunk.position.set(cx, 3.4, 0);
+  trunk.rotation.z = 0.08;
+  g.add(trunk);
+  for (let i = 0; i < 9; i++) {
+    const branch = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.08, 0.18, 2.5+Math.random()*1.6, 6),
+      blackMat
+    );
+    const a = (i/9)*Math.PI*2;
+    branch.position.set(cx + Math.cos(a)*0.6, 4.6 + Math.random()*1.8, Math.sin(a)*0.6);
+    branch.rotation.z = Math.cos(a)*1.0;
+    branch.rotation.x = Math.sin(a)*1.0;
+    g.add(branch);
+  }
+  // Two glowing yellow eyes (face the path: +X side)
+  const eyeMat = new THREE.MeshBasicMaterial({color: 0xfff050});
+  const eye1 = new THREE.Mesh(new THREE.SphereGeometry(0.3, 14, 12), eyeMat);
+  const eye2 = new THREE.Mesh(new THREE.SphereGeometry(0.3, 14, 12), eyeMat);
+  eye1.position.set(cx + 0.5, 4.7, 0.55);
+  eye2.position.set(cx + 0.5, 4.7, -0.55);
+  g.add(eye1); g.add(eye2);
+  // Crows on branch
+  const crowMat = new THREE.MeshLambertMaterial({color: 0x080806});
+  for (let i = 0; i < 3; i++) {
+    const crow = new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 6), crowMat);
+    crow.position.set(cx + 0.7 + (Math.random()-0.5)*1.5, 5.4 + Math.random()*0.8, (Math.random()-0.5)*1.6);
+    crow.scale.set(1.4, 1, 1);
+    g.add(crow);
+  }
+  animated.push((t) => {
+    const blink = (Math.sin(t*1.3) > 0.94) ? 0.05 : 1;
+    eye1.scale.y = eye2.scale.y = blink;
+  });
+});
+
+// ----- 3. BONE ARCH (mammoth ribcage) -----
+addLandmark(0.20, 'The Bone Arch', (g) => {
+  const boneMat = new THREE.MeshLambertMaterial({color: 0xe8dec2});
+  const dark = new THREE.MeshBasicMaterial({color: 0x000000});
+  // Ribs (half-torus arches over the path)
+  for (let i = 0; i < 6; i++) {
+    const z = -3.0 + i*1.2;
+    const rib = new THREE.Mesh(
+      new THREE.TorusGeometry(2.7, 0.15, 6, 18, Math.PI),
+      boneMat
+    );
+    rib.position.set(0, 0, z);
+    g.add(rib);
+  }
+  // Spine on top (along Z)
+  const spine = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.18, 0.18, 7, 8),
+    boneMat
+  );
+  spine.rotation.x = Math.PI/2;
+  spine.position.set(0, 2.6, 0);
+  g.add(spine);
+  // Skull at the entry (-Z side)
+  const skull = new THREE.Mesh(new THREE.SphereGeometry(1.1, 18, 14), boneMat);
+  skull.scale.set(1.2, 1.05, 1.5);
+  skull.position.set(0, 1.7, -4.5);
+  g.add(skull);
+  for (const sx of [-0.45, 0.45]) {
+    const sock = new THREE.Mesh(new THREE.SphereGeometry(0.24, 10, 8), dark);
+    sock.position.set(sx, 2.0, -5.65);
+    sock.scale.set(1.2, 0.85, 0.6);
+    g.add(sock);
+  }
+  // Tusks (curved)
+  for (const sx of [-1, 1]) {
+    const t1 = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.18, 0.05, 2.8, 8),
+      boneMat
+    );
+    t1.position.set(sx*0.65, 0.95, -5.5);
+    t1.rotation.x = -0.65;
+    t1.rotation.z = sx*0.25;
+    g.add(t1);
+  }
+});
+
+// ----- 4. SINGING CRYSTALS -----
+addLandmark(0.28, 'The Singing Crystals', (g) => {
+  const cx = 5.5;
+  const baseMat = new THREE.MeshLambertMaterial({color: 0x352f48});
+  const base = new THREE.Mesh(new THREE.DodecahedronGeometry(2.5, 0), baseMat);
+  base.position.set(cx, 1, 0);
+  base.scale.set(1.4, 0.6, 1.2);
+  g.add(base);
+  const crystals = [];
+  for (let i = 0; i < 13; i++) {
+    const h = 1.6 + Math.random()*5;
+    const r = 0.3 + Math.random()*0.55;
+    const tone = i % 3;
+    const m = new THREE.MeshPhongMaterial({
+      color: tone === 0 ? 0xa050ff : (tone === 1 ? 0x4080ff : 0x60d0ff),
+      emissive: tone === 0 ? 0x4020a0 : (tone === 1 ? 0x103080 : 0x208080),
+      emissiveIntensity: 1, shininess: 100,
+      transparent: true, opacity: 0.85
+    });
+    const c = new THREE.Mesh(new THREE.ConeGeometry(r, h, 5), m);
+    const a = (i/13)*Math.PI*2;
+    const rad = 1.2 + Math.random()*0.5;
+    c.position.set(cx + Math.cos(a)*rad, 1.3 + h/2, Math.sin(a)*rad);
+    c.rotation.z = (Math.random()-0.5)*0.4;
+    c.rotation.x = (Math.random()-0.5)*0.3;
+    c.rotation.y = Math.random()*Math.PI*2;
+    g.add(c);
+    crystals.push(c);
+  }
+  const cl = new THREE.PointLight(0x6080ff, 1.8, 22);
+  cl.position.set(cx, 4, 0);
+  g.add(cl);
+  animated.push((t) => {
+    cl.intensity = 1.5 + Math.sin(t*2.2)*0.8;
+    for (let i = 0; i < crystals.length; i++) {
+      crystals[i].material.emissiveIntensity = 0.7 + Math.sin(t*2 + i*0.6)*0.4;
+    }
+  });
+});
+
+// ----- 5. THE OLD BEAR -----
+addLandmark(0.36, 'The Old Bear', (g) => {
+  const cx = -5.5;
+  const rockMat = new THREE.MeshLambertMaterial({color: 0x282422});
+  const body = new THREE.Mesh(new THREE.SphereGeometry(1.9, 16, 12), rockMat);
+  body.scale.set(1.4, 1.0, 1.7);
+  body.position.set(cx, 1.5, 0);
+  g.add(body);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.95, 14, 10), rockMat);
+  head.scale.set(1.3, 1.0, 1.1);
+  head.position.set(cx + 1.85, 2.7, 0);
+  g.add(head);
+  const snout = new THREE.Mesh(new THREE.SphereGeometry(0.42, 10, 8), rockMat);
+  snout.scale.set(1, 0.7, 1.3);
+  snout.position.set(cx + 2.75, 2.4, 0);
+  g.add(snout);
+  for (const sz of [-0.5, 0.5]) {
+    const ear = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6), rockMat);
+    ear.position.set(cx + 1.6, 3.55, sz);
+    g.add(ear);
+  }
+  // Glowing red eyes
+  const eyeMat = new THREE.MeshBasicMaterial({color: 0xff3020});
+  const eye1 = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 8), eyeMat);
+  const eye2 = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 8), eyeMat);
+  eye1.position.set(cx + 2.25, 2.95, -0.38);
+  eye2.position.set(cx + 2.25, 2.95, 0.38);
+  g.add(eye1); g.add(eye2);
+  // Legs
+  for (const dx of [-0.95, 0.95]) for (const dz of [-0.95, 0.95]) {
+    const leg = new THREE.Mesh(new THREE.SphereGeometry(0.55, 8, 6), rockMat);
+    leg.position.set(cx + dx, 0.5, dz);
+    g.add(leg);
+  }
+  // Bones at feet
+  const boneMat = new THREE.MeshLambertMaterial({color: 0xeae0c8});
+  for (let i = 0; i < 5; i++) {
+    const b = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.5, 5), boneMat);
+    b.position.set(cx + 1.7 + Math.random()*1.5, 0.07, -1.4 + Math.random()*2.8);
+    b.rotation.z = Math.PI/2;
+    b.rotation.y = Math.random()*Math.PI;
+    g.add(b);
+  }
+  animated.push((t) => {
+    const f = 0.7 + Math.sin(t*2.3)*0.3;
+    eye1.material.color.setRGB(1, 0.15*f, 0.12*f);
+  });
+});
+
+// ----- 6. SUNFIRE PIT -----
+addLandmark(0.44, 'The Sunfire Pit', (g) => {
+  const cx = 5.5;
+  const stoneRing = new THREE.MeshLambertMaterial({color: 0x4a423c});
+  for (let i = 0; i < 12; i++) {
+    const a = (i/12)*Math.PI*2;
+    const s = new THREE.Mesh(
+      new THREE.BoxGeometry(0.5+Math.random()*0.2, 0.35, 0.4),
+      stoneRing
+    );
+    s.position.set(cx + Math.cos(a)*1.5, 0.18, Math.sin(a)*1.5);
+    s.rotation.y = a + 0.3;
+    g.add(s);
+  }
+  const logMat = new THREE.MeshLambertMaterial({color: 0x2a1a10});
+  for (let i = 0; i < 4; i++) {
+    const log = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.13, 0.13, 1.6, 6),
+      logMat
+    );
+    log.position.set(cx, 0.25 + i*0.07, 0);
+    log.rotation.x = Math.PI/2;
+    log.rotation.z = (i/4)*Math.PI;
+    g.add(log);
+  }
+  // Animated flames (cones stacked)
+  const flames = [];
+  const flameColors = [0xffe080, 0xffc040, 0xff8030, 0xff5020, 0xff3010];
+  for (let i = 0; i < 5; i++) {
+    const f = new THREE.Mesh(
+      new THREE.ConeGeometry(0.5 - i*0.07, 1.2 + i*0.4, 6),
+      new THREE.MeshBasicMaterial({color: flameColors[i]})
+    );
+    f.position.set(cx, 0.7 + i*0.35, 0);
+    g.add(f);
+    flames.push(f);
+  }
+  // Hanging totem (spear with feathers) next to fire
+  const spearMat = new THREE.MeshLambertMaterial({color: 0x5a3d20});
+  const spear = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.05, 0.05, 4, 6),
+    spearMat
+  );
+  spear.position.set(cx + 1.6, 2, 0);
+  spear.rotation.z = -0.15;
+  g.add(spear);
+  const skullSm = new THREE.Mesh(
+    new THREE.SphereGeometry(0.28, 12, 10),
+    new THREE.MeshLambertMaterial({color: 0xeae0c8})
+  );
+  skullSm.position.set(cx + 1.9, 3.85, 0);
+  skullSm.scale.set(1, 0.9, 1.1);
+  g.add(skullSm);
+  const fLight = new THREE.PointLight(0xff7028, 3, 16);
+  fLight.position.set(cx, 1.5, 0);
+  g.add(fLight);
+  animated.push((t) => {
+    fLight.intensity = 2.2 + Math.sin(t*14)*0.5 + Math.sin(t*23)*0.3;
+    for (let i = 0; i < flames.length; i++) {
+      const sx = 1 + Math.sin(t*8 + i*1.3)*0.2;
+      flames[i].scale.set(sx, 1 + Math.sin(t*10 + i*2)*0.15, sx);
+      flames[i].rotation.y = t*2 + i;
+    }
+  });
+});
+
+// ----- 7. STONE WATCHER (giant carved megalith face) -----
+addLandmark(0.52, 'The Stone Watcher', (g) => {
+  const cx = -6.5;
+  const stoneMat = new THREE.MeshLambertMaterial({color: 0x6e6055});
+  const block = new THREE.Mesh(new THREE.BoxGeometry(3.6, 7.0, 1.8), stoneMat);
+  block.position.set(cx, 3.5, 0);
+  g.add(block);
+  const base = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.6, 2.5), stoneMat);
+  base.position.set(cx, 0.3, 0);
+  g.add(base);
+  const dark = new THREE.MeshBasicMaterial({color: 0x0d0a08});
+  // Eyes on +X face
+  for (const sz of [-0.6, 0.6]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.35, 12, 10), dark);
+    eye.position.set(cx + 0.91, 4.6, sz);
+    eye.scale.set(0.4, 0.85, 1.2);
+    g.add(eye);
+    // Bright pupil
+    const pupil = new THREE.Mesh(
+      new THREE.SphereGeometry(0.07, 8, 6),
+      new THREE.MeshBasicMaterial({color: 0xffe080})
+    );
+    pupil.position.set(cx + 1.0, 4.6, sz);
+    g.add(pupil);
+  }
+  // Nose (vertical ridge)
+  const nose = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.4, 0.3), stoneMat);
+  nose.position.set(cx + 1.0, 3.6, 0);
+  g.add(nose);
+  // Mouth (long horizontal slot)
+  const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.3, 1.6), dark);
+  mouth.position.set(cx + 0.91, 2.6, 0);
+  g.add(mouth);
+  // Carved spirals on forehead
+  const sp = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.07, 6, 24), dark);
+  sp.position.set(cx + 0.92, 5.7, 0);
+  sp.rotation.y = Math.PI/2;
+  g.add(sp);
+  const sp2 = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.06, 6, 18), dark);
+  sp2.position.set(cx + 0.93, 5.7, 0);
+  sp2.rotation.y = Math.PI/2;
+  g.add(sp2);
+});
+
+// ----- 8. RAINBOW FALLS -----
+addLandmark(0.60, 'The Rainbow Falls', (g) => {
+  const cx = 9;
+  const cliffMat = new THREE.MeshLambertMaterial({color: 0x4d3d2d});
+  const cliff = new THREE.Mesh(new THREE.BoxGeometry(6, 9, 4), cliffMat);
+  cliff.position.set(cx + 2, 4.5, 0);
+  g.add(cliff);
+  const top = new THREE.Mesh(
+    new THREE.BoxGeometry(7, 0.4, 4.5),
+    new THREE.MeshLambertMaterial({color: 0x4a7035})
+  );
+  top.position.set(cx + 2, 9.2, 0);
+  g.add(top);
+  // Water cascade
+  const waterMat = new THREE.MeshBasicMaterial({color: 0x9ed8ff, transparent: true, opacity: 0.7});
+  const streams = [];
+  for (let i = 0; i < 5; i++) {
+    const w = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 9), waterMat.clone());
+    w.position.set(cx - 1, 4.5, -1.6 + i*0.8);
+    w.rotation.y = Math.PI/2;
+    g.add(w);
+    streams.push(w);
+  }
+  // Pool
+  const pool = new THREE.Mesh(
+    new THREE.CylinderGeometry(2.6, 2.6, 0.1, 16),
+    new THREE.MeshLambertMaterial({color: 0x2070b0, transparent: true, opacity: 0.85})
+  );
+  pool.position.set(cx - 1, 0.05, 0);
+  g.add(pool);
+  // Rainbow arc
+  const cols = [0xff3030, 0xff8030, 0xffe030, 0x40d040, 0x4080ff, 0x6040c0, 0xc040c0];
+  for (let i = 0; i < cols.length; i++) {
+    const r = 4.6 - i*0.16;
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(r, 0.09, 6, 36, Math.PI),
+      new THREE.MeshBasicMaterial({
+        color: cols[i], side: THREE.DoubleSide,
+        transparent: true, opacity: 0.75
+      })
+    );
+    ring.position.set(cx - 1, 0, 0);
+    ring.rotation.y = Math.PI/2;
+    g.add(ring);
+  }
+  // Mist droplets
+  const mistMat = new THREE.MeshBasicMaterial({color: 0xffffff, transparent: true, opacity: 0.4});
+  const mists = [];
+  for (let i = 0; i < 12; i++) {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.12, 6, 4), mistMat);
+    m.position.set(cx - 1 + (Math.random()-0.5)*2, 0.3 + Math.random()*1.5, (Math.random()-0.5)*3);
+    m.userData.phase = Math.random()*Math.PI*2;
+    g.add(m);
+    mists.push(m);
+  }
+  animated.push((t) => {
+    for (const w of streams) w.material.opacity = 0.5 + Math.sin(t*5 + w.position.z)*0.2;
+    for (const m of mists) {
+      m.position.y = 0.3 + ((t*1 + m.userData.phase) % 2);
+      m.material.opacity = 0.4 - ((t*1 + m.userData.phase) % 2)*0.2;
+    }
+  });
+});
+
+// ----- 9. STANDING CIRCLE -----
+addLandmark(0.68, 'The Standing Circle', (g) => {
+  const stoneMat = new THREE.MeshLambertMaterial({color: 0x807870});
+  const N = 8;
+  const radius = 5;
+  for (let i = 0; i < N; i++) {
+    const a = i * Math.PI/4 + Math.PI/8;
+    const h = 3.6 + (i%2)*1.3;
+    const stone = new THREE.Mesh(
+      new THREE.BoxGeometry(0.7 + Math.random()*0.5, h, 0.6 + Math.random()*0.3),
+      stoneMat
+    );
+    stone.position.set(Math.cos(a)*radius, h/2, Math.sin(a)*radius);
+    stone.rotation.y = a + (Math.random()-0.5)*0.3;
+    stone.rotation.z = (Math.random()-0.5)*0.06;
+    g.add(stone);
+  }
+  // Central altar
+  const altar = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.95, 1.15, 0.6, 8),
+    stoneMat
+  );
+  altar.position.set(0, 0.3, 0);
+  g.add(altar);
+  // Glowing offering
+  const offering = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(0.32, 0),
+    new THREE.MeshBasicMaterial({color: 0xfff080})
+  );
+  offering.position.set(0, 0.95, 0);
+  g.add(offering);
+  const al = new THREE.PointLight(0xffe060, 1.4, 9);
+  al.position.set(0, 1.3, 0);
+  g.add(al);
+  animated.push((t) => {
+    offering.rotation.y = t*0.5;
+    offering.rotation.x = t*0.3;
+    al.intensity = 1.2 + Math.sin(t*3)*0.3;
+  });
+});
+
+// ----- 10. GOLDEN MEADOW -----
+addLandmark(0.76, 'The Golden Meadow', (g) => {
+  const stemMat = new THREE.MeshLambertMaterial({color: 0x4a7035});
+  const goldMat = new THREE.MeshBasicMaterial({color: 0xffd040});
+  const orangeMat = new THREE.MeshBasicMaterial({color: 0xff9020});
+  for (let i = 0; i < 150; i++) {
+    const x = (Math.random()-0.5)*22;
+    const z = (Math.random()-0.5)*18;
+    if (Math.abs(x) < 1.7) continue;
+    const stem = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.025, 0.025, 0.5+Math.random()*0.4, 4),
+      stemMat
+    );
+    stem.position.set(x, 0.3, z);
+    g.add(stem);
+    const head = new THREE.Mesh(
+      new THREE.SphereGeometry(0.13 + Math.random()*0.05, 6, 4),
+      Math.random() < 0.7 ? goldMat : orangeMat
+    );
+    head.position.set(x, 0.65, z);
+    g.add(head);
+  }
+  // Two big sunflowers framing path
+  for (const cx of [-7, 7]) {
+    const stem = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.1, 0.13, 3.6, 6),
+      stemMat
+    );
+    stem.position.set(cx, 1.8, 0);
+    g.add(stem);
+    const center = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.7, 0.7, 0.2, 16),
+      new THREE.MeshLambertMaterial({color: 0x4a3520})
+    );
+    center.position.set(cx, 3.6, 0);
+    center.rotation.x = Math.PI/2;
+    g.add(center);
+    for (let i = 0; i < 14; i++) {
+      const a = (i/14)*Math.PI*2;
+      const petal = new THREE.Mesh(new THREE.SphereGeometry(0.45, 8, 5), goldMat);
+      petal.position.set(cx + Math.cos(a)*0.95, 3.6, Math.sin(a)*0.95);
+      petal.scale.set(0.4, 0.2, 0.7);
+      petal.rotation.y = a + Math.PI/2;
+      g.add(petal);
+    }
+    // Two large leaves on stem
+    for (const ly of [1.4, 2.4]) {
+      const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.5, 8, 6), stemMat);
+      leaf.position.set(cx + 0.4, ly, 0);
+      leaf.scale.set(1.3, 0.2, 0.5);
+      g.add(leaf);
+    }
+  }
+});
+
+// ----- 11. ANTLER GATE -----
+addLandmark(0.85, 'The Antler Gate', (g) => {
+  const antlerMat = new THREE.MeshLambertMaterial({color: 0xc4ac82});
+  const woodMat = new THREE.MeshLambertMaterial({color: 0x4a2c1a});
+  for (const sx of [-2.5, 2.5]) {
+    const post = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.28, 0.34, 4.4, 8),
+      woodMat
+    );
+    post.position.set(sx, 2.2, 0);
+    g.add(post);
+  }
+  const lintel = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.18, 0.18, 5.2, 6),
+    woodMat
+  );
+  lintel.rotation.z = Math.PI/2;
+  lintel.position.set(0, 4.2, 0);
+  g.add(lintel);
+  // Antler bundles on each post
+  function antlerSet(cx, mirror) {
+    const main = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.08, 0.16, 1.8, 6),
+      antlerMat
+    );
+    main.position.set(cx, 4.95, 0);
+    main.rotation.z = mirror * 0.4;
+    g.add(main);
+    for (let i = 0; i < 6; i++) {
+      const branch = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.04, 0.08, 0.7+Math.random()*0.5, 5),
+        antlerMat
+      );
+      branch.position.set(
+        cx + mirror*(0.25 + i*0.15),
+        4.95 + i*0.28,
+        (Math.random()-0.5)*0.4
+      );
+      branch.rotation.z = mirror * (0.5 + Math.random()*0.6);
+      branch.rotation.x = (Math.random()-0.5)*0.7;
+      g.add(branch);
+    }
+  }
+  antlerSet(-2.5, -1);
+  antlerSet(2.5, 1);
+  // Hanging skull from the lintel
+  const sk = new THREE.Mesh(
+    new THREE.SphereGeometry(0.5, 14, 10),
+    new THREE.MeshLambertMaterial({color: 0xeae0c8})
+  );
+  sk.scale.set(1, 0.9, 1.2);
+  sk.position.set(0, 3.5, 0);
+  g.add(sk);
+  const skDark = new THREE.MeshBasicMaterial({color: 0x000000});
+  for (const sz of [-0.18, 0.18]) {
+    const so = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), skDark);
+    so.position.set(0.4, 3.55, sz);
+    g.add(so);
+  }
+  // Twine cord
+  const cord = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.03, 0.03, 0.7, 4),
+    new THREE.MeshLambertMaterial({color: 0x8a6030})
+  );
+  cord.position.set(0, 3.95, 0);
+  g.add(cord);
+});
+
+// ----- 12. THE HEARTH HUT (final destination) -----
+addLandmark(0.96, 'The Hearth Hut', (g) => {
+  const wallMat = new THREE.MeshLambertMaterial({color: 0x9a8870});
+  const roofMat = new THREE.MeshLambertMaterial({color: 0x4a3525});
+  const fwd = 5;
+  const hut = new THREE.Mesh(new THREE.BoxGeometry(4.6, 3, 4.6), wallMat);
+  hut.position.set(0, 1.5, fwd);
+  g.add(hut);
+  // Conical thatched roof
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(3.7, 2.5, 4), roofMat);
+  roof.position.set(0, 4.25, fwd);
+  roof.rotation.y = Math.PI/4;
+  g.add(roof);
+  // Door (dark)
+  const door = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.3, 2.3),
+    new THREE.MeshBasicMaterial({color: 0x3a1a08})
+  );
+  door.position.set(0, 1.15, fwd - 2.32);
+  g.add(door);
+  // Glowing windows
+  const winMat1 = new THREE.MeshBasicMaterial({color: 0xffaa30});
+  const winMat2 = new THREE.MeshBasicMaterial({color: 0xffaa30});
+  const win1 = new THREE.Mesh(new THREE.PlaneGeometry(0.75, 0.75), winMat1);
+  win1.position.set(-1.4, 1.95, fwd - 2.32);
+  g.add(win1);
+  const win2 = new THREE.Mesh(new THREE.PlaneGeometry(0.75, 0.75), winMat2);
+  win2.position.set(1.4, 1.95, fwd - 2.32);
+  g.add(win2);
+  // Chimney
+  const chim = new THREE.Mesh(new THREE.BoxGeometry(0.6, 1.5, 0.6), wallMat);
+  chim.position.set(1.2, 5.05, fwd + 0.5);
+  g.add(chim);
+  // Smoke
+  const smokeMat = new THREE.MeshLambertMaterial({color: 0xb8b8b8, transparent: true, opacity: 0.6});
+  const smokes = [];
+  for (let i = 0; i < 6; i++) {
+    const s = new THREE.Mesh(
+      new THREE.SphereGeometry(0.28 + i*0.08, 8, 6),
+      smokeMat.clone()
+    );
+    s.position.set(1.2, 5.8 + i*0.5, fwd + 0.5);
+    s.userData.baseY = 5.8;
+    s.userData.phase = i*0.55;
+    g.add(s);
+    smokes.push(s);
+  }
+  // Warm interior light
+  const hl = new THREE.PointLight(0xff9035, 4, 24);
+  hl.position.set(0, 1.6, fwd);
+  g.add(hl);
+  // Welcome stone in front of door
+  const stone = new THREE.Mesh(
+    new THREE.BoxGeometry(1.6, 0.25, 0.7),
+    new THREE.MeshLambertMaterial({color: 0x6a6258})
+  );
+  stone.position.set(0, 0.12, fwd - 3);
+  g.add(stone);
+  animated.push((t) => {
+    hl.intensity = 3 + Math.sin(t*4)*0.5 + Math.sin(t*9)*0.25;
+    const c1 = 0.62 + Math.sin(t*4)*0.08;
+    win1.material.color.setRGB(1, c1, 0.18);
+    win2.material.color.setRGB(1, c1, 0.18);
+    for (let i = 0; i < smokes.length; i++) {
+      const s = smokes[i];
+      const k = (t*0.4 + s.userData.phase) % 3;
+      s.position.y = s.userData.baseY + k*1.2;
+      s.position.x = 1.2 + Math.sin(t + s.userData.phase)*0.5;
+      s.material.opacity = Math.max(0, 0.6 - k*0.2);
+      s.scale.setScalar(1 + k*0.4);
+    }
+  });
+});
+
+// =============================================================
+// PLAYER + CONTROLS
+// =============================================================
+const controls = new PointerLockControls(camera, document.body);
+const overlay = document.getElementById('overlay');
+const endScreen = document.getElementById('end-screen');
+const lmEl = document.getElementById('landmark-name');
+const progEl = document.getElementById('progress-fill');
+const trailListEl = document.getElementById('trail-list');
+const replayBtn = document.getElementById('replay');
+
+overlay.addEventListener('click', () => controls.lock());
+controls.addEventListener('lock', () => { overlay.style.display = 'none'; });
+controls.addEventListener('unlock', () => {
+  if (!ended) overlay.style.display = 'flex';
+});
+
+const keys = {};
+addEventListener('keydown', (e) => keys[e.code] = true);
+addEventListener('keyup',   (e) => keys[e.code] = false);
+
+let ended = false;
+let nameTime = 0;
+
+function showLandmark(name) {
+  nameTime = 4.0;
+  lmEl.textContent = name;
+  lmEl.style.opacity = 1;
+}
+
+function endExperience() {
+  if (ended) return;
+  ended = true;
+  trailListEl.innerHTML = landmarks.map(l => `<li>${l.name}</li>`).join('');
+  endScreen.style.opacity = 1;
+  endScreen.style.pointerEvents = 'auto';
+  controls.unlock();
+}
+
+replayBtn.addEventListener('click', () => location.reload());
+
+// =============================================================
+// RENDER LOOP
+// =============================================================
+const clock = new THREE.Clock();
+let bobPhase = 0;
+let lastProgFrame = -1;
+
+function tick() {
+  const dt = Math.min(clock.getDelta(), 0.1);
+  const elapsed = clock.elapsedTime;
+
+  // Movement
+  if (controls.isLocked) {
+    const speed = 5.0;
+    let mvF = 0, mvR = 0;
+    if (keys['KeyW'] || keys['ArrowUp'])    mvF += 1;
+    if (keys['KeyS'] || keys['ArrowDown'])  mvF -= 1;
+    if (keys['KeyA'] || keys['ArrowLeft'])  mvR -= 1;
+    if (keys['KeyD'] || keys['ArrowRight']) mvR += 1;
+    if (mvF || mvR) {
+      const len = Math.hypot(mvF, mvR);
+      mvF /= len; mvR /= len;
+      controls.moveForward(mvF * speed * dt);
+      controls.moveRight(mvR * speed * dt);
+      bobPhase += dt * 7;
+    }
+    camera.position.y = 1.7 + Math.sin(bobPhase)*0.045;
+  }
+
+  // Animations
+  for (const a of animated) a(elapsed);
+
+  // Landmark name triggers (fire when within ~14 units)
+  for (const lm of landmarks) {
+    if (lm.triggered) continue;
+    const d2 = camera.position.distanceToSquared(lm.pos);
+    if (d2 < 200) {
+      lm.triggered = true;
+      showLandmark(lm.name);
+    }
+  }
+
+  if (nameTime > 0) {
+    nameTime -= dt;
+    if (nameTime <= 0) lmEl.style.opacity = 0;
+  }
+
+  // Progress (sample 100 t values, find closest to player)
+  const f = Math.floor(elapsed * 5);
+  if (f !== lastProgFrame) {
+    lastProgFrame = f;
+    let bestT = 0, bestD = 1e9;
+    for (let i = 0; i <= 100; i++) {
+      const t = i / 100;
+      const p = curve.getPointAt(t);
+      const dx = p.x - camera.position.x;
+      const dz = p.z - camera.position.z;
+      const d = dx*dx + dz*dz;
+      if (d < bestD) { bestD = d; bestT = t; }
+    }
+    progEl.style.width = (bestT*100).toFixed(1) + '%';
+    if (bestT > 0.97 && !ended) endExperience();
+  }
+
+  renderer.render(scene, camera);
+  requestAnimationFrame(tick);
+}
+tick();
+
+</script>
+</body>
+</html>

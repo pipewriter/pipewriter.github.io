@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Spectral Genome Fields — procedural world</title>
+<style>
+  :root { --fg:#e8eef5; --dim:#9fb0c3; --accent:#7fd4ff; }
+  * { box-sizing: border-box; }
+  html,body { margin:0; height:100%; background:#0a0e14; color:var(--fg);
+              font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; overflow:hidden; }
+  #app { position:fixed; inset:0; }
+  canvas { display:block; }
+
+  .panel { position:fixed; backdrop-filter: blur(8px);
+           background:rgba(12,18,28,0.72); border:1px solid rgba(127,212,255,0.18);
+           border-radius:12px; padding:12px 14px; font-size:13px; line-height:1.45; }
+
+  #info { top:14px; left:14px; width:280px; }
+  #info h1 { font-size:14px; margin:0 0 6px; letter-spacing:.3px; }
+  #info h1 small { color:var(--dim); font-weight:400; }
+  .biome { font-size:18px; font-weight:600; margin:4px 0 8px; color:var(--accent); }
+  .stat { display:flex; justify-content:space-between; color:var(--dim); }
+  .stat b { color:var(--fg); font-weight:500; }
+
+  .dna-label { color:var(--dim); margin:10px 0 4px; font-size:11px; text-transform:uppercase; letter-spacing:.6px; }
+  #dna { display:flex; gap:3px; height:34px; }
+  #dna .cell { flex:1; border-radius:4px; position:relative; }
+  #dna .cell span { position:absolute; bottom:2px; left:0; right:0; text-align:center;
+                    font-size:9px; color:rgba(0,0,0,.65); font-weight:700; }
+
+  #dist { margin-top:10px; }
+  #dist .bar { height:8px; border-radius:4px; background:rgba(255,255,255,.1); overflow:hidden; margin-top:3px; }
+  #dist .bar i { display:block; height:100%; background:linear-gradient(90deg,#5ad6a0,#ffd166,#ff6b6b); width:0%; }
+
+  #controls { bottom:14px; left:14px; width:280px; }
+  #controls label { display:block; color:var(--dim); font-size:11px; margin:8px 0 2px;
+                    text-transform:uppercase; letter-spacing:.5px; }
+  #controls .row { display:flex; gap:8px; align-items:center; }
+  #controls input[type=range] { width:100%; accent-color:var(--accent); }
+  #controls input[type=text] { flex:1; background:#0c121c; border:1px solid rgba(127,212,255,.2);
+                    color:var(--fg); border-radius:6px; padding:5px 8px; font-size:13px; }
+  #controls button { background:rgba(127,212,255,.14); border:1px solid rgba(127,212,255,.35);
+                    color:var(--accent); border-radius:6px; padding:6px 10px; cursor:pointer; font-size:12px; }
+  #controls button:hover { background:rgba(127,212,255,.26); }
+  .hint { color:var(--dim); font-size:11px; margin-top:10px; }
+
+  #explain { top:14px; right:14px; width:300px; max-height:calc(100% - 28px); overflow:auto; }
+  #explain h2 { font-size:13px; margin:0 0 6px; color:var(--accent); }
+  #explain p { color:var(--dim); margin:6px 0; font-size:12px; }
+  #explain code { color:var(--fg); background:rgba(255,255,255,.06); padding:1px 4px; border-radius:4px; }
+  #explain summary { cursor:pointer; color:var(--accent); font-size:12px; }
+
+  #loading { position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+             background:#0a0e14; z-index:50; font-size:15px; color:var(--dim); }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="loading">Synthesizing genome field…</div>
+
+<div id="info" class="panel">
+  <h1>Spectral Genome World <small>— region readout</small></h1>
+  <div class="biome" id="biome">—</div>
+  <div class="stat"><span>elevation</span><b id="elev">—</b></div>
+  <div class="stat"><span>temperature</span><b id="temp">—</b></div>
+  <div class="stat"><span>humidity</span><b id="humid">—</b></div>
+  <div class="dna-label">Region DNA (8 genes)</div>
+  <div id="dna"></div>
+  <div id="dist">
+    <div class="stat"><span>genetic distance from home</span><b id="distval">0%</b></div>
+    <div class="bar"><i id="distbar"></i></div>
+  </div>
+</div>
+
+<div id="controls" class="panel">
+  <label>Genetic locality &nbsp;<span id="locval" style="color:var(--accent)"></span></label>
+  <input type="range" id="locality" min="0.35" max="2.2" step="0.05" value="1.0" />
+  <label>World seed</label>
+  <div class="row">
+    <input type="text" id="seed" value="42" />
+    <button id="rebuild">Grow</button>
+    <button id="random">Random</button>
+  </div>
+  <div class="hint">Drag = orbit · scroll = zoom · right-drag = pan.<br/>
+  Pan across the map: regions morph smoothly nearby, turn alien far away.</div>
+</div>
+
+<div id="explain" class="panel">
+  <h2>How it works</h2>
+  <p>Every point owns a continuous <b>DNA vector</b>. Each gene is a
+  <i>random Fourier feature field</i> — a sum of cosines with random directions, frequencies and phases:</p>
+  <p><code>gene(p)=√(2/M)·Σ cos(p·ωᵢ+φᵢ)</code></p>
+  <p>Frequencies <code>ωᵢ</code> are drawn from a Gaussian of width <code>1/ℓ</code>.
+  By <b>Bochner's theorem</b> the field's spatial correlation is the Fourier transform of that spectrum —
+  so DNA decorrelates <i>smoothly</i> with distance. The correlation length <code>ℓ</code> is the
+  "genetic locality" slider.</p>
+  <p>Nearby points share most genes (similar), distant points share none (foreign) — the
+  smooth drift in between is your "sun-damage". Terrain, color and life are a deterministic
+  <b>genotype→phenotype</b> map of the DNA.</p>
+  <details><summary>Why it's elegant</summary>
+  <p>Stateless · deterministic · O(1) per point (no neighbors, no storage) · infinite world ·
+  one tunable knob (<code>ℓ</code>) controls the entire "how far until alien" feel.</p></details>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ----------------------------------------------------------------------------
+// Deterministic hashing / PRNG
+// ----------------------------------------------------------------------------
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function hashInt(x, y, z) {
+  let h = (x | 0) * 374761393 + (y | 0) * 668265263 + (z | 0) * 2147483647;
+  h = (h ^ (h >>> 13)) >>> 0;
+  h = Math.imul(h, 1274126177) >>> 0;
+  return h >>> 0;
+}
+
+// ----------------------------------------------------------------------------
+// Gene definitions: each gene is a random Fourier feature field.
+//   L = correlation length (world units) — large L => varies slowly => continental.
+//   M = number of cosine waves.
+// ----------------------------------------------------------------------------
+const GENES = [
+  { key: 'temp',     L: 540, M: 4 },  // 0 temperature
+  { key: 'humid',    L: 470, M: 4 },  // 1 humidity
+  { key: 'elev',     L: 620, M: 4 },  // 2 base elevation / continents
+  { key: 'mountain', L: 310, M: 5 },  // 3 orogeny (where ranges rise)
+  { key: 'rugged',   L: 210, M: 5 },  // 4 ruggedness
+  { key: 'flora',    L: 250, M: 5 },  // 5 flora character
+  { key: 'hue',      L: 175, M: 6 },  // 6 pigment / hue drift
+  { key: 'detail',   L: 95,  M: 6 },  // 7 local detail
+];
+
+let WAVES = [];          // per-gene array of {ox,oy,phase,amp}
+let LOCALITY = 1.0;
+let SEED = 42;
+
+function buildGenome(seed, locality) {
+  WAVES = GENES.map((g, gi) => {
+    const waves = [];
+    const norm = Math.sqrt(2 / g.M);
+    const L = g.L * locality;
+    for (let i = 0; i < g.M; i++) {
+      const rng = mulberry32(hashInt(seed, gi * 9176 + 1, i * 2731 + 7));
+      // Box–Muller -> Gaussian frequency vector, std = 1/L
+      let u1 = Math.max(1e-6, rng()), u2 = rng();
+      const r = Math.sqrt(-2 * Math.log(u1));
+      const gx = r * Math.cos(2 * Math.PI * u2);
+      const gy = r * Math.sin(2 * Math.PI * u2);
+      waves.push({ ox: gx / L, oy: gy / L, phase: rng() * 2 * Math.PI, amp: norm });
+    }
+    return waves;
+  });
+}
+
+// Evaluate one gene at world (x,z) — O(M).
+function gene(gi, x, z) {
+  const w = WAVES[gi];
+  let s = 0;
+  for (let i = 0; i < w.length; i++) {
+    s += w[i].amp * Math.cos(x * w[i].ox + z * w[i].oy + w[i].phase);
+  }
+  return s; // ~unit variance Gaussian, mostly within [-2.5, 2.5]
+}
+// Evaluate the full DNA vector.
+function dna(x, z) {
+  const d = new Array(GENES.length);
+  for (let i = 0; i < GENES.length; i++) d[i] = gene(i, x, z);
+  return d;
+}
+const clamp01 = v => v < 0 ? 0 : v > 1 ? 1 : v;
+const squash = v => 0.5 + 0.5 * Math.tanh(v * 0.9); // gaussian -> 0..1
+
+// ----------------------------------------------------------------------------
+// Value-noise fractal — provides the *texture* of terrain whose character
+// (amplitude, ruggedness) is dictated by the DNA.
+// ----------------------------------------------------------------------------
+function vnoise(x, y) {
+  const xi = Math.floor(x), yi = Math.floor(y);
+  const xf = x - xi, yf = y - yi;
+  const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+  const h = (a, b) => (hashInt(a, b, 1337) % 100000) / 100000;
+  const a = h(xi, yi), b = h(xi + 1, yi), c = h(xi, yi + 1), d = h(xi + 1, yi + 1);
+  return (a * (1 - u) + b * u) * (1 - v) + (c * (1 - u) + d * u) * v; // 0..1
+}
+function fbm(x, y, oct) {
+  let f = 1, amp = 0.5, sum = 0, norm = 0;
+  for (let i = 0; i < oct; i++) { sum += amp * vnoise(x * f, y * f); norm += amp; f *= 2.0; amp *= 0.5; }
+  return sum / norm;
+}
+function ridge(x, y, oct) {
+  let f = 1, amp = 0.5, sum = 0, norm = 0;
+  for (let i = 0; i < oct; i++) {
+    let n = vnoise(x * f, y * f);
+    n = 1 - Math.abs(2 * n - 1); n *= n;
+    sum += amp * n; norm += amp; f *= 2.0; amp *= 0.5;
+  }
+  return sum / norm;
+}
+
+// ----------------------------------------------------------------------------
+// Genotype -> phenotype: turn DNA into a terrain height + everything else.
+// ----------------------------------------------------------------------------
+const SEA = 0.0;
+function heightAt(x, z, d) {
+  d = d || dna(x, z);
+  const elev01     = squash(d[2]);
+  const mountain01 = squash(d[3]);
+  const rugged01   = squash(d[4]);
+
+  const base     = (elev01 - 0.45) * 110;                 // continents & basins
+  const hills     = (0.25 + 0.9 * rugged01) * (fbm(x / 55, z / 55, 4) - 0.5) * 55;
+  const mMask     = THREE.MathUtils.smoothstep(mountain01, 0.40, 0.86);
+  const mountains = mMask * Math.pow(ridge(x / 120, z / 120, 6), 1.3) * 240;
+
+  return base + hills + mountains;
+}
+
+// Biome palette from DNA. Returns THREE.Color.
+const tmpColor = new THREE.Color();
+function colorAt(x, z, d, h) {
+  const temp = clamp01(squash(d[0]) - Math.max(0, h) * 0.0022); // cooler up high
+  const humid = squash(d[1]);
+  const hue = squash(d[6]);
+
+  let r, g, b;
+  if (h < SEA + 1.5) {                       // beaches / shallows margin handled by water plane
+    r = 0.80; g = 0.74; b = 0.55;            // sand
+  } else if (h > 150 || temp < 0.18) {        // snow caps
+    const s = THREE.MathUtils.smoothstep(h, 120, 175);
+    r = 0.92; g = 0.95; b = 0.99;
+    r = 0.55 * (1 - s) + r * s; g = 0.57 * (1 - s) + g * s; b = 0.60 * (1 - s) + b * s; // rock->snow
+  } else if (temp > 0.66 && humid < 0.35) {   // desert
+    r = 0.83; g = 0.69; b = 0.42;
+  } else if (temp > 0.6 && humid > 0.6) {     // tropical
+    r = 0.18; g = 0.52; b = 0.18;
+  } else if (temp < 0.4) {                    // tundra / taiga
+    r = 0.38; g = 0.46; b = 0.40;
+  } else {                                     // temperate
+    const lush = 0.3 + 0.7 * humid;
+    r = 0.30 * (1 - lush) + 0.22 * lush;
+    g = 0.42 * (1 - lush) + 0.55 * lush;
+    b = 0.22;
+  }
+  // pigment drift: rotate slightly toward the hue gene so regions read distinct
+  tmpColor.setRGB(r, g, b);
+  const hsl = {}; tmpColor.getHSL(hsl);
+  tmpColor.setHSL((hsl.h + (hue - 0.5) * 0.12 + 1) % 1, hsl.s * (0.85 + humid * 0.3), hsl.l);
+  return tmpColor;
+}
+
+function biomeName(d, h) {
+  const temp = clamp01(squash(d[0]) - Math.max(0, h) * 0.0022);
+  const humid = squash(d[1]);
+  if (h < SEA) return 'Ocean';
+  if (h > 150 || temp < 0.18) return 'Alpine / Snow';
+  if (temp > 0.66 && humid < 0.35) return 'Desert';
+  if (temp > 0.6 && humid > 0.6) return 'Tropical Forest';
+  if (temp < 0.4) return humid > 0.5 ? 'Taiga' : 'Tundra';
+  if (humid > 0.6) return 'Temperate Forest';
+  return 'Grassland';
+}
+
+// ----------------------------------------------------------------------------
+// Scene
+// ----------------------------------------------------------------------------
+const WORLD = 1100;     // world span (units)
+const SEG = 300;        // grid resolution
+
+const app = document.getElementById('app');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+app.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const skyTop = new THREE.Color(0x9ec7ef), skyBot = new THREE.Color(0xd7e9f7);
+scene.background = skyBot.clone();
+scene.fog = new THREE.Fog(0xc9def0, WORLD * 0.55, WORLD * 1.25);
+
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 1, 6000);
+camera.position.set(WORLD * 0.42, 360, WORLD * 0.42);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.07;
+controls.maxPolarAngle = Math.PI * 0.49;
+controls.target.set(0, 20, 0);
+controls.maxDistance = WORLD * 1.1;
+controls.minDistance = 30;
+
+scene.add(new THREE.HemisphereLight(0xdfefff, 0x4a5a40, 0.9));
+const sun = new THREE.DirectionalLight(0xfff4e0, 1.15);
+sun.position.set(-0.6, 1.0, 0.4).multiplyScalar(500);
+scene.add(sun);
+
+// Terrain mesh ---------------------------------------------------------------
+let terrain, water, trees, rocks;
+
+function disposeWorld() {
+  for (const o of [terrain, water, trees, rocks]) {
+    if (!o) continue;
+    scene.remove(o);
+    o.geometry && o.geometry.dispose();
+    if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => m.dispose());
+  }
+}
+
+function buildWorld() {
+  disposeWorld();
+  buildGenome(SEED, LOCALITY);
+
+  // --- terrain ---
+  const geo = new THREE.PlaneGeometry(WORLD, WORLD, SEG, SEG);
+  geo.rotateX(-Math.PI / 2);
+  const pos = geo.attributes.position;
+  const colors = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), z = pos.getZ(i);
+    const d = dna(x, z);
+    const h = heightAt(x, z, d);
+    pos.setY(i, h);
+    const c = colorAt(x, z, d, h);
+    colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geo.computeVertexNormals();
+  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0.0, flatShading: false });
+  terrain = new THREE.Mesh(geo, mat);
+  scene.add(terrain);
+
+  // --- water ---
+  const wgeo = new THREE.PlaneGeometry(WORLD * 1.2, WORLD * 1.2);
+  wgeo.rotateX(-Math.PI / 2);
+  const wmat = new THREE.MeshStandardMaterial({ color: 0x2f6f8f, transparent: true, opacity: 0.78,
+                                                roughness: 0.25, metalness: 0.15 });
+  water = new THREE.Mesh(wgeo, wmat);
+  water.position.y = SEA;
+  scene.add(water);
+
+  // --- life: trees + rocks (instanced) ---
+  buildLife();
+}
+
+function buildLife() {
+  const step = 7.2;                       // sampling stride
+  const treeMats = [], rockMats = [];
+  const treeColors = [], dummy = new THREE.Object3D();
+  const half = WORLD / 2 - step;
+
+  for (let x = -half; x <= half; x += step) {
+    for (let z = -half; z <= half; z += step) {
+      // jitter deterministically
+      const rng = mulberry32(hashInt(Math.round(x), Math.round(z), SEED ^ 0x55));
+      const jx = x + (rng() - 0.5) * step, jz = z + (rng() - 0.5) * step;
+      const d = dna(jx, jz);
+      const h = heightAt(jx, jz, d);
+      if (h < SEA + 2) continue;
+
+      // slope from finite differences
+      const e = 2.0;
+      const slope = Math.abs(heightAt(jx + e, jz, null) - h) + Math.abs(heightAt(jx, jz + e, null) - h);
+
+      const temp = clamp01(squash(d[0]) - Math.max(0, h) * 0.0022);
+      const humid = squash(d[1]);
+      const flora = squash(d[5]);
+      const hue = squash(d[6]);
+
+      // rocks: rugged, high, or steep
+      if (rng() < 0.10 && (slope > 7 || h > 130 || squash(d[4]) > 0.72)) {
+        if (rockMats.length < 6000) {
+          dummy.position.set(jx, h - 0.5, jz);
+          const s = 1.2 + rng() * 2.4;
+          dummy.scale.set(s, s * (0.6 + rng() * 0.5), s);
+          dummy.rotation.set(rng() * 3, rng() * 6, rng() * 3);
+          dummy.updateMatrix();
+          rockMats.push(dummy.matrix.clone());
+        }
+        continue;
+      }
+
+      // trees: warm enough, humid enough, below snow, gentle slope
+      const treeChance = clamp01((humid - 0.32) * 1.6) * clamp01((temp - 0.2) * 2.2)
+                       * (h < 150 ? 1 : 0) * (slope < 9 ? 1 : 0.2) * (0.4 + 0.6 * flora);
+      if (rng() < treeChance * 0.55 && treeMats.length < 26000) {
+        dummy.position.set(jx, h, jz);
+        const tall = 4 + flora * 7 + rng() * 4;
+        const wide = 1.0 + flora * 1.4;
+        dummy.scale.set(wide, tall, wide);
+        dummy.rotation.set(0, rng() * 6, 0);
+        dummy.updateMatrix();
+        treeMats.push(dummy.matrix.clone());
+        // foliage color from DNA
+        tmpColor.setHSL((0.25 + (hue - 0.5) * 0.18 + 1) % 1, 0.45 + 0.3 * humid, 0.22 + 0.12 * flora);
+        treeColors.push(tmpColor.r, tmpColor.g, tmpColor.b);
+      }
+    }
+  }
+
+  // tree instanced mesh (simple cone canopy)
+  const tgeo = new THREE.ConeGeometry(1.1, 1, 6);
+  tgeo.translate(0, 0.5, 0); // base at y=0, scaled by height
+  const tmat = new THREE.MeshStandardMaterial({ roughness: 0.9, flatShading: true });
+  trees = new THREE.InstancedMesh(tgeo, tmat, Math.max(1, treeMats.length));
+  for (let i = 0; i < treeMats.length; i++) {
+    trees.setMatrixAt(i, treeMats[i]);
+    trees.setColorAt(i, tmpColor.setRGB(treeColors[i * 3], treeColors[i * 3 + 1], treeColors[i * 3 + 2]));
+  }
+  trees.instanceMatrix.needsUpdate = true;
+  if (trees.instanceColor) trees.instanceColor.needsUpdate = true;
+  trees.count = treeMats.length;
+  scene.add(trees);
+
+  // rock instanced mesh
+  const rgeo = new THREE.IcosahedronGeometry(1.4, 0);
+  const rmat = new THREE.MeshStandardMaterial({ color: 0x8b8d92, roughness: 1.0, flatShading: true });
+  rocks = new THREE.InstancedMesh(rgeo, rmat, Math.max(1, rockMats.length));
+  for (let i = 0; i < rockMats.length; i++) rocks.setMatrixAt(i, rockMats[i]);
+  rocks.instanceMatrix.needsUpdate = true;
+  rocks.count = rockMats.length;
+  scene.add(rocks);
+}
+
+// ----------------------------------------------------------------------------
+// HUD
+// ----------------------------------------------------------------------------
+const dnaEl = document.getElementById('dna');
+const cells = GENES.map((g, i) => {
+  const c = document.createElement('div');
+  c.className = 'cell';
+  const s = document.createElement('span'); s.textContent = g.key[0].toUpperCase();
+  c.appendChild(s); c.title = g.key;
+  dnaEl.appendChild(c);
+  return c;
+});
+let homeDNA = null;
+
+function updateHUD() {
+  const t = controls.target;
+  const d = dna(t.x, t.z);
+  const h = heightAt(t.x, t.z, d);
+  document.getElementById('biome').textContent = biomeName(d, h);
+  document.getElementById('elev').textContent = h.toFixed(0) + ' m';
+  document.getElementById('temp').textContent = (squash(d[0]) * 100).toFixed(0) + '%';
+  document.getElementById('humid').textContent = (squash(d[1]) * 100).toFixed(0) + '%';
+  for (let i = 0; i < cells.length; i++) {
+    const v = squash(d[i]);
+    tmpColor.setHSL((0.62 - v * 0.62 + 1) % 1, 0.7, 0.35 + v * 0.3);
+    cells[i].style.background = '#' + tmpColor.getHexString();
+  }
+  if (!homeDNA) homeDNA = d.slice();
+  let dist = 0;
+  for (let i = 0; i < d.length; i++) { const dv = squash(d[i]) - squash(homeDNA[i]); dist += dv * dv; }
+  dist = Math.sqrt(dist / d.length); // 0..~1
+  const pct = Math.min(100, dist * 180);
+  document.getElementById('distval').textContent = pct.toFixed(0) + '%';
+  document.getElementById('distbar').style.width = pct + '%';
+}
+
+// ----------------------------------------------------------------------------
+// Controls UI
+// ----------------------------------------------------------------------------
+const locEl = document.getElementById('locality');
+const locVal = document.getElementById('locval');
+const seedEl = document.getElementById('seed');
+function setLocLabel() { locVal.textContent = '×' + parseFloat(locEl.value).toFixed(2); }
+setLocLabel();
+
+function rebuild() {
+  document.getElementById('loading').style.display = 'flex';
+  SEED = (parseInt(seedEl.value, 10) || 0) >>> 0;
+  LOCALITY = parseFloat(locEl.value);
+  homeDNA = null;
+  // let the loader paint
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    buildWorld();
+    updateHUD();
+    document.getElementById('loading').style.display = 'none';
+  }));
+}
+locEl.addEventListener('input', setLocLabel);
+locEl.addEventListener('change', rebuild);
+document.getElementById('rebuild').addEventListener('click', rebuild);
+document.getElementById('random').addEventListener('click', () => {
+  seedEl.value = Math.floor(Math.random() * 99999);
+  rebuild();
+});
+
+// ----------------------------------------------------------------------------
+// Loop
+// ----------------------------------------------------------------------------
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+let frame = 0;
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  if ((frame++ % 6) === 0) updateHUD();
+  renderer.render(scene, camera);
+}
+
+buildWorld();
+updateHUD();
+document.getElementById('loading').style.display = 'none';
+animate();
+</script>
+</body>
+</html>

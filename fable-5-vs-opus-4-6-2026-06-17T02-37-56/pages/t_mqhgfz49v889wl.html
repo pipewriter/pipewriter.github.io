@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The Vivid Trail</title>
+<style>
+  body { margin: 0; overflow: hidden; font-family: Georgia, 'Times New Roman', serif; background: #000; color: #fff; }
+  canvas { display: block; }
+  #overlay {
+    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(ellipse at center, rgba(60,30,80,0.92), rgba(0,0,0,0.97));
+    z-index: 10; cursor: pointer; transition: opacity 0.5s;
+  }
+  #overlay.hidden { opacity: 0; pointer-events: none; }
+  #overlay .panel { text-align: center; padding: 40px; max-width: 540px; }
+  #overlay h1 {
+    font-size: 52px; margin: 0 0 24px; font-weight: 300; letter-spacing: 4px;
+    background: linear-gradient(90deg, #ff8866, #ffcc66, #ddaaff, #88ccff);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  #overlay p { font-size: 18px; line-height: 1.6; opacity: 0.92; margin: 8px 0; }
+  #overlay .hint { font-size: 13px; opacity: 0.55; margin-top: 32px; letter-spacing: 2px; }
+  #endMessage {
+    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(ellipse at center, rgba(60,30,20,0.7), rgba(0,0,0,0.92));
+    z-index: 5; opacity: 0; pointer-events: none; transition: opacity 2s;
+    color: #ffd0a0; text-align: center;
+  }
+  #endMessage.show { opacity: 1; }
+  #endMessage h2 { font-size: 44px; font-weight: 300; letter-spacing: 6px; margin: 0; }
+  #endMessage p { font-size: 16px; opacity: 0.7; margin-top: 16px; letter-spacing: 2px; }
+  #hud {
+    position: fixed; top: 18px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.55); font-size: 12px; letter-spacing: 5px;
+    pointer-events: none; text-transform: uppercase;
+  }
+  #reticle {
+    position: fixed; left: 50%; top: 50%; width: 4px; height: 4px;
+    background: rgba(255,255,255,0.5); border-radius: 50%;
+    transform: translate(-50%, -50%); pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<div id="overlay">
+  <div class="panel">
+    <h1>THE VIVID TRAIL</h1>
+    <p>The path home is long, but each marker is a memory.</p>
+    <p>Walk slowly. Look at each thing. Name it. Remember it in turn.</p>
+    <p class="hint">CLICK TO BEGIN &nbsp;&middot;&nbsp; WASD / ARROWS TO WALK &nbsp;&middot;&nbsp; MOUSE TO LOOK</p>
+  </div>
+</div>
+<div id="endMessage"><div><h2>YOU ARE HOME</h2><p>now walk the trail backwards in your mind</p></div></div>
+<div id="hud"></div>
+<div id="reticle"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+
+// ---------- Scene / Renderer ----------
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0xe6b08c, 0.011);
+
+const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.1, 800);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+// ---------- Sky (gradient dome) ----------
+const skyMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide, depthWrite: false,
+  uniforms: {
+    topColor:    { value: new THREE.Color(0x322870) },
+    midColor:    { value: new THREE.Color(0xff7a55) },
+    bottomColor: { value: new THREE.Color(0xffd99a) }
+  },
+  vertexShader: `varying vec3 vDir;
+    void main(){ vDir = normalize(position);
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `
+    uniform vec3 topColor; uniform vec3 midColor; uniform vec3 bottomColor;
+    varying vec3 vDir;
+    void main(){
+      float h = vDir.y;
+      vec3 col = (h > 0.0)
+        ? mix(midColor, topColor, smoothstep(0.0, 0.75, h))
+        : mix(midColor, bottomColor, smoothstep(0.0, 0.35, -h));
+      gl_FragColor = vec4(col, 1.0);
+    }`
+});
+scene.add(new THREE.Mesh(new THREE.SphereGeometry(400, 32, 24), skyMat));
+
+// Sun disc
+const sunDisc = new THREE.Mesh(
+  new THREE.CircleGeometry(8, 32),
+  new THREE.MeshBasicMaterial({ color: 0xffe7b8, transparent: true, opacity: 0.9, fog: false })
+);
+sunDisc.position.set(40, 25, -380);
+scene.add(sunDisc);
+
+// ---------- Lights ----------
+scene.add(new THREE.AmbientLight(0xffe1c4, 0.55));
+const sun = new THREE.DirectionalLight(0xffc890, 1.25);
+sun.position.set(60, 50, -120);
+scene.add(sun);
+const rim = new THREE.DirectionalLight(0x8aa6ff, 0.45);
+rim.position.set(-60, 30, 80);
+scene.add(rim);
+
+// ---------- Trail curve ----------
+const pathPoints = [
+  new THREE.Vector3(  0, 0,   8),
+  new THREE.Vector3(  0, 0,  -8),
+  new THREE.Vector3(  6, 0, -22),
+  new THREE.Vector3( 12, 0, -42),
+  new THREE.Vector3(  8, 0, -62),
+  new THREE.Vector3( -4, 0, -82),
+  new THREE.Vector3(-14, 0, -102),
+  new THREE.Vector3(-10, 0, -126),
+  new THREE.Vector3(  2, 0, -148),
+  new THREE.Vector3( 14, 0, -170),
+  new THREE.Vector3( 18, 0, -195),
+  new THREE.Vector3(  8, 0, -218),
+  new THREE.Vector3(  0, 0, -235),
+];
+const trail = new THREE.CatmullRomCurve3(pathPoints, false, 'catmullrom', 0.5);
+
+// ---------- Ground ----------
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(800, 800),
+  new THREE.MeshStandardMaterial({ color: 0x4a6634, roughness: 1 })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.position.y = -0.05;
+scene.add(ground);
+
+// ---------- Path ribbon ----------
+function buildPathGeo() {
+  const div = 360, half = 1.7;
+  const pos = [], idx = [], uv = [];
+  for (let i = 0; i <= div; i++) {
+    const t = i / div;
+    const p = trail.getPointAt(t);
+    const tan = trail.getTangentAt(t);
+    const n = new THREE.Vector3(-tan.z, 0, tan.x).normalize();
+    pos.push(p.x - n.x * half, 0, p.z - n.z * half);
+    pos.push(p.x + n.x * half, 0, p.z + n.z * half);
+    uv.push(0, t * 50);
+    uv.push(1, t * 50);
+    if (i < div) {
+      const a = i * 2;
+      idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+const pathMesh = new THREE.Mesh(
+  buildPathGeo(),
+  new THREE.MeshStandardMaterial({ color: 0xcaa776, roughness: 1 })
+);
+scene.add(pathMesh);
+
+// ---------- Distant hills (silhouette) ----------
+for (let i = 0; i < 14; i++) {
+  const angle = (i / 14) * Math.PI * 2 + 0.3;
+  const r = 260 + Math.random() * 60;
+  const hill = new THREE.Mesh(
+    new THREE.ConeGeometry(35 + Math.random() * 28, 28 + Math.random() * 22, 6),
+    new THREE.MeshBasicMaterial({ color: 0x2b403d, fog: false })
+  );
+  hill.position.set(Math.cos(angle) * r, 6, Math.sin(angle) * r - 110);
+  scene.add(hill);
+}
+
+// ---------- Scattered grass tufts (avoid path) ----------
+function nearPath(x, z, margin = 3.2) {
+  for (let t = 0; t <= 1; t += 0.012) {
+    const p = trail.getPointAt(t);
+    if ((p.x - x) ** 2 + (p.z - z) ** 2 < margin * margin) return true;
+  }
+  return false;
+}
+const grassMat = i => new THREE.MeshStandardMaterial({
+  color: new THREE.Color().setHSL(0.22 + Math.random() * 0.08, 0.55, 0.22 + Math.random() * 0.18)
+});
+for (let i = 0; i < 1400; i++) {
+  const x = (Math.random() - 0.5) * 280;
+  const z = -Math.random() * 280 + 18;
+  if (nearPath(x, z, 2.6)) continue;
+  const t = new THREE.Mesh(
+    new THREE.ConeGeometry(0.1 + Math.random() * 0.1, 0.35 + Math.random() * 0.45, 4),
+    grassMat()
+  );
+  t.position.set(x, 0.18, z);
+  t.rotation.y = Math.random() * Math.PI;
+  scene.add(t);
+}
+
+// scattered low rocks
+for (let i = 0; i < 60; i++) {
+  const x = (Math.random() - 0.5) * 200;
+  const z = -Math.random() * 250 + 10;
+  if (nearPath(x, z, 4)) continue;
+  const r = new THREE.Mesh(
+    new THREE.DodecahedronGeometry(0.3 + Math.random() * 0.5),
+    new THREE.MeshStandardMaterial({ color: 0x6a6258, roughness: 1 })
+  );
+  r.position.set(x, 0.2, z);
+  r.rotation.set(Math.random(), Math.random(), Math.random());
+  scene.add(r);
+}
+
+// ---------- Landmarks ----------
+const animatedItems = [];
+
+function pathFrame(t) {
+  const p = trail.getPointAt(t);
+  const tan = trail.getTangentAt(t);
+  const n = new THREE.Vector3(-tan.z, 0, tan.x).normalize();
+  const yaw = Math.atan2(tan.x, tan.z);
+  return { p, tan, n, yaw };
+}
+
+// 1. Twin red gateway pillars
+function buildGateway(t) {
+  const { p, n } = pathFrame(t);
+  for (const s of [-1, 1]) {
+    const col = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.6, 0.95, 6.5, 10),
+      new THREE.MeshStandardMaterial({ color: 0xc8311a, roughness: 0.55 })
+    );
+    col.position.set(p.x + n.x * 4 * s, 3.25, p.z + n.z * 4 * s);
+    scene.add(col);
+
+    const orb = new THREE.Mesh(
+      new THREE.SphereGeometry(0.95, 18, 14),
+      new THREE.MeshStandardMaterial({ color: 0xff5533, emissive: 0x661500, emissiveIntensity: 0.7, roughness: 0.4 })
+    );
+    orb.position.set(p.x + n.x * 4 * s, 6.95, p.z + n.z * 4 * s);
+    scene.add(orb);
+
+    const stripe = new THREE.Mesh(
+      new THREE.TorusGeometry(0.65, 0.12, 8, 18),
+      new THREE.MeshStandardMaterial({ color: 0xfff2c8 })
+    );
+    stripe.rotation.x = Math.PI / 2;
+    stripe.position.set(p.x + n.x * 4 * s, 3.5, p.z + n.z * 4 * s);
+    scene.add(stripe);
+  }
+  const gl = new THREE.PointLight(0xff5533, 1.0, 14);
+  gl.position.set(p.x, 5, p.z);
+  scene.add(gl);
+}
+
+// 2. Glowing blue mushroom grove
+function buildMushrooms(t) {
+  const { p, tan, n } = pathFrame(t);
+  for (let i = 0; i < 16; i++) {
+    const side = i < 8 ? -1 : 1;
+    const off = 2.6 + Math.random() * 5.5;
+    const along = (Math.random() - 0.5) * 9;
+    const x = p.x + n.x * off * side + tan.x * along;
+    const z = p.z + n.z * off * side + tan.z * along;
+    const h = 0.5 + Math.random() * 1.4;
+    const stem = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.07, 0.13, h, 8),
+      new THREE.MeshStandardMaterial({ color: 0xeeeedd, roughness: 0.85 })
+    );
+    stem.position.set(x, h / 2, z);
+    scene.add(stem);
+    const cap = new THREE.Mesh(
+      new THREE.SphereGeometry(0.32 + Math.random() * 0.22, 14, 9, 0, Math.PI * 2, 0, Math.PI / 2),
+      new THREE.MeshStandardMaterial({ color: 0x33aaff, emissive: 0x0066ff, emissiveIntensity: 0.95, roughness: 0.3 })
+    );
+    cap.position.set(x, h, z);
+    cap.scale.y = 0.7;
+    scene.add(cap);
+  }
+  const ml = new THREE.PointLight(0x4488ff, 1.4, 18);
+  ml.position.set(p.x, 2.2, p.z);
+  scene.add(ml);
+
+  const sporeCount = 90;
+  const sporePos = new Float32Array(sporeCount * 3);
+  const sporeBase = new Float32Array(sporeCount * 3);
+  for (let i = 0; i < sporeCount; i++) {
+    const x = p.x + (Math.random() - 0.5) * 16;
+    const z = p.z + (Math.random() - 0.5) * 14;
+    const y = Math.random() * 4;
+    sporePos[i * 3] = x; sporePos[i * 3 + 1] = y; sporePos[i * 3 + 2] = z;
+    sporeBase[i * 3] = x; sporeBase[i * 3 + 1] = y; sporeBase[i * 3 + 2] = z;
+  }
+  const sg = new THREE.BufferGeometry();
+  sg.setAttribute('position', new THREE.BufferAttribute(sporePos, 3));
+  const spores = new THREE.Points(sg, new THREE.PointsMaterial({
+    color: 0x9bd0ff, size: 0.18, transparent: true, opacity: 0.85, depthWrite: false
+  }));
+  scene.add(spores);
+  animatedItems.push({ type: 'spores', points: spores, base: sporeBase });
+}
+
+// 3. Magenta crystal cluster
+function buildCrystals(t) {
+  const { p, tan, n } = pathFrame(t);
+  for (let i = 0; i < 9; i++) {
+    const side = i % 2 === 0 ? -1 : 1;
+    const off = 2.8 + Math.random() * 3.5;
+    const along = (Math.random() - 0.5) * 6;
+    const x = p.x + n.x * off * side + tan.x * along;
+    const z = p.z + n.z * off * side + tan.z * along;
+    const h = 1.8 + Math.random() * 4;
+    const c = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.7 + Math.random() * 0.4),
+      new THREE.MeshStandardMaterial({
+        color: 0xff44aa, emissive: 0x880048, emissiveIntensity: 0.55,
+        roughness: 0.12, metalness: 0.35
+      })
+    );
+    c.scale.y = h;
+    c.position.set(x, h * 0.5, z);
+    c.rotation.y = Math.random() * Math.PI;
+    c.rotation.z = (Math.random() - 0.5) * 0.35;
+    scene.add(c);
+    animatedItems.push({ type: 'crystal', mesh: c, speed: 0.25 + Math.random() * 0.45 });
+  }
+  const cl = new THREE.PointLight(0xff44aa, 1.4, 22);
+  cl.position.set(p.x, 3, p.z);
+  scene.add(cl);
+}
+
+// 4. Mammoth bone arch (walk through)
+function buildBoneArch(t) {
+  const { p, yaw } = pathFrame(t);
+  const boneMat = new THREE.MeshStandardMaterial({ color: 0xeae0c8, roughness: 0.78 });
+  const group = new THREE.Group();
+  for (const off of [-1.6, 1.6]) {
+    const arch = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(-3.6, 0, off),
+      new THREE.Vector3(-2.6, 3, off),
+      new THREE.Vector3( 0,   5.2, off),
+      new THREE.Vector3( 2.6, 3, off),
+      new THREE.Vector3( 3.6, 0, off),
+    ]);
+    const tube = new THREE.Mesh(new THREE.TubeGeometry(arch, 32, 0.28, 8, false), boneMat);
+    group.add(tube);
+    for (let i = 0; i <= 6; i++) {
+      const knob = new THREE.Mesh(new THREE.SphereGeometry(0.45, 10, 8), boneMat);
+      knob.position.copy(arch.getPointAt(i / 6));
+      group.add(knob);
+    }
+  }
+  // mammoth skull off to one side
+  const skull = new THREE.Mesh(new THREE.SphereGeometry(0.95, 16, 12), boneMat);
+  skull.scale.set(1, 0.9, 1.25);
+  skull.position.set(4.2, 0.85, 0);
+  group.add(skull);
+  for (const s of [-1, 1]) {
+    const tusk = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.16, 1.9, 8), boneMat);
+    tusk.position.set(4.2 + s * 0.32, 0.5, 0.85);
+    tusk.rotation.x = -0.55;
+    tusk.rotation.z = s * 0.2;
+    group.add(tusk);
+  }
+  // small bone pile
+  for (let i = 0; i < 5; i++) {
+    const b = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 0.8 + Math.random() * 0.6, 6), boneMat);
+    b.position.set(-4 + (Math.random() - 0.5) * 1.2, 0.18, (Math.random() - 0.5) * 1.5);
+    b.rotation.set(Math.random(), Math.random(), Math.random());
+    group.add(b);
+  }
+  group.position.set(p.x, 0, p.z);
+  group.rotation.y = yaw;
+  scene.add(group);
+}
+
+// 5. Fire pit with flickering flames
+function buildFirePit(t) {
+  const { p, n } = pathFrame(t);
+  const cx = p.x + n.x * 4.2;
+  const cz = p.z + n.z * 4.2;
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2;
+    const stone = new THREE.Mesh(
+      new THREE.DodecahedronGeometry(0.4 + Math.random() * 0.22),
+      new THREE.MeshStandardMaterial({ color: 0x4a3c36, roughness: 1 })
+    );
+    stone.position.set(cx + Math.cos(a) * 1.3, 0.32, cz + Math.sin(a) * 1.3);
+    stone.rotation.set(Math.random(), Math.random(), Math.random());
+    scene.add(stone);
+  }
+  for (const ang of [0, Math.PI / 3, -Math.PI / 3]) {
+    const log = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.13, 0.13, 1.7, 7),
+      new THREE.MeshStandardMaterial({ color: 0x2c1f18, roughness: 0.95 })
+    );
+    log.position.set(cx, 0.22, cz);
+    log.rotation.z = Math.PI / 2;
+    log.rotation.y = ang;
+    scene.add(log);
+  }
+  const flameGroup = new THREE.Group();
+  for (let i = 0; i < 7; i++) {
+    const flame = new THREE.Mesh(
+      new THREE.ConeGeometry(0.28 + Math.random() * 0.22, 1 + Math.random() * 0.9, 6),
+      new THREE.MeshBasicMaterial({ color: i % 2 === 0 ? 0xffaa22 : 0xff5311, transparent: true, opacity: 0.88, depthWrite: false })
+    );
+    flame.position.set((Math.random() - 0.5) * 0.5, 0.55, (Math.random() - 0.5) * 0.5);
+    flameGroup.add(flame);
+  }
+  flameGroup.position.set(cx, 0, cz);
+  scene.add(flameGroup);
+  const fl = new THREE.PointLight(0xff8833, 2.6, 18);
+  fl.position.set(cx, 1.5, cz);
+  scene.add(fl);
+  // Sparks
+  const sparkCount = 30;
+  const spPos = new Float32Array(sparkCount * 3);
+  const spBase = new Float32Array(sparkCount * 3);
+  for (let i = 0; i < sparkCount; i++) {
+    spPos[i * 3] = cx; spPos[i * 3 + 1] = 0.6 + Math.random() * 1.5; spPos[i * 3 + 2] = cz;
+    spBase[i * 3] = cx; spBase[i * 3 + 1] = Math.random() * 3; spBase[i * 3 + 2] = cz;
+  }
+  const sgeo = new THREE.BufferGeometry();
+  sgeo.setAttribute('position', new THREE.BufferAttribute(spPos, 3));
+  const sparks = new THREE.Points(sgeo, new THREE.PointsMaterial({ color: 0xffd166, size: 0.13, transparent: true, opacity: 0.9, depthWrite: false }));
+  scene.add(sparks);
+  animatedItems.push({ type: 'fire', group: flameGroup, light: fl, sparks, sparkBase: spBase, cx, cz });
+}
+
+// 6. Rainbow spiral tower
+function buildSpiralTower(t) {
+  const { p, n } = pathFrame(t);
+  const cx = p.x + n.x * 5.5;
+  const cz = p.z + n.z * 5.5;
+  const segs = 36;
+  for (let i = 0; i < segs; i++) {
+    const y = 0.3 + (i / segs) * 13;
+    const a = (i / segs) * Math.PI * 4.5;
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(0.95 - i * 0.018, 0.2, 6, 18),
+      new THREE.MeshStandardMaterial({
+        color: new THREE.Color().setHSL(i / segs, 0.95, 0.55),
+        emissive: new THREE.Color().setHSL(i / segs, 0.95, 0.22),
+        emissiveIntensity: 0.6
+      })
+    );
+    ring.position.set(cx + Math.cos(a) * 0.32, y, cz + Math.sin(a) * 0.32);
+    ring.rotation.x = Math.PI / 2;
+    ring.rotation.z = a;
+    scene.add(ring);
+    animatedItems.push({ type: 'ring', mesh: ring, baseA: a, baseY: y, cx, cz, hueOff: i / segs });
+  }
+  const core = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.18, 0.45, 13.6, 8),
+    new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.5 })
+  );
+  core.position.set(cx, 7, cz);
+  scene.add(core);
+  // top crystal
+  const top = new THREE.Mesh(
+    new THREE.OctahedronGeometry(0.6),
+    new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xaaccff, emissiveIntensity: 1.6, roughness: 0.15 })
+  );
+  top.position.set(cx, 14, cz);
+  scene.add(top);
+  animatedItems.push({ type: 'topCrystal', mesh: top });
+}
+
+// 7. Reflective black pond w/ floating golden orbs
+function buildMirrorPond(t) {
+  const { p, n } = pathFrame(t);
+  const cx = p.x + n.x * 5.5;
+  const cz = p.z + n.z * 5.5;
+  const pond = new THREE.Mesh(
+    new THREE.CircleGeometry(4.2, 40),
+    new THREE.MeshStandardMaterial({ color: 0x040415, metalness: 0.95, roughness: 0.04 })
+  );
+  pond.rotation.x = -Math.PI / 2;
+  pond.position.set(cx, 0.02, cz);
+  scene.add(pond);
+  for (let i = 0; i < 18; i++) {
+    const a = (i / 18) * Math.PI * 2;
+    const stone = new THREE.Mesh(
+      new THREE.DodecahedronGeometry(0.26 + Math.random() * 0.18),
+      new THREE.MeshStandardMaterial({ color: 0x1c1c20, roughness: 0.9 })
+    );
+    stone.position.set(cx + Math.cos(a) * 4.4, 0.22, cz + Math.sin(a) * 4.4);
+    stone.rotation.set(Math.random(), Math.random(), Math.random());
+    scene.add(stone);
+  }
+  for (let i = 0; i < 7; i++) {
+    const orb = new THREE.Mesh(
+      new THREE.SphereGeometry(0.36, 16, 12),
+      new THREE.MeshStandardMaterial({ color: 0xffe296, emissive: 0xffaa33, emissiveIntensity: 1.4, roughness: 0.2 })
+    );
+    const a = Math.random() * Math.PI * 2;
+    const r = 0.5 + Math.random() * 2.8;
+    const baseY = 0.9 + Math.random() * 2.4;
+    const x = cx + Math.cos(a) * r;
+    const z = cz + Math.sin(a) * r;
+    orb.position.set(x, baseY, z);
+    scene.add(orb);
+    const ol = new THREE.PointLight(0xffaa44, 1.0, 7);
+    ol.position.copy(orb.position);
+    scene.add(ol);
+    animatedItems.push({ type: 'orb', mesh: orb, light: ol, baseY, phase: Math.random() * Math.PI * 2, speed: 0.4 + Math.random() * 0.5 });
+  }
+}
+
+// 8. Field of giant sunflowers
+function buildSunflowers(t) {
+  const { p, tan, n } = pathFrame(t);
+  for (let i = 0; i < 22; i++) {
+    const side = i < 11 ? -1 : 1;
+    const off = 2.4 + Math.random() * 5.5;
+    const along = (Math.random() - 0.5) * 11;
+    const x = p.x + n.x * off * side + tan.x * along;
+    const z = p.z + n.z * off * side + tan.z * along;
+    const h = 2.6 + Math.random() * 1.5;
+    const stalk = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.06, 0.09, h, 6),
+      new THREE.MeshStandardMaterial({ color: 0x356a22, roughness: 0.9 })
+    );
+    stalk.position.set(x, h / 2, z);
+    scene.add(stalk);
+    const head = new THREE.Group();
+    const disc = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.5, 0.5, 0.18, 18),
+      new THREE.MeshStandardMaterial({ color: 0x442200, roughness: 0.9 })
+    );
+    disc.rotation.x = Math.PI / 2;
+    head.add(disc);
+    for (let k = 0; k < 14; k++) {
+      const ang = (k / 14) * Math.PI * 2;
+      const petal = new THREE.Mesh(
+        new THREE.ConeGeometry(0.18, 0.6, 4),
+        new THREE.MeshStandardMaterial({ color: 0xffcc11, emissive: 0x553300, emissiveIntensity: 0.4 })
+      );
+      petal.position.set(Math.cos(ang) * 0.78, 0, Math.sin(ang) * 0.78);
+      petal.rotation.z = -ang + Math.PI / 2;
+      petal.rotation.x = Math.PI / 2;
+      head.add(petal);
+    }
+    head.position.set(x, h, z);
+    scene.add(head);
+    animatedItems.push({ type: 'sunflower', stalk, head, baseX: x, baseZ: z, h, phase: Math.random() * Math.PI * 2 });
+  }
+}
+
+// 9. Stone dolmen with carved glow
+function buildDolmen(t) {
+  const { p, n } = pathFrame(t);
+  const cx = p.x + n.x * 4.5;
+  const cz = p.z + n.z * 4.5;
+  const stoneMat = new THREE.MeshStandardMaterial({ color: 0x6c6c70, roughness: 0.97 });
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * Math.PI * 2;
+    const x = cx + Math.cos(a) * 1.3;
+    const z = cz + Math.sin(a) * 1.3;
+    const u = new THREE.Mesh(new THREE.BoxGeometry(0.95, 3.6, 0.75), stoneMat);
+    u.position.set(x, 1.8, z);
+    u.rotation.y = Math.random() * 0.4;
+    u.rotation.z = (Math.random() - 0.5) * 0.1;
+    scene.add(u);
+  }
+  const cap = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.55, 3.4), stoneMat);
+  cap.position.set(cx, 3.85, cz);
+  cap.rotation.y = 0.22;
+  scene.add(cap);
+  // glowing carved spiral
+  const carve = new THREE.Mesh(
+    new THREE.RingGeometry(0.15, 0.6, 5, 1),
+    new THREE.MeshBasicMaterial({ color: 0xffd9a6, side: THREE.DoubleSide })
+  );
+  carve.position.set(cx + n.x * 0.4, 1.6, cz + n.z * 0.4);
+  carve.lookAt(cx + n.x * 5, 1.6, cz + n.z * 5);
+  scene.add(carve);
+  const dl = new THREE.PointLight(0xffd9a6, 0.7, 5);
+  dl.position.set(cx + n.x * 0.4, 1.6, cz + n.z * 0.4);
+  scene.add(dl);
+  animatedItems.push({ type: 'carve', mesh: carve, light: dl });
+}
+
+// 10. End hut with rising smoke
+function buildHut(t) {
+  const { p, tan } = pathFrame(t);
+  const fx = p.x - tan.x * 4;
+  const fz = p.z - tan.z * 4;
+  const hut = new THREE.Mesh(
+    new THREE.ConeGeometry(2.7, 4.5, 14),
+    new THREE.MeshStandardMaterial({ color: 0x886038, roughness: 0.95 })
+  );
+  hut.position.set(fx, 2.25, fz);
+  scene.add(hut);
+  // door darkness
+  const door = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.95, 1.7),
+    new THREE.MeshBasicMaterial({ color: 0x110800 })
+  );
+  const doorDir = new THREE.Vector3(p.x - fx, 0, p.z - fz).normalize();
+  door.position.set(fx + doorDir.x * 1.7, 0.85, fz + doorDir.z * 1.7);
+  door.lookAt(p.x, 0.85, p.z);
+  scene.add(door);
+  const hl = new THREE.PointLight(0xffaa55, 1.7, 10);
+  hl.position.set(fx + doorDir.x * 0.5, 1, fz + doorDir.z * 0.5);
+  scene.add(hl);
+  // outdoor torches flanking the hut
+  for (const s of [-1, 1]) {
+    const torchN = new THREE.Vector3(-doorDir.z, 0, doorDir.x);
+    const tx = fx + doorDir.x * 1.2 + torchN.x * 1.6 * s;
+    const tz = fz + doorDir.z * 1.2 + torchN.z * 1.6 * s;
+    const post = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.06, 0.07, 1.6, 6),
+      new THREE.MeshStandardMaterial({ color: 0x382318 })
+    );
+    post.position.set(tx, 0.8, tz);
+    scene.add(post);
+    const flame = new THREE.Mesh(
+      new THREE.ConeGeometry(0.22, 0.6, 6),
+      new THREE.MeshBasicMaterial({ color: 0xffaa33, transparent: true, opacity: 0.9 })
+    );
+    flame.position.set(tx, 1.85, tz);
+    scene.add(flame);
+    const tl = new THREE.PointLight(0xffaa33, 1.0, 6);
+    tl.position.set(tx, 1.95, tz);
+    scene.add(tl);
+    animatedItems.push({ type: 'torch', flame, light: tl });
+  }
+  // smoke particles from hut top
+  const smCount = 50;
+  const smPos = new Float32Array(smCount * 3);
+  const smData = [];
+  for (let i = 0; i < smCount; i++) {
+    smPos[i * 3] = fx; smPos[i * 3 + 1] = 4.5; smPos[i * 3 + 2] = fz;
+    smData.push({ off: Math.random() * 6, sp: 0.5 + Math.random() * 0.6 });
+  }
+  const sg = new THREE.BufferGeometry();
+  sg.setAttribute('position', new THREE.BufferAttribute(smPos, 3));
+  const smoke = new THREE.Points(sg, new THREE.PointsMaterial({
+    color: 0xa9a9a9, size: 0.7, transparent: true, opacity: 0.55, depthWrite: false
+  }));
+  scene.add(smoke);
+  animatedItems.push({ type: 'smoke', points: smoke, baseX: fx, baseZ: fz, data: smData });
+}
+
+// ----- Build all loci -----
+buildGateway(0.04);
+buildMushrooms(0.13);
+buildCrystals(0.22);
+buildBoneArch(0.32);
+buildFirePit(0.42);
+buildSpiralTower(0.52);
+buildMirrorPond(0.62);
+buildSunflowers(0.73);
+buildDolmen(0.86);
+buildHut(0.99);
+
+// ---------- Controls ----------
+const controls = new PointerLockControls(camera, document.body);
+const startPos = trail.getPointAt(0);
+const startTan = trail.getTangentAt(0);
+camera.position.set(startPos.x - startTan.x * 3, 1.6, startPos.z - startTan.z * 3);
+camera.lookAt(startPos.x + startTan.x * 5, 1.6, startPos.z + startTan.z * 5);
+
+const overlay = document.getElementById('overlay');
+overlay.addEventListener('click', () => controls.lock());
+controls.addEventListener('lock',   () => overlay.classList.add('hidden'));
+controls.addEventListener('unlock', () => overlay.classList.remove('hidden'));
+
+const keys = {};
+addEventListener('keydown', e => keys[e.code] = true);
+addEventListener('keyup',   e => keys[e.code] = false);
+
+// ---------- Animate ----------
+const clock = new THREE.Clock();
+const direction = new THREE.Vector3();
+const hud = document.getElementById('hud');
+const endMessage = document.getElementById('endMessage');
+const endPos = trail.getPointAt(1);
+let endShown = false;
+
+function animate() {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const now = clock.getElapsedTime();
+
+  if (controls.isLocked) {
+    const speed = 4.5;
+    const f = (keys['KeyW'] || keys['ArrowUp'])    ? 1 : 0;
+    const b = (keys['KeyS'] || keys['ArrowDown'])  ? 1 : 0;
+    const l = (keys['KeyA'] || keys['ArrowLeft'])  ? 1 : 0;
+    const r = (keys['KeyD'] || keys['ArrowRight']) ? 1 : 0;
+    direction.set(r - l, 0, f - b);
+    if (direction.lengthSq() > 0) {
+      direction.normalize();
+      controls.moveRight(direction.x * speed * dt);
+      controls.moveForward(direction.z * speed * dt);
+    }
+    camera.position.y = 1.6 + Math.sin(now * 8) * 0.04 * (direction.lengthSq() > 0 ? 1 : 0);
+  }
+
+  for (const it of animatedItems) {
+    if (it.type === 'fire') {
+      it.light.intensity = 2.2 + Math.sin(now * 12) * 0.55 + Math.sin(now * 7.3) * 0.35;
+      it.group.children.forEach((f, i) => {
+        f.scale.y = 0.85 + Math.sin(now * 10 + i) * 0.22;
+        f.scale.x = 0.95 + Math.cos(now * 9 + i) * 0.1;
+        f.rotation.y = now * 1.7 + i;
+      });
+      const arr = it.sparks.geometry.attributes.position.array;
+      for (let i = 0; i < arr.length; i += 3) {
+        const cycle = (now * 1.4 + i) % 3;
+        arr[i]     = it.cx + Math.sin(now * 2 + i) * (0.2 + cycle * 0.2);
+        arr[i + 1] = 0.6 + cycle * 1.1;
+        arr[i + 2] = it.cz + Math.cos(now * 2 + i) * (0.2 + cycle * 0.2);
+      }
+      it.sparks.geometry.attributes.position.needsUpdate = true;
+    } else if (it.type === 'spores') {
+      const arr = it.points.geometry.attributes.position.array;
+      const base = it.base;
+      for (let i = 0; i < arr.length; i += 3) {
+        arr[i]     = base[i]     + Math.sin(now * 0.4 + i) * 0.5;
+        arr[i + 1] = 0.4 + ((now * 0.35 + i * 0.13) % 4);
+        arr[i + 2] = base[i + 2] + Math.cos(now * 0.4 + i) * 0.5;
+      }
+      it.points.geometry.attributes.position.needsUpdate = true;
+    } else if (it.type === 'crystal') {
+      it.mesh.rotation.y = now * it.speed;
+    } else if (it.type === 'orb') {
+      const y = it.baseY + Math.sin(now * it.speed + it.phase) * 0.55;
+      it.mesh.position.y = y;
+      it.light.position.y = y;
+    } else if (it.type === 'sunflower') {
+      const sway = Math.sin(now * 1.2 + it.phase) * 0.07;
+      it.head.rotation.z = sway;
+      it.head.position.x = it.baseX + sway * 0.2;
+    } else if (it.type === 'ring') {
+      const rotA = it.baseA + now * 0.3;
+      it.mesh.position.x = it.cx + Math.cos(rotA) * 0.32;
+      it.mesh.position.z = it.cz + Math.sin(rotA) * 0.32;
+      it.mesh.material.color.setHSL((it.hueOff + now * 0.05) % 1, 0.95, 0.55);
+    } else if (it.type === 'topCrystal') {
+      it.mesh.rotation.y = now * 1.2;
+      it.mesh.position.y = 14 + Math.sin(now * 2) * 0.15;
+    } else if (it.type === 'carve') {
+      const flick = 0.6 + Math.sin(now * 6) * 0.15 + Math.sin(now * 3.2) * 0.1;
+      it.light.intensity = flick;
+      it.mesh.material.opacity = 0.7 + flick * 0.3;
+    } else if (it.type === 'torch') {
+      it.flame.scale.y = 0.9 + Math.sin(now * 14) * 0.18;
+      it.light.intensity = 0.9 + Math.sin(now * 13) * 0.25;
+    } else if (it.type === 'smoke') {
+      const arr = it.points.geometry.attributes.position.array;
+      for (let i = 0; i < it.data.length; i++) {
+        const d = it.data[i];
+        const cycle = (now * d.sp + d.off) % 5;
+        arr[i * 3]     = it.baseX + Math.sin(now * 0.6 + i) * (0.25 + cycle * 0.25);
+        arr[i * 3 + 1] = 4.5 + cycle * 1.1;
+        arr[i * 3 + 2] = it.baseZ + Math.cos(now * 0.5 + i) * (0.25 + cycle * 0.25);
+      }
+      it.points.geometry.attributes.position.needsUpdate = true;
+    }
+  }
+
+  // Distance-to-home HUD
+  const dx = endPos.x - camera.position.x;
+  const dz = endPos.z - camera.position.z;
+  const dist = Math.hypot(dx, dz);
+  hud.textContent = controls.isLocked && dist > 6 ? `home  ${Math.round(dist)} steps` : '';
+
+  if (!endShown && dist < 4) {
+    endShown = true;
+    endMessage.classList.add('show');
+  }
+
+  renderer.render(scene, camera);
+  requestAnimationFrame(animate);
+}
+animate();
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,919 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Way Home — A Mnemonic Trail Walk</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#1a120a;font-family:Georgia,'Times New Roman',serif;}
+  #app{position:fixed;inset:0;}
+  canvas{display:block;}
+  .overlay{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    background:rgba(12,8,4,0.88);color:#f2e3c8;text-align:center;z-index:10;transition:opacity .6s;}
+  .overlay.hidden{opacity:0;pointer-events:none;}
+  .overlay h1{font-size:2.6rem;letter-spacing:.35em;margin:0 0 .4em;font-weight:normal;}
+  .overlay p{max-width:34em;line-height:1.6;color:#cdb894;}
+  .overlay .btn{margin-top:1.6em;padding:.7em 2.2em;font-size:1.1rem;letter-spacing:.2em;cursor:pointer;
+    background:#7a3b1e;color:#ffe9c9;border:1px solid #c98a4b;border-radius:3px;font-family:inherit;}
+  .overlay .btn:hover{background:#94512c;}
+  #banner{position:fixed;top:12%;left:0;right:0;text-align:center;color:#fff3d8;z-index:5;pointer-events:none;
+    opacity:0;transition:opacity .7s;text-shadow:0 2px 14px rgba(0,0,0,.7);}
+  #banner .num{font-size:.95rem;letter-spacing:.5em;color:#ffce8a;}
+  #banner .name{font-size:2rem;letter-spacing:.18em;margin-top:.2em;}
+  #dots{position:fixed;bottom:22px;left:0;right:0;display:flex;gap:10px;justify-content:center;z-index:5;pointer-events:none;}
+  #dots .d{width:11px;height:11px;border-radius:50%;border:1px solid rgba(255,225,170,.5);background:rgba(0,0,0,.3);transition:all .5s;}
+  #dots .d.lit{background:#ffc35e;box-shadow:0 0 9px #ffae42;}
+  #cross{position:fixed;top:50%;left:50%;width:4px;height:4px;margin:-2px;border-radius:50%;
+    background:rgba(255,245,220,.7);z-index:4;pointer-events:none;}
+  #hint{position:fixed;bottom:52px;left:0;right:0;text-align:center;color:rgba(255,235,200,.55);
+    font-size:.85rem;letter-spacing:.15em;z-index:4;pointer-events:none;}
+  #end ol{text-align:left;line-height:1.85;font-size:1.05rem;column-count:2;column-gap:3.5em;margin:1em 0 0;}
+  #end .tip{margin-top:1.4em;font-style:italic;color:#b89b6f;}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="cross"></div>
+<div id="banner"><div class="num"></div><div class="name"></div></div>
+<div id="dots"></div>
+<div id="hint">W A S D — walk &nbsp;·&nbsp; mouse — look &nbsp;·&nbsp; shift — run</div>
+
+<div id="intro" class="overlay">
+  <h1>THE WAY HOME</h1>
+  <p>Dusk is falling. Like every human before maps, before paper, before words on stone —
+     you must remember the land itself. Twelve landmarks line the trail back to your fire.
+     Walk it once. Then walk it again, behind closed eyes.</p>
+  <p style="color:#9b835f;font-size:.95rem">about one minute · the trail ends at home</p>
+  <button class="btn" id="beginBtn">BEGIN THE WALK</button>
+</div>
+
+<div id="end" class="overlay hidden">
+  <h1>HOME</h1>
+  <p>You made it back before dark. This is the path your ancestors' minds were built for.<br>
+     Recite the twelve places — forward, then backward:</p>
+  <ol id="recall"></ol>
+  <p class="tip">Mind-palace tip: attach one item you must remember to each landmark, in order.</p>
+  <button class="btn" id="againBtn">WALK IT AGAIN</button>
+</div>
+
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+"three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+
+/* ============================================================================
+   THE WAY HOME — divide & conquer structure:
+   1 RNG+NOISE  2 PATH  3 TERRAIN  4 SKY+LIGHT  5 VEGETATION
+   6 STATIONS (12 independent loci builders)  7 PARTICLES
+   8 PLAYER  9 AUDIO  10 HUD  11 MAIN LOOP
+   ========================================================================= */
+
+/* ---------- 1. SEEDED RNG + VALUE NOISE ---------- */
+let _seed = 1337;
+function rng(){ _seed|=0; _seed=_seed+0x6D2B79F5|0; let t=Math.imul(_seed^_seed>>>15,1|_seed);
+  t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }
+function hash2(ix,iz){ let h=(ix*374761393+iz*668265263)|0; h=(h^(h>>>13))|0;
+  h=Math.imul(h,1274126177); return ((h^(h>>>16))>>>0)/4294967296; }
+function vnoise(x,z){
+  const ix=Math.floor(x), iz=Math.floor(z), fx=x-ix, fz=z-iz;
+  const ux=fx*fx*fx*(fx*(fx*6-15)+10), uz=fz*fz*fz*(fz*(fz*6-15)+10);
+  const a=hash2(ix,iz), b=hash2(ix+1,iz), c=hash2(ix,iz+1), d=hash2(ix+1,iz+1);
+  return a+(b-a)*ux+(c-a)*uz+(a-b-c+d)*ux*uz;
+}
+function fbm(x,z){ return vnoise(x,z)*0.55 + vnoise(x*2.1,z*2.1)*0.3 + vnoise(x*4.3,z*4.3)*0.15; }
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const smooth=(a,b,x)=>{ const t=clamp((x-a)/(b-a),0,1); return t*t*(3-2*t); };
+const lerp=(a,b,t)=>a+(b-a)*t;
+
+/* ---------- 2. THE PATH (finite, ~280 m, arc-length sampled) ---------- */
+const waypoints=[
+  [0,2,8],[0,2,-10],[8,2.5,-30],[-6,3,-55],[-2,4.5,-80],[10,6,-105],[4,7,-125],
+  [-8,6,-150],[-14,4.5,-175],[-6,3,-200],[4,2.5,-225],[0,2,-245],[0,2,-262]
+].map(p=>new THREE.Vector3(...p));
+const curve=new THREE.CatmullRomCurve3(waypoints,false,'centripetal',0.5);
+const NS=600;
+const samples=curve.getSpacedPoints(NS);          // arc-length-uniform → index/NS ≈ true t
+const pathLen=curve.getLength();
+
+function pathFrame(t){
+  const i=clamp(Math.round(t*NS),1,NS-1);
+  const p=samples[i];
+  const tan=samples[Math.min(i+1,NS)].clone().sub(samples[i-1]).setY(0).normalize();
+  const side=new THREE.Vector3(-tan.z,0,tan.x);   // left of travel direction
+  return {p:p.clone(),tan,side};
+}
+// coarse-then-refine nearest path sample (used everywhere)
+function nearestOnPath(x,z,hintIdx=-1){
+  let best=1e9,bi=0;
+  if(hintIdx>=0){
+    for(let i=Math.max(0,hintIdx-30);i<=Math.min(NS,hintIdx+30);i++){
+      const dx=samples[i].x-x,dz=samples[i].z-z,d=dx*dx+dz*dz;
+      if(d<best){best=d;bi=i;}
+    }
+  }else{
+    for(let i=0;i<=NS;i+=4){
+      const dx=samples[i].x-x,dz=samples[i].z-z,d=dx*dx+dz*dz;
+      if(d<best){best=d;bi=i;}
+    }
+    for(let i=Math.max(0,bi-4);i<=Math.min(NS,bi+4);i++){
+      const dx=samples[i].x-x,dz=samples[i].z-z,d=dx*dx+dz*dz;
+      if(d<best){best=d;bi=i;}
+    }
+  }
+  return {idx:bi,dist:Math.sqrt(best),py:samples[bi].y,t:bi/NS};
+}
+
+/* ---------- 3. TERRAIN (hills blended flat along the trail) ---------- */
+function hillH(x,z){ return -2 + fbm(x*0.018,z*0.018)*11 + fbm(x*0.07,z*0.07)*1.6; }
+function groundH(x,z,pd,py){             // pd = dist to path, py = path height there
+  const w=smooth(16,4.5,pd);             // 1 on trail, 0 far away
+  return lerp(hillH(x,z),py,w);
+}
+const scene=new THREE.Scene();
+{
+  const W=230,D=370,SX=170,SZ=260;
+  const geo=new THREE.PlaneGeometry(W,D,SX,SZ);
+  geo.rotateX(-Math.PI/2);
+  geo.translate(0,0,-128);
+  const pos=geo.attributes.position;
+  const colors=new Float32Array(pos.count*3);
+  const cGrass=new THREE.Color(), cA=new THREE.Color(0x5e7d36), cB=new THREE.Color(0x47682c),
+        cAut=new THREE.Color(0xa8842e), cDirt=new THREE.Color(0x8a6a45), cDark=new THREE.Color(0x6e5234);
+  for(let i=0;i<pos.count;i++){
+    const x=pos.getX(i),z=pos.getZ(i);
+    const np=nearestOnPath(x,z);
+    pos.setY(i,groundH(x,z,np.dist,np.py));
+    const n=fbm(x*0.05+9,z*0.05);
+    cGrass.copy(cA).lerp(cB,vnoise(x*0.15,z*0.15));
+    if(n>0.62) cGrass.lerp(cAut,smooth(0.62,0.75,n)*0.8);     // autumn patches
+    const w=smooth(8.5,2.6,np.dist);
+    cGrass.lerp(cDirt,w);
+    if(np.dist<1.3) cGrass.lerp(cDark,0.5);                   // trodden centre line
+    colors[i*3]=cGrass.r;colors[i*3+1]=cGrass.g;colors[i*3+2]=cGrass.b;
+  }
+  geo.setAttribute('color',new THREE.BufferAttribute(colors,3));
+  geo.computeVertexNormals();
+  const ground=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({vertexColors:true,roughness:1}));
+  ground.receiveShadow=true;
+  scene.add(ground);
+}
+
+/* ---------- 4. SKY + GOLDEN-HOUR LIGHT ---------- */
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.toneMapping=THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure=1.12;
+document.getElementById('app').appendChild(renderer.domElement);
+
+scene.fog=new THREE.Fog(0xf0c896,28,150);
+const sunDir=new THREE.Vector3(0.5,0.42,0.55).normalize();
+{
+  const skyGeo=new THREE.SphereGeometry(900,24,12);
+  const skyMat=new THREE.ShaderMaterial({side:THREE.BackSide,fog:false,
+    uniforms:{sunDir:{value:sunDir}},
+    vertexShader:`varying vec3 vDir; void main(){ vDir=normalize(position);
+      gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
+    fragmentShader:`varying vec3 vDir; uniform vec3 sunDir;
+      void main(){
+        float h=clamp(vDir.y,0.0,1.0);
+        vec3 col=mix(vec3(1.0,0.80,0.58),vec3(0.42,0.66,0.95),pow(h,0.55));
+        float s=pow(max(dot(vDir,sunDir),0.0),220.0)*1.4 + pow(max(dot(vDir,sunDir),0.0),9.0)*0.35;
+        col+=vec3(1.0,0.85,0.6)*s;
+        gl_FragColor=vec4(col,1.0);}`});
+  scene.add(new THREE.Mesh(skyGeo,skyMat));
+}
+scene.add(new THREE.HemisphereLight(0xbcd8ff,0x6b5536,0.75));
+const sun=new THREE.DirectionalLight(0xffd9a8,2.0);
+sun.castShadow=true;
+sun.shadow.mapSize.set(2048,2048);
+sun.shadow.camera.left=-45;sun.shadow.camera.right=45;
+sun.shadow.camera.top=45;sun.shadow.camera.bottom=-45;
+sun.shadow.camera.far=220;sun.shadow.bias=-0.0006;
+scene.add(sun,sun.target);
+
+const camera=new THREE.PerspectiveCamera(72,innerWidth/innerHeight,0.1,1000);
+
+/* ---------- 5. VEGETATION (instanced, scattered off-trail) ---------- */
+const updatables=[];
+{
+  // pine + autumn trees
+  const trunkG=new THREE.CylinderGeometry(0.22,0.4,3.2,6); trunkG.translate(0,1.6,0);
+  const pineG=new THREE.ConeGeometry(2.1,6.5,8); pineG.translate(0,6.0,0);
+  const blobG=new THREE.IcosahedronGeometry(2.3,1); blobG.translate(0,4.6,0);
+  const trunkM=new THREE.MeshStandardMaterial({color:0x6e4a2e,roughness:1});
+  const pineM=new THREE.MeshStandardMaterial({roughness:1});
+  const blobM=new THREE.MeshStandardMaterial({roughness:1});
+  const NTREE=260;
+  const trunks=new THREE.InstancedMesh(trunkG,trunkM,NTREE);
+  const pines=new THREE.InstancedMesh(pineG,pineM,NTREE);
+  const blobs=new THREE.InstancedMesh(blobG,blobM,NTREE);
+  trunks.castShadow=pines.castShadow=blobs.castShadow=true;
+  const m=new THREE.Matrix4(),q=new THREE.Quaternion(),s=new THREE.Vector3(),
+        zero=new THREE.Matrix4().makeScale(0,0,0),col=new THREE.Color();
+  let placed=0,guard=0;
+  while(placed<NTREE&&guard++<6000){
+    const x=(rng()-0.5)*210, z=40-rng()*345;
+    const np=nearestOnPath(x,z);
+    if(np.dist<8||np.dist>70) continue;
+    if(rng()>smooth(70,16,np.dist)*0.9+0.1) continue;
+    const y=groundH(x,z,np.dist,np.py);
+    const sc=0.7+rng()*0.9;
+    q.setFromAxisAngle(new THREE.Vector3(0,1,0),rng()*Math.PI*2);
+    s.set(sc,sc*(0.85+rng()*0.4),sc);
+    m.compose(new THREE.Vector3(x,y,z),q,s);
+    trunks.setMatrixAt(placed,m);
+    const isPine=rng()<0.66;
+    pines.setMatrixAt(placed,isPine?m:zero);
+    blobs.setMatrixAt(placed,isPine?zero:m);
+    if(isPine) col.setHSL(0.32+rng()*0.06,0.45,0.2+rng()*0.1);
+    else       col.setHSL(0.06+rng()*0.07,0.75,0.38+rng()*0.12);   // fire-orange autumn
+    pines.setColorAt(placed,col); blobs.setColorAt(placed,col);
+    placed++;
+  }
+  pines.instanceColor.needsUpdate=true; blobs.instanceColor.needsUpdate=true;
+  scene.add(trunks,pines,blobs);
+
+  // grass tufts hugging the trail edge
+  const tuftG=new THREE.ConeGeometry(0.16,0.55,4); tuftG.translate(0,0.27,0);
+  const tuftM=new THREE.MeshStandardMaterial({roughness:1});
+  const NT=1400;
+  const tufts=new THREE.InstancedMesh(tuftG,tuftM,NT);
+  let pt=0,g2=0;
+  while(pt<NT&&g2++<9000){
+    const t=rng(),f=pathFrame(t);
+    const off=(3+rng()*11)*(rng()<0.5?-1:1);
+    const x=f.p.x+f.side.x*off, z=f.p.z+f.side.z*off;
+    const np=nearestOnPath(x,z);
+    const y=groundH(x,z,np.dist,np.py);
+    q.setFromAxisAngle(new THREE.Vector3(0,1,0),rng()*6.28);
+    const sc=0.6+rng()*1.1; s.set(sc,sc,sc);
+    m.compose(new THREE.Vector3(x,y,z),q,s);
+    tufts.setMatrixAt(pt,m);
+    col.setHSL(0.23+rng()*0.1,0.55,0.3+rng()*0.12);
+    tufts.setColorAt(pt,col); pt++;
+  }
+  tufts.instanceColor.needsUpdate=true;
+  scene.add(tufts);
+
+  // wayside rocks framing the trail
+  const rockG=new THREE.DodecahedronGeometry(0.5,0);
+  const rockM=new THREE.MeshStandardMaterial({color:0x8d8678,roughness:1});
+  const NR=90, rocks=new THREE.InstancedMesh(rockG,rockM,NR);
+  rocks.castShadow=true;
+  for(let i=0;i<NR;i++){
+    const t=rng(),f=pathFrame(t);
+    const off=(3.4+rng()*3.5)*(rng()<0.5?-1:1);
+    const x=f.p.x+f.side.x*off, z=f.p.z+f.side.z*off;
+    const np=nearestOnPath(x,z);
+    q.setFromEuler(new THREE.Euler(rng()*3,rng()*3,rng()*3));
+    const sc=0.4+rng()*1.0; s.set(sc,sc*0.8,sc);
+    m.compose(new THREE.Vector3(x,groundH(x,z,np.dist,np.py)+0.1,z),q,s);
+    rocks.setMatrixAt(i,m);
+  }
+  scene.add(rocks);
+}
+
+/* ---------- canvas-texture helpers (used by stations) ---------- */
+function makeTex(w,h,draw){
+  const c=document.createElement('canvas');c.width=w;c.height=h;
+  draw(c.getContext('2d'),w,h);
+  const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;return t;
+}
+function drawHand(ctx,cx,cy,sc,color){
+  ctx.fillStyle=color;
+  ctx.beginPath();ctx.ellipse(cx,cy,15*sc,19*sc,0,0,6.3);ctx.fill();
+  for(let f=0;f<5;f++){
+    const a=-1.95+f*0.42;
+    const fl=(f===0?16:(f===2?30:24))*sc;
+    ctx.save();ctx.translate(cx,cy);ctx.rotate(a+1.57);
+    ctx.beginPath();ctx.ellipse(0,-19*sc-fl/2,4.6*sc,fl/2+4*sc,0,0,6.3);ctx.fill();
+    ctx.restore();
+  }
+}
+const handTex=makeTex(128,128,(ctx)=>{drawHand(ctx,64,70,1.5,'rgba(165,52,28,0.92)');});
+const softTex=makeTex(64,64,(ctx)=>{          // round soft sprite for all particle systems
+  const g=ctx.createRadialGradient(32,32,2,32,32,30);
+  g.addColorStop(0,'rgba(255,255,255,1)');g.addColorStop(1,'rgba(255,255,255,0)');
+  ctx.fillStyle=g;ctx.fillRect(0,0,64,64);
+});
+const birchTex=makeTex(64,256,(ctx,w,h)=>{
+  ctx.fillStyle='#f2efe6';ctx.fillRect(0,0,w,h);
+  for(let i=0;i<46;i++){
+    ctx.fillStyle=`rgba(25,22,20,${0.4+rng()*0.5})`;
+    ctx.fillRect(rng()*w,rng()*h,5+rng()*22,1.5+rng()*4);
+  }
+});
+birchTex.wrapS=birchTex.wrapT=THREE.RepeatWrapping;
+const fallsTex=makeTex(64,256,(ctx,w,h)=>{
+  for(let i=0;i<34;i++){
+    ctx.strokeStyle=`rgba(255,255,255,${0.18+rng()*0.55})`;
+    ctx.lineWidth=1+rng()*2.5;
+    const x=rng()*w;ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x+(rng()-0.5)*8,h);ctx.stroke();
+  }
+});
+fallsTex.wrapT=THREE.RepeatWrapping;
+const paintTex=makeTex(512,300,(ctx,w,h)=>{
+  const g=ctx.createLinearGradient(0,0,0,h);
+  g.addColorStop(0,'#c08550');g.addColorStop(1,'#9a6438');
+  ctx.fillStyle=g;ctx.fillRect(0,0,w,h);
+  for(let i=0;i<400;i++){ctx.fillStyle=`rgba(60,40,25,${rng()*0.12})`;
+    ctx.fillRect(rng()*w,rng()*h,2+rng()*5,2+rng()*5);}
+  const red='rgba(140,30,18,0.9)', dark='rgba(50,30,20,0.9)';
+  drawHand(ctx,55,70,1.0,red); drawHand(ctx,118,60,0.8,dark); drawHand(ctx,80,150,0.9,red);
+  drawHand(ctx,450,80,0.9,dark); drawHand(ctx,420,180,0.75,red);
+  // stick deer
+  ctx.strokeStyle=dark;ctx.lineWidth=5;ctx.lineCap='round';
+  ctx.beginPath();ctx.ellipse(230,140,38,18,0,0,6.3);ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(200,152);ctx.lineTo(192,195);ctx.moveTo(216,156);ctx.lineTo(214,196);
+  ctx.moveTo(248,156);ctx.lineTo(252,196);ctx.moveTo(260,150);ctx.lineTo(270,193);
+  ctx.moveTo(262,128);ctx.lineTo(286,104);                       // neck
+  ctx.stroke();
+  ctx.beginPath();ctx.ellipse(292,98,11,8,0.4,0,6.3);ctx.stroke(); // head
+  ctx.beginPath();ctx.moveTo(296,90);ctx.lineTo(306,66);ctx.moveTo(300,72);ctx.lineTo(312,76);
+  ctx.moveTo(290,89);ctx.lineTo(286,64);ctx.moveTo(288,72);ctx.lineTo(276,72);ctx.stroke(); // antlers
+  // spiral sun
+  ctx.strokeStyle=red;ctx.lineWidth=4;ctx.beginPath();
+  for(let a=0;a<22;a+=0.2){const r=2+a*1.6;ctx.lineTo(360+Math.cos(a)*r,210+Math.sin(a)*r);}
+  ctx.stroke();
+  // dotted journey line + dots
+  ctx.fillStyle=red;
+  for(let i=0;i<16;i++)ctx.fillRect(40+i*28,250,9,9);
+});
+
+/* ---------- 6. THE TWELVE STATIONS (independent loci builders) ---------- */
+const stoneM=new THREE.MeshStandardMaterial({color:0x9b948a,roughness:0.95});
+const woodM=new THREE.MeshStandardMaterial({color:0x6e4a2e,roughness:1});
+const boneM=new THREE.MeshStandardMaterial({color:0xf0e9d6,roughness:0.7});
+function groupAt(t,latOff=0){
+  const f=pathFrame(t),g=new THREE.Group();
+  g.position.copy(f.p).addScaledVector(f.side,latOff);
+  g.lookAt(g.position.clone().add(f.tan));       // local +Z = direction of travel
+  scene.add(g);
+  return {g,f};
+}
+function rock(g,x,y,z,sc,sy=0.8){
+  const r=new THREE.Mesh(new THREE.DodecahedronGeometry(1,0),stoneM);
+  r.position.set(x,y,z);r.scale.set(sc,sc*sy,sc);
+  r.rotation.set(rng()*3,rng()*3,rng()*3);r.castShadow=true;g.add(r);return r;
+}
+
+/* 1 — THE STONE GATE: dolmen with ochre handprints */
+function buildGate(){
+  const {g}=groupAt(0.022);
+  for(const sx of[-2.6,2.6]){
+    const s=rock(g,sx,2.2,0,1.3,2.2); s.rotation.set(0.1*sx,rng(),0.08*sx);
+    const hp=new THREE.Mesh(new THREE.PlaneGeometry(1.1,1.1),
+      new THREE.MeshBasicMaterial({map:handTex,transparent:true}));
+    hp.position.set(sx*0.72,2.4,-1.25);g.add(hp);
+  }
+  const lintel=rock(g,0,5.1,0,1.1,0.5);lintel.scale.x=3.4;lintel.rotation.set(0,0,0.05);
+}
+/* 2 — BIRCH GROVE: white sentinels with gold crowns */
+function buildBirches(){
+  const {g}=groupAt(0.10);
+  const bM=new THREE.MeshStandardMaterial({map:birchTex,roughness:0.9});
+  for(let i=0;i<16;i++){
+    const side=(i%2?1:-1),lat=side*(3.5+rng()*5),along=(rng()-0.5)*26;
+    const h=5+rng()*3;
+    const tr=new THREE.Mesh(new THREE.CylinderGeometry(0.14,0.2,h,7),bM);
+    tr.position.set(lat,h/2,along);tr.rotation.z=(rng()-0.5)*0.12;tr.castShadow=true;g.add(tr);
+    const cn=new THREE.Mesh(new THREE.IcosahedronGeometry(1.5+rng(),1),
+      new THREE.MeshStandardMaterial({color:new THREE.Color().setHSL(0.13+rng()*0.04,0.8,0.5),roughness:1}));
+    cn.position.set(lat,h+0.6,along);cn.scale.y=0.75;cn.castShadow=true;g.add(cn);
+  }
+}
+/* 3 — RED BRIDGE over the singing stream */
+function buildBridge(){
+  const {g}=groupAt(0.185);
+  const water=new THREE.Mesh(new THREE.PlaneGeometry(52,4.6),
+    new THREE.MeshStandardMaterial({color:0x2e6f8e,metalness:0.75,roughness:0.18}));
+  water.rotation.x=-Math.PI/2;water.rotation.z=Math.PI/2;water.position.y=0.04;g.add(water);
+  for(let i=0;i<14;i++) rock(g,(rng()-0.5)*30,0.1,(rng()-0.5)*4.5,0.25+rng()*0.3);
+  const redM=new THREE.MeshStandardMaterial({color:0xb02a1d,roughness:0.8});
+  for(let i=0;i<9;i++){
+    const pl=new THREE.Mesh(new THREE.BoxGeometry(3.4,0.12,0.55),woodM);
+    pl.position.set(0,0.42,-2.8+i*0.7);pl.castShadow=true;g.add(pl);
+  }
+  for(const sx of[-1.7,1.7])for(const sz of[-2.9,2.9]){
+    const post=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.11,1.5,6),redM);
+    post.position.set(sx,1.0,sz);post.castShadow=true;g.add(post);
+  }
+  for(const sx of[-1.7,1.7]){
+    const rope=new THREE.Mesh(new THREE.CylinderGeometry(0.045,0.045,5.9,5),redM);
+    rope.rotation.x=Math.PI/2;rope.position.set(sx,1.62,0);g.add(rope);
+  }
+}
+/* 4 — THE HOLLOW LOG: walk through a giant fallen trunk */
+function buildLog(){
+  const {g}=groupAt(0.275);
+  const logM=new THREE.MeshStandardMaterial({color:0x5a3d24,roughness:1,side:THREE.DoubleSide});
+  const log=new THREE.Mesh(new THREE.CylinderGeometry(3.1,3.1,11,14,1,true),logM);
+  log.rotation.x=Math.PI/2;log.position.y=2.45;log.castShadow=true;g.add(log);
+  for(const e of[-5.5,5.5]){
+    const ring=new THREE.Mesh(new THREE.TorusGeometry(3.1,0.3,7,18),
+      new THREE.MeshStandardMaterial({color:0x3e2a17,roughness:1}));
+    ring.position.set(0,2.45,e);g.add(ring);
+  }
+  for(let i=0;i<7;i++){
+    const moss=new THREE.Mesh(new THREE.SphereGeometry(0.5+rng()*0.5,6,5),
+      new THREE.MeshStandardMaterial({color:0x4f7a2a,roughness:1}));
+    moss.position.set((rng()-0.5)*1.6,5.2+rng()*0.4,(rng()-0.5)*9);moss.scale.y=0.45;g.add(moss);
+  }
+}
+/* 5 — RING OF GLOWING MUSHROOMS (+ fireflies) */
+function buildMushrooms(){
+  const {g,f}=groupAt(0.365);
+  const capM=new THREE.MeshStandardMaterial({color:0x1c4a4a,emissive:0x2affe0,emissiveIntensity:2.2,roughness:0.5});
+  const stemM=new THREE.MeshStandardMaterial({color:0xe8e2d2,roughness:0.9});
+  for(let i=0;i<22;i++){
+    const a=i/22*Math.PI*2,r=5.4+rng()*1.4;
+    const x=Math.cos(a)*r,z=Math.sin(a)*r;
+    const wp=new THREE.Vector3(x,0,z).applyQuaternion(g.quaternion).add(g.position);
+    const np=nearestOnPath(wp.x,wp.z);
+    const y=groundH(wp.x,wp.z,np.dist,np.py)-g.position.y;
+    const sc=0.5+rng()*0.9;
+    const stem=new THREE.Mesh(new THREE.CylinderGeometry(0.1*sc,0.16*sc,0.8*sc,6),stemM);
+    stem.position.set(x,y+0.4*sc,z);g.add(stem);
+    const cap=new THREE.Mesh(new THREE.ConeGeometry(0.5*sc,0.55*sc,9),capM);
+    cap.position.set(x,y+0.95*sc,z);g.add(cap);
+  }
+  const glow=new THREE.PointLight(0x33ffe0,2.2,17,1.6);
+  glow.position.set(0,1.2,0);g.add(glow);
+  // fireflies
+  const N=34,pos=new Float32Array(N*3),base=[];
+  for(let i=0;i<N;i++) base.push((rng()-0.5)*13,0.5+rng()*2.6,(rng()-0.5)*13,rng()*9);
+  const pg=new THREE.BufferGeometry();pg.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  const pts=new THREE.Points(pg,new THREE.PointsMaterial({color:0x9fffe8,size:0.13,map:softTex,
+    transparent:true,opacity:0.95,blending:THREE.AdditiveBlending,depthWrite:false}));
+  g.add(pts);
+  updatables.push((dt,el)=>{
+    for(let i=0;i<N;i++){
+      const b=i*4;
+      pos[i*3]  =base[b]  +Math.sin(el*0.7+base[b+3])*1.6;
+      pos[i*3+1]=base[b+1]+Math.sin(el*1.1+base[b+3]*2)*0.5;
+      pos[i*3+2]=base[b+2]+Math.cos(el*0.5+base[b+3])*1.6;
+    }
+    pg.attributes.position.needsUpdate=true;
+    glow.intensity=2.0+Math.sin(el*2.3)*0.4;
+  });
+}
+/* 6 — CAIRN MEADOW of a thousand flowers (+ butterflies) */
+function buildMeadow(){
+  const {g}=groupAt(0.455);
+  for(let c=0;c<5;c++){
+    const lat=(c%2?1:-1)*(4+rng()*4),along=(c-2)*5+(rng()-0.5)*3;
+    const wp=new THREE.Vector3(lat,0,along).applyQuaternion(g.quaternion).add(g.position);
+    const np=nearestOnPath(wp.x,wp.z);
+    let y=groundH(wp.x,wp.z,np.dist,np.py)-g.position.y;
+    const n=4+Math.floor(rng()*3);
+    for(let s=0;s<n;s++){
+      const r=(0.85-(s/n)*0.55)*(0.8+rng()*0.3);
+      const st=rock(g,lat,y+r*0.55,along,r,0.62);st.rotation.set(0,rng()*3,0);
+      y+=r*0.95;
+    }
+  }
+  // flowers — instanced heads + stems
+  const NF=480;
+  const headG=new THREE.SphereGeometry(0.1,5,4);
+  const headM=new THREE.MeshStandardMaterial({roughness:0.6});
+  const heads=new THREE.InstancedMesh(headG,headM,NF);
+  const stemG=new THREE.CylinderGeometry(0.018,0.022,0.42,4);stemG.translate(0,0.21,0);
+  const stems=new THREE.InstancedMesh(stemG,
+    new THREE.MeshStandardMaterial({color:0x3f6b22,roughness:1}),NF);
+  const m=new THREE.Matrix4(),col=new THREE.Color();
+  const palette=[0xe84a8a,0x9a5ce0,0xffffff,0xffd23e,0xe04a3a,0x5aa0ff];
+  for(let i=0;i<NF;i++){
+    const t=0.425+rng()*0.06,fr=pathFrame(t);
+    const off=(1.6+rng()*13)*(rng()<0.5?-1:1);
+    const x=fr.p.x+fr.side.x*off,z=fr.p.z+fr.side.z*off;
+    const np=nearestOnPath(x,z);
+    const y=groundH(x,z,np.dist,np.py);
+    m.makeTranslation(x-0,y,z-0);
+    stems.setMatrixAt(i,m);
+    m.makeTranslation(x,y+0.46,z);
+    heads.setMatrixAt(i,m);
+    heads.setColorAt(i,col.set(palette[Math.floor(rng()*palette.length)]));
+  }
+  heads.instanceColor.needsUpdate=true;
+  scene.add(stems,heads);   // placed in world coords, so parent to scene not the rotated group
+  // butterflies
+  const flock=[];
+  for(let i=0;i<8;i++){
+    const b=new THREE.Group();
+    const wM=new THREE.MeshBasicMaterial({color:palette[i%palette.length],side:THREE.DoubleSide});
+    const wG=new THREE.PlaneGeometry(0.34,0.24);
+    const w1=new THREE.Mesh(wG,wM),w2=new THREE.Mesh(wG,wM);
+    w1.position.x=0.17;w2.position.x=-0.17;b.add(w1,w2);
+    b.userData={base:new THREE.Vector3((rng()-0.5)*16,1+rng()*1.6,(rng()-0.5)*18),ph:rng()*9,w1,w2};
+    g.add(b);flock.push(b);
+  }
+  updatables.push((dt,el)=>{
+    for(const b of flock){
+      const u=b.userData;
+      b.position.set(u.base.x+Math.sin(el*0.6+u.ph)*3,
+                     u.base.y+Math.sin(el*1.3+u.ph)*0.5,
+                     u.base.z+Math.cos(el*0.45+u.ph)*3);
+      b.rotation.y=el*0.6+u.ph;
+      const fl=Math.sin(el*14+u.ph)*0.9;
+      u.w1.rotation.y=fl; u.w2.rotation.y=-fl;
+    }
+  });
+}
+/* 7 — THE LIGHTNING-STRUCK TREE: black, split, breathing embers */
+function buildLightningTree(){
+  const {g}=groupAt(0.545,-3.4);
+  const charM=new THREE.MeshStandardMaterial({color:0x121010,roughness:0.85});
+  const trunk=new THREE.Mesh(new THREE.CylinderGeometry(0.55,0.95,4.2,8),charM);
+  trunk.position.y=2.1;trunk.castShadow=true;g.add(trunk);
+  for(const dir of[-1,1]){
+    const half=new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.45,5.5,7),charM);
+    half.position.set(dir*1.5,6.0,0);half.rotation.z=dir*0.55;half.castShadow=true;g.add(half);
+    const branch=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.14,2.4,5),charM);
+    branch.position.set(dir*2.8,7.6,0.3);branch.rotation.z=dir*1.2;g.add(branch);
+  }
+  const emberL=new THREE.PointLight(0xff5a1e,1.2,11,1.8);emberL.position.y=4;g.add(emberL);
+  const N=26,pos=new Float32Array(N*3),seed=[];
+  for(let i=0;i<N;i++) seed.push(rng()*9,rng());
+  const pg=new THREE.BufferGeometry();pg.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  g.add(new THREE.Points(pg,new THREE.PointsMaterial({color:0xff7a2a,size:0.14,map:softTex,
+    transparent:true,opacity:0.9,blending:THREE.AdditiveBlending,depthWrite:false})));
+  updatables.push((dt,el)=>{
+    for(let i=0;i<N;i++){
+      const ph=seed[i*2],life=(el*0.35+seed[i*2+1])%1;
+      pos[i*3]=Math.sin(ph+el*0.8)*1.4;
+      pos[i*3+1]=1.5+life*7.5;
+      pos[i*3+2]=Math.cos(ph*2+el*0.6)*1.4;
+    }
+    pg.attributes.position.needsUpdate=true;
+    emberL.intensity=1.0+Math.sin(el*7)*0.35;
+  });
+}
+/* 8 — THE BONE ARCH: walk beneath a giant's ribs */
+function buildBoneArch(){
+  const {g}=groupAt(0.635);
+  for(let i=0;i<7;i++){
+    const r=4.1-Math.abs(i-3)*0.28;
+    const rib=new THREE.Mesh(new THREE.TorusGeometry(r,0.17,7,20,Math.PI),boneM);
+    rib.position.z=(i-3)*1.25;rib.castShadow=true;g.add(rib);
+  }
+  for(const sx of[-3.4,3.4]){
+    const tusk=new THREE.Mesh(new THREE.TorusGeometry(2.2,0.16,6,14,Math.PI*0.65),boneM);
+    tusk.position.set(sx,0.3,-5.4);tusk.rotation.z=sx>0?0.4:Math.PI-0.4;tusk.castShadow=true;g.add(tusk);
+  }
+  const skull=new THREE.Mesh(new THREE.SphereGeometry(0.8,10,8),boneM);
+  skull.position.set(4.6,0.7,-4.8);skull.scale.set(1,0.85,1.15);g.add(skull);
+  const eyeM=new THREE.MeshBasicMaterial({color:0x0a0806});
+  for(const ex of[-0.3,0.3]){
+    const eye=new THREE.Mesh(new THREE.SphereGeometry(0.18,6,5),eyeM);
+    eye.position.set(4.6+ex,0.78,-4.0);g.add(eye);
+  }
+}
+/* 9 — VEIL FALLS: a waterfall and pool beside the trail */
+function buildFalls(){
+  const {g}=groupAt(0.725,0);
+  const cliff=new THREE.Group();cliff.position.set(-9.5,0,0);g.add(cliff);
+  rock(cliff,0,3,0,4.2,1.4); rock(cliff,-2.5,6,1,3.2,1.2); rock(cliff,2,5.5,-1.5,3,1.3);
+  rock(cliff,0.5,8,0,2.6,1);
+  const falls=new THREE.Mesh(new THREE.PlaneGeometry(2.6,9),
+    new THREE.MeshBasicMaterial({map:fallsTex,transparent:true,opacity:0.85,
+      color:0xdff2ff,depthWrite:false,side:THREE.DoubleSide}));
+  falls.position.set(-6.8,4.6,0);falls.rotation.y=Math.PI/2;g.add(falls);
+  const pond=new THREE.Mesh(new THREE.CircleGeometry(4.6,22),
+    new THREE.MeshStandardMaterial({color:0x2b6b8c,metalness:0.8,roughness:0.15}));
+  pond.rotation.x=-Math.PI/2;pond.position.set(-5.5,0.07,0);g.add(pond);
+  // mist
+  const N=36,pos=new Float32Array(N*3),seed=[];
+  for(let i=0;i<N;i++) seed.push(rng()*6.28,rng());
+  const pg=new THREE.BufferGeometry();pg.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  g.add(new THREE.Points(pg,new THREE.PointsMaterial({color:0xeef8ff,size:0.8,map:softTex,
+    transparent:true,opacity:0.22,blending:THREE.AdditiveBlending,depthWrite:false})));
+  updatables.push((dt,el)=>{
+    fallsTex.offset.y-=dt*0.9;
+    for(let i=0;i<N;i++){
+      const a=seed[i*2],life=(el*0.4+seed[i*2+1])%1;
+      pos[i*3]=-6.4+Math.cos(a+el*0.3)*(1+life*2.4);
+      pos[i*3+1]=0.3+life*2.2;
+      pos[i*3+2]=Math.sin(a*3+el*0.4)*(1+life*2.2);
+    }
+    pg.attributes.position.needsUpdate=true;
+  });
+}
+/* 10 — WALL OF PAINTED HANDS: ancestors' marks, torch-lit */
+function buildPaintedWall(){
+  const {g}=groupAt(0.81,-5.4);
+  const slab=new THREE.Mesh(new THREE.BoxGeometry(10.5,5.6,1.2),stoneM);
+  slab.position.y=2.6;slab.rotation.y=Math.PI/2-0.25;slab.castShadow=true;g.add(slab);
+  const art=new THREE.Mesh(new THREE.PlaneGeometry(9.8,5.0),
+    new THREE.MeshStandardMaterial({map:paintTex,roughness:0.95}));
+  art.position.set(0.66,2.6,0);art.rotation.y=Math.PI/2-0.25;g.add(art);
+  rock(g,1,0.4,4.8,1.0); rock(g,0.6,0.4,-5,0.8);
+  for(const tz of[-3.4,3.4]){
+    const stick=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.08,1.6,5),woodM);
+    stick.position.set(1.7,0.8,tz);g.add(stick);
+    const flame=new THREE.Mesh(new THREE.ConeGeometry(0.16,0.5,6),
+      new THREE.MeshBasicMaterial({color:0xffa524}));
+    flame.position.set(1.7,1.85,tz);g.add(flame);
+    const fl=new THREE.PointLight(0xff8c2a,1.4,9,1.7);fl.position.set(1.7,1.9,tz);g.add(fl);
+    updatables.push((dt,el)=>{
+      fl.intensity=1.2+Math.sin(el*11+tz*7)*0.4+Math.sin(el*23+tz)*0.2;
+      flame.scale.y=1+Math.sin(el*13+tz*5)*0.25;
+    });
+  }
+}
+/* 11 — THE WATCHING TOTEMS: three carved guardians */
+function buildTotems(){
+  const {g}=groupAt(0.895);
+  const bands=[0xb02a1d,0xd9a13a,0x2a6f6f,0x6b3fa0];
+  const lats=[-3.6,3.4,-4.2],alongs=[-4,0,4];
+  for(let p=0;p<3;p++){
+    const tp=new THREE.Group();
+    tp.position.set(lats[p],0,alongs[p]);g.add(tp);
+    let y=0;
+    const h0=2.4+p*0.5;
+    const pole=new THREE.Mesh(new THREE.CylinderGeometry(0.34,0.42,h0,8),woodM);
+    pole.position.y=h0/2;pole.castShadow=true;tp.add(pole);y=h0;
+    for(let b=0;b<3;b++){
+      const band=new THREE.Mesh(new THREE.CylinderGeometry(0.4,0.4,0.3,8),
+        new THREE.MeshStandardMaterial({color:bands[(p+b)%4],roughness:0.8}));
+      band.position.y=0.6+b*0.9;tp.add(band);
+    }
+    const head=new THREE.Mesh(new THREE.BoxGeometry(0.9,0.9,0.8),woodM);
+    head.position.y=y+0.45;head.castShadow=true;tp.add(head);
+    const eM=new THREE.MeshBasicMaterial({color:0xfff2c0});
+    for(const ex of[-0.22,0.22]){
+      const eye=new THREE.Mesh(new THREE.SphereGeometry(0.09,6,5),eM);
+      eye.position.set(ex,y+0.52,0.41);tp.add(eye);
+    }
+    const hat=new THREE.Mesh(new THREE.ConeGeometry(0.62,0.8,7),
+      new THREE.MeshStandardMaterial({color:bands[p%4],roughness:0.9}));
+    hat.position.y=y+1.2;tp.add(hat);
+    tp.lookAt(g.position);tp.rotateY(Math.PI);   // faces watch the trail
+  }
+}
+/* 12 — HOME FIRE: cave mouth, campfire, smoke — the journey's end */
+let firePosWorld=new THREE.Vector3();
+function buildHome(){
+  const {g,f}=groupAt(0.985);
+  // boulder wall + cave mouth closing the trail
+  rock(g,-4.5,3,6,4,1.5); rock(g,4.5,3,6,4,1.5); rock(g,0,6.5,7,3.6,1);
+  rock(g,-8,2,4,3,1.2); rock(g,8,2,4,3,1.2);
+  const mouth=new THREE.Mesh(new THREE.CircleGeometry(2.6,18),
+    new THREE.MeshBasicMaterial({color:0x050302}));
+  mouth.position.set(0,2.2,4.4);mouth.rotation.y=Math.PI;g.add(mouth);
+  const lintel=rock(g,0,4.8,4.6,2,0.7);lintel.scale.x=3.2;
+  // hide rack
+  for(const px of[-1,-2.8]){
+    const post=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.08,2,5),woodM);
+    post.position.set(px-2.2,1,-1);g.add(post);
+  }
+  const hide=new THREE.Mesh(new THREE.PlaneGeometry(1.7,1.2),
+    new THREE.MeshStandardMaterial({color:0x9c7448,roughness:1,side:THREE.DoubleSide}));
+  hide.position.set(-4.1,1.4,-1);g.add(hide);
+  // campfire
+  const fire=new THREE.Group();fire.position.set(0,0,-1);g.add(fire);
+  for(let i=0;i<8;i++){
+    const a=i/8*6.28;
+    rock(fire,Math.cos(a)*0.85,0.1,Math.sin(a)*0.85,0.22);
+  }
+  for(let i=0;i<3;i++){
+    const lg=new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.1,1.3,5),woodM);
+    lg.position.y=0.35;lg.rotation.z=0.9;lg.rotation.y=i*2.1;lg.castShadow=true;fire.add(lg);
+  }
+  const fl=new THREE.PointLight(0xff7a22,2.6,22,1.5);fl.position.set(0,1,-1);g.add(fl);
+  fire.updateMatrixWorld(true);
+  firePosWorld=fire.getWorldPosition(new THREE.Vector3());
+  // flames (lifecycle particles)
+  const NF=64,fpos=new Float32Array(NF*3),fcol=new Float32Array(NF*3),life=[],vel=[];
+  const cy=new THREE.Color(0xffd23e),co=new THREE.Color(0xff4d12),tc=new THREE.Color();
+  for(let i=0;i<NF;i++){life.push(rng());vel.push(1+rng()*1.6);}
+  const fg=new THREE.BufferGeometry();
+  fg.setAttribute('position',new THREE.BufferAttribute(fpos,3));
+  fg.setAttribute('color',new THREE.BufferAttribute(fcol,3));
+  const fpts=new THREE.Points(fg,new THREE.PointsMaterial({vertexColors:true,size:0.3,map:softTex,
+    transparent:true,opacity:0.95,blending:THREE.AdditiveBlending,depthWrite:false}));
+  fire.add(fpts);
+  // smoke
+  const NSM=18,spos=new Float32Array(NSM*3),sl=[];
+  for(let i=0;i<NSM;i++) sl.push(rng(),rng()*6.28);
+  const sg=new THREE.BufferGeometry();sg.setAttribute('position',new THREE.BufferAttribute(spos,3));
+  fire.add(new THREE.Points(sg,new THREE.PointsMaterial({color:0x8a847c,size:1.6,map:softTex,
+    transparent:true,opacity:0.2,depthWrite:false})));
+  updatables.push((dt,el)=>{
+    for(let i=0;i<NF;i++){
+      life[i]+=dt*vel[i]*0.8;
+      if(life[i]>1){life[i]=0;}
+      const L=life[i],r=(1-L)*0.45;
+      const a=i*2.4+el;
+      fpos[i*3]=Math.cos(a)*r*(0.6+Math.sin(el*3+i)*0.2);
+      fpos[i*3+1]=0.25+L*1.5;
+      fpos[i*3+2]=Math.sin(a)*r*0.6;
+      tc.copy(cy).lerp(co,L);
+      fcol[i*3]=tc.r;fcol[i*3+1]=tc.g;fcol[i*3+2]=tc.b;
+    }
+    fg.attributes.position.needsUpdate=true;fg.attributes.color.needsUpdate=true;
+    for(let i=0;i<NSM;i++){
+      const L=(sl[i*2]+el*0.12)%1,ph=sl[i*2+1];
+      spos[i*3]=Math.sin(ph+L*3)*L*1.6;
+      spos[i*3+1]=1.6+L*9;
+      spos[i*3+2]=Math.cos(ph+L*2)*L*1.6;
+    }
+    sg.attributes.position.needsUpdate=true;
+    fl.intensity=2.3+Math.sin(el*9)*0.5+Math.sin(el*17)*0.3;
+  });
+}
+buildGate();buildBirches();buildBridge();buildLog();buildMushrooms();buildMeadow();
+buildLightningTree();buildBoneArch();buildFalls();buildPaintedWall();buildTotems();buildHome();
+
+const STATIONS=[
+  {t:0.022,num:'I',   name:'The Stone Gate'},
+  {t:0.10, num:'II',  name:'Birch Grove of White Sentinels'},
+  {t:0.185,num:'III', name:'Red Bridge over the Singing Stream'},
+  {t:0.275,num:'IV',  name:'The Hollow Log'},
+  {t:0.365,num:'V',   name:'Ring of Glowing Mushrooms'},
+  {t:0.455,num:'VI',  name:'Cairn Meadow of a Thousand Flowers'},
+  {t:0.545,num:'VII', name:'The Lightning-Struck Tree'},
+  {t:0.635,num:'VIII',name:'The Bone Arch'},
+  {t:0.725,num:'IX',  name:'Veil Falls'},
+  {t:0.81, num:'X',   name:'Wall of Painted Hands'},
+  {t:0.895,num:'XI',  name:'The Watching Totems'},
+  {t:0.985,num:'XII', name:'Home Fire'},
+];
+const ICONS=['🪨','🌳','🌉','🪵','🍄','🌸','⚡','🦴','💧','🖐️','🗿','🔥'];
+
+/* ---------- 8. PLAYER (first-person, corridor-bound, head-bob) ---------- */
+const controls=new PointerLockControls(camera,document.body);
+const keys={};
+addEventListener('keydown',e=>keys[e.code]=true);
+addEventListener('keyup',e=>keys[e.code]=false);
+const player={
+  pos:samples[6].clone(), vel:new THREE.Vector3(), idx:6, t:0.01,
+  bob:0, lastStep:0, finished:false
+};
+function resetPlayer(){
+  player.pos.copy(samples[6]); player.vel.set(0,0,0); player.idx=6; player.t=0.01;
+  player.finished=false;
+  const f=pathFrame(0.01);
+  camera.position.copy(player.pos).y+=1.7;
+  camera.lookAt(player.pos.clone().add(f.tan).setY(player.pos.y+1.6));
+}
+const CORRIDOR=5.5, WALK=4.7, RUN=7.0;
+function updatePlayer(dt){
+  const fwd=new THREE.Vector3();camera.getWorldDirection(fwd);fwd.y=0;fwd.normalize();
+  const right=new THREE.Vector3(fwd.z,0,-fwd.x);
+  const wish=new THREE.Vector3();
+  if(keys.KeyW||keys.ArrowUp)wish.add(fwd);
+  if(keys.KeyS||keys.ArrowDown)wish.sub(fwd);
+  if(keys.KeyA||keys.ArrowLeft)wish.add(right);
+  if(keys.KeyD||keys.ArrowRight)wish.sub(right);
+  const speed=(keys.ShiftLeft||keys.ShiftRight)?RUN:WALK;
+  if(wish.lengthSq()>0)wish.normalize().multiplyScalar(speed);
+  player.vel.lerp(wish,1-Math.exp(-10*dt));
+  player.pos.addScaledVector(player.vel,dt);
+  // corridor clamp — the trail holds you, like a real worn path
+  let np=nearestOnPath(player.pos.x,player.pos.z,player.idx);
+  player.idx=np.idx;player.t=np.t;
+  if(np.dist>CORRIDOR){
+    const c=samples[np.idx];
+    const lx=player.pos.x-c.x,lz=player.pos.z-c.z,d=Math.hypot(lx,lz);
+    player.pos.x=c.x+lx/d*CORRIDOR; player.pos.z=c.z+lz/d*CORRIDOR;
+    np=nearestOnPath(player.pos.x,player.pos.z,player.idx);
+  }
+  // ends are ends
+  if(player.t>0.992||player.t<0.004){
+    const tt=clamp(player.t,0.004,0.992),f=pathFrame(tt);
+    const lat=new THREE.Vector3().subVectors(player.pos,f.p);
+    const latd=lat.dot(f.side);
+    player.pos.copy(f.p).addScaledVector(f.side,clamp(latd,-CORRIDOR,CORRIDOR));
+    player.idx=Math.round(tt*NS);
+  }
+  player.pos.y=groundH(player.pos.x,player.pos.z,
+    nearestOnPath(player.pos.x,player.pos.z,player.idx).dist,samples[player.idx].y);
+  // head bob + footsteps
+  const moving=player.vel.length()/WALK;
+  player.bob+=player.vel.length()*dt*1.9;
+  camera.position.copy(player.pos);
+  camera.position.y+=1.7+Math.sin(player.bob)*0.055*Math.min(moving,1.4);
+  if(moving>0.3&&Math.sin(player.bob)<-0.96&&performance.now()-player.lastStep>260){
+    player.lastStep=performance.now();footstep();
+  }
+}
+
+/* ---------- 9. AUDIO (wind · footsteps · landmark chimes · fire) ---------- */
+let AC=null,master=null;
+function initAudio(){
+  if(AC)return;
+  AC=new (window.AudioContext||window.webkitAudioContext)();
+  master=AC.createGain();master.gain.value=0.9;master.connect(AC.destination);
+  const len=AC.sampleRate*2,buf=AC.createBuffer(1,len,AC.sampleRate),d=buf.getChannelData(0);
+  let last=0;
+  for(let i=0;i<len;i++){const w=Math.random()*2-1;last=(last+0.02*w)/1.02;d[i]=last*3.5;}
+  const wind=AC.createBufferSource();wind.buffer=buf;wind.loop=true;
+  const lp=AC.createBiquadFilter();lp.type='lowpass';lp.frequency.value=420;
+  const wg=AC.createGain();wg.gain.value=0.05;
+  wind.connect(lp).connect(wg).connect(master);wind.start();
+}
+function footstep(){
+  if(!AC)return;
+  const t=AC.currentTime;
+  const len=AC.sampleRate*0.09,buf=AC.createBuffer(1,len,AC.sampleRate),d=buf.getChannelData(0);
+  for(let i=0;i<len;i++)d[i]=(Math.random()*2-1)*(1-i/len);
+  const src=AC.createBufferSource();src.buffer=buf;
+  const f=AC.createBiquadFilter();f.type='lowpass';f.frequency.value=260+Math.random()*160;
+  const g=AC.createGain();g.gain.setValueAtTime(0.18,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.09);
+  src.connect(f).connect(g).connect(master);src.start();
+}
+const PENT=[0,3,5,7,10];
+function chime(i){
+  if(!AC)return;
+  const n=PENT[i%5]+12*Math.floor(i/5);
+  const f0=262*Math.pow(2,n/12),t=AC.currentTime;
+  for(const[mult,vol]of[[1,0.22],[1.5,0.08],[2,0.05]]){
+    const o=AC.createOscillator();o.type='sine';o.frequency.value=f0*mult;
+    const g=AC.createGain();
+    g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(vol,t+0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+1.8);
+    o.connect(g).connect(master);o.start(t);o.stop(t+1.9);
+  }
+}
+function crackle(){
+  if(!AC)return;
+  const t=AC.currentTime;
+  const o=AC.createOscillator();o.type='square';o.frequency.value=90+Math.random()*700;
+  const g=AC.createGain();
+  g.gain.setValueAtTime(0.05+Math.random()*0.05,t);
+  g.gain.exponentialRampToValueAtTime(0.001,t+0.04);
+  o.connect(g).connect(master);o.start(t);o.stop(t+0.05);
+}
+
+/* ---------- 10. HUD ---------- */
+const $=id=>document.getElementById(id);
+const dotsEl=$('dots');
+const dots=STATIONS.map(()=>{const d=document.createElement('div');d.className='d';dotsEl.appendChild(d);return d;});
+const recall=$('recall');
+STATIONS.forEach((s,i)=>{const li=document.createElement('li');
+  li.textContent=`${ICONS[i]}  ${s.name}`;recall.appendChild(li);});
+let visited=STATIONS.map(()=>false),bannerTimer=null;
+function showBanner(i){
+  $('banner').querySelector('.num').textContent='LANDMARK '+STATIONS[i].num;
+  $('banner').querySelector('.name').textContent=STATIONS[i].name;
+  $('banner').style.opacity=1;
+  clearTimeout(bannerTimer);
+  bannerTimer=setTimeout(()=>$('banner').style.opacity=0,2700);
+}
+function checkStations(){
+  for(let i=0;i<STATIONS.length;i++){
+    if(!visited[i]&&Math.abs(player.t-STATIONS[i].t)<0.02){
+      visited[i]=true;dots[i].classList.add('lit');showBanner(i);chime(i);
+    }
+  }
+  if(!player.finished&&visited[11]){
+    const d=Math.hypot(player.pos.x-firePosWorld.x,player.pos.z-firePosWorld.z);
+    if(d<4.5){
+      player.finished=true;
+      setTimeout(()=>{controls.unlock();$('end').classList.remove('hidden');},900);
+    }
+  }
+}
+$('beginBtn').onclick=()=>{initAudio();AC.resume();controls.lock();};
+$('againBtn').onclick=()=>{
+  visited=STATIONS.map(()=>false);dots.forEach(d=>d.classList.remove('lit'));
+  resetPlayer();$('end').classList.add('hidden');controls.lock();
+};
+controls.addEventListener('lock',()=>{$('intro').classList.add('hidden');});
+controls.addEventListener('unlock',()=>{
+  if(!player.finished)$('intro').classList.remove('hidden');
+});
+
+/* ---------- 11. MAIN LOOP ---------- */
+resetPlayer();
+const clock=new THREE.Clock();
+function tick(){
+  requestAnimationFrame(tick);
+  const dt=Math.min(clock.getDelta(),0.05),el=clock.elapsedTime;
+  if(controls.isLocked)updatePlayer(dt);
+  for(const u of updatables)u(dt,el);
+  checkStations();
+  if(AC&&Math.hypot(player.pos.x-firePosWorld.x,player.pos.z-firePosWorld.z)<16
+     &&Math.random()<dt*7)crackle();
+  sun.position.copy(player.pos).addScaledVector(sunDir,90);
+  sun.target.position.copy(player.pos);
+  renderer.render(scene,camera);
+}
+tick();
+addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+});
+console.log('Trail length: '+pathLen.toFixed(0)+' m — ~'+(pathLen/WALK).toFixed(0)+' s at walking pace');
+</script>
+</body>
+</html>

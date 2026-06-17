@@ -1,0 +1,1129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>The Way Home — a one-minute memory trail</title>
+<!--
+═══════════════════════════════════════════════════════════════════════════════
+ THE WAY HOME — a one-minute, first-person, procedural memory trail.
+
+ DESIGN METHOD: PROOF BY CONTRADICTION.
+ Every major decision below was reached by assuming its opposite and deriving
+ a contradiction with the requirements (vivid, memorable for ALL humans,
+ ~60 seconds, finite, pre-literate "caveman wayfinding" plausible).
+
+ P1. Suppose the trail were regenerated randomly on each load.
+     Then a second walk would not rehearse the first walk's landmarks, so
+     spaced repetition — the core of memory — would be impossible.
+     ⊥ Contradiction with "humans should remember walking this trail".
+     ∴ The world is generated from a FIXED SEED. Identical every visit.
+
+ P2. Suppose the trail were infinite or open-world.
+     Then there is no "home", no bounded story, and no 60-second arc.
+     ⊥ Contradiction with "NOT infinite" and the caveman's goal (get home).
+     ∴ One fixed curve, ~300 m, ending at a hearth cave.
+
+ P3. Suppose the scenery were uniform (one biome, repeated trees).
+     Then no segment is distinguishable from another; route knowledge decays
+     to "walk forward", which encodes nothing.
+     ⊥ Contradiction with "many distinctive procedural features".
+     ∴ Eleven maximally-contrastive stations, one every ~5 s, differing in
+       COLOR (red gate / white birch / blue glow / black tree / rainbow
+       meadow), GEOMETRY (arch, ford, tunnel, stacks, poles, cave),
+       and AFFECT (threshold, cold water, awe, unease, delight, relief).
+
+ P4. Suppose the landmarks engaged vision only.
+     Then auditory cortex, vestibular/proprioceptive systems, the number
+     sense, and narrative memory would all sit idle.
+     ⊥ Contradiction with "triggers many parts of the human brain".
+     ∴ Each station also gets: a chime that ASCENDS A SCALE (sequence is
+       encoded in pitch — auditory ordinal memory), running-water /
+       crow / fire soundscapes, footstep & wading audio (body), explicit
+       small counts (2 posts, 5 stones, 3 crows, 5 cairns, 3 elders —
+       subitizable numbers), and a story arc (leave gate → cross water →
+       read the tribe's spiral sign → pass the dead tree → through the
+       whale's throat → home, where the same spiral waits over the door).
+
+ P5. Suppose the player roamed freely with no marked route.
+     Then completion time is unbounded and the spatial SEQUENCE (the spine
+     of any memory palace) is lost.
+     ⊥ Contradiction with "about 1 minute" and the method-of-loci framing.
+     ∴ A single visible dirt ribbon, carved into the terrain colors, walked
+       at ~5 m/s ≈ 60 s, with free look and small lateral freedom.
+
+ P6. Suppose the chimes at every landmark were identical.
+     Then audio would carry no information about WHERE you are in the
+     sequence. ⊥ Contradiction with maximal encoding.
+     ∴ Landmark i plays note i of an ascending pentatonic-ish major ladder.
+
+ P7. Suppose home looked like everything else.
+     A caveman who cannot recognize home at a glance does not survive.
+     ⊥ ∴ Home is multi-cue redundant: firelight + smoke column + crackle +
+     the spiral sign first taught at station 4 (recognition by symbol —
+     the oldest "address plate" humanity ever used).
+═══════════════════════════════════════════════════════════════════════════════
+-->
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#1a140c;
+    font-family:ui-rounded,'Segoe UI',system-ui,sans-serif;color:#f3e9d2;}
+  canvas{display:block;}
+  #hud{position:fixed;inset:0;pointer-events:none;}
+  #progressWrap{position:absolute;top:14px;left:50%;transform:translateX(-50%);
+    width:min(420px,70vw);height:8px;background:rgba(0,0,0,.35);border-radius:99px;
+    overflow:hidden;border:1px solid rgba(255,255,255,.25);}
+  #progressBar{height:100%;width:0%;border-radius:99px;
+    background:linear-gradient(90deg,#e8a13c,#f6d978);transition:width .25s;}
+  #hint{position:absolute;top:30px;left:50%;transform:translateX(-50%);
+    font-size:12px;opacity:.75;text-shadow:0 1px 3px #000;white-space:nowrap;}
+  #banner{position:absolute;bottom:9%;left:50%;transform:translateX(-50%) translateY(20px);
+    text-align:center;opacity:0;transition:opacity .5s,transform .5s;max-width:80vw;}
+  #banner.show{opacity:1;transform:translateX(-50%) translateY(0);}
+  #banner .num{font-size:13px;letter-spacing:.25em;color:#f6d978;text-shadow:0 1px 4px #000;}
+  #banner .name{font-size:30px;font-weight:700;text-shadow:0 2px 8px #000;margin:2px 0;}
+  #banner .cue{font-size:15px;font-style:italic;opacity:.92;text-shadow:0 1px 4px #000;}
+  #journal{position:absolute;top:54px;right:14px;width:240px;background:rgba(20,14,6,.82);
+    border:1px solid rgba(246,217,120,.4);border-radius:12px;padding:12px 14px;
+    font-size:13px;line-height:1.85;display:none;backdrop-filter:blur(4px);}
+  #journal.open{display:block;}
+  #journal h3{margin:0 0 6px;font-size:13px;letter-spacing:.2em;color:#f6d978;}
+  #journal .it{opacity:.35;} #journal .it.seen{opacity:1;}
+  #journal .it.seen::after{content:" ✓";color:#9fd97a;}
+  .overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+    background:rgba(12,9,4,.78);backdrop-filter:blur(6px);z-index:10;}
+  .overlay.hidden{display:none;}
+  .card{max-width:580px;width:min(580px,88vw);max-height:86vh;overflow:auto;
+    background:linear-gradient(170deg,#2a2113,#1c150a);border:1px solid rgba(246,217,120,.45);
+    border-radius:18px;padding:30px 34px;box-shadow:0 30px 80px rgba(0,0,0,.6);
+    text-align:center;}
+  .card h1{margin:0 0 4px;font-size:30px;color:#f6d978;letter-spacing:.04em;}
+  .card h2{margin:0 0 14px;font-size:13px;letter-spacing:.3em;opacity:.7;font-weight:400;}
+  .card p{font-size:14.5px;line-height:1.65;opacity:.92;text-align:left;}
+  .card .keys{font-size:13px;background:rgba(0,0,0,.3);border-radius:10px;
+    padding:10px 14px;margin:14px 0;line-height:1.9;text-align:left;}
+  .card button{pointer-events:auto;cursor:pointer;font:inherit;font-weight:700;
+    font-size:16px;color:#241a0a;background:linear-gradient(180deg,#f6d978,#e8a13c);
+    border:none;border-radius:99px;padding:13px 34px;margin:8px 6px 0;
+    box-shadow:0 6px 18px rgba(232,161,60,.35);}
+  .card button:hover{filter:brightness(1.07);}
+  .card button.ghost{background:transparent;color:#f6d978;border:1px solid rgba(246,217,120,.5);box-shadow:none;}
+  .card ol{text-align:left;font-size:13.5px;line-height:1.7;padding-left:24px;}
+  .card ol b{color:#f6d978;}
+  kbd{background:#3a2f1a;border:1px solid #6a5630;border-radius:5px;padding:1px 7px;font-family:inherit;}
+  #pauseOverlay .card{padding:22px 30px;}
+</style>
+</head>
+<body>
+<div id="hud">
+  <div id="progressWrap"><div id="progressBar"></div></div>
+  <div id="hint">W A S D walk · mouse look · Shift hurry · F auto-walk · M journal</div>
+  <div id="banner"><div class="num"></div><div class="name"></div><div class="cue"></div></div>
+  <div id="journal"><h3>THE WAY HOME</h3><div id="journalList"></div></div>
+</div>
+
+<div class="overlay" id="introOverlay">
+  <div class="card">
+    <h1>The Way Home</h1>
+    <h2>A ONE-MINUTE MEMORY TRAIL</h2>
+    <p>Before maps, before paper, before writing itself, every human carried the way
+       home in their head. The land was the notebook: a red gate of rock, the ford
+       where water sings, the spiral sign painted by your tribe, the tree the
+       lightning killed. Lose the sequence, lose your life.</p>
+    <p>Walk this trail once and let the eleven stations carve themselves in, in order
+       — each has its own color, shape, sound, and note on a rising scale. This is a
+       method of loci: later, you can hang your own memories on these eleven hooks.</p>
+    <div class="keys">
+      <kbd>W A S D</kbd> walk &nbsp;·&nbsp; <kbd>mouse</kbd> look around<br>
+      <kbd>Shift</kbd> hurry &nbsp;·&nbsp; <kbd>F</kbd> auto-walk &nbsp;·&nbsp; <kbd>M</kbd> trail journal<br>
+      On touch screens: drag to look — you walk on your own.
+    </div>
+    <button id="startBtn">Begin the walk 🔥</button>
+  </div>
+</div>
+
+<div class="overlay hidden" id="pauseOverlay">
+  <div class="card"><h1 style="font-size:22px">Paused</h1>
+  <button id="resumeBtn">Resume the walk</button></div>
+</div>
+
+<div class="overlay hidden" id="endOverlay">
+  <div class="card">
+    <h1>You made it home.</h1>
+    <h2>THE FIRE WAS KEPT FOR YOU</h2>
+    <p>Close your eyes and walk it again in your head — backwards too. If you can,
+       the trail is yours forever. The eleven stations, in order:</p>
+    <ol id="recapList"></ol>
+    <button id="againBtn">Walk it again</button>
+    <button id="stayBtn" class="ghost">Stay by the fire</button>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* ───────────────────────── helpers ───────────────────────── */
+// P1: a random trail contradicts rehearsal → fixed seed, same world every run.
+function mulberry32(seed){return function(){let t=seed+=0x6D2B79F5;
+  t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);
+  return((t^t>>>14)>>>0)/4294967296;};}
+const rng = mulberry32(19712);
+const rand=(a,b)=>a+(b-a)*rng();
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const lerp=(a,b,t)=>a+(b-a)*t;
+function smoothstep(a,b,x){const t=clamp((x-a)/(b-a),0,1);return t*t*(3-2*t);}
+
+/* ───────────────────────── scene ───────────────────────── */
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.08;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0xeed7ab, 35, 300);
+const camera = new THREE.PerspectiveCamera(72, innerWidth/innerHeight, 0.1, 900);
+
+const hemi = new THREE.HemisphereLight(0xcfe5ff, 0x6a5a36, 1.15);
+scene.add(hemi);
+const SUNDIR = new THREE.Vector3(0.55,0.62,0.36).normalize();
+const sun = new THREE.DirectionalLight(0xffe0b0, 2.9);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048,2048);
+sun.shadow.camera.left=-50; sun.shadow.camera.right=50;
+sun.shadow.camera.top=50; sun.shadow.camera.bottom=-50;
+sun.shadow.camera.near=1; sun.shadow.camera.far=250;
+sun.shadow.bias = -0.0006;
+scene.add(sun); scene.add(sun.target);
+
+/* sky dome (golden hour — emotionally tagged light is sticky light) */
+const sky = new THREE.Mesh(
+  new THREE.SphereGeometry(440,24,14),
+  new THREE.ShaderMaterial({side:THREE.BackSide,depthWrite:false,fog:false,
+    uniforms:{top:{value:new THREE.Color(0x4d83c4)},mid:{value:new THREE.Color(0xbcd2e8)},
+              low:{value:new THREE.Color(0xf3c98f)}},
+    vertexShader:`varying vec3 vP;void main(){vP=position;
+      gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
+    fragmentShader:`varying vec3 vP;uniform vec3 top,mid,low;
+      void main(){float h=normalize(vP).y;
+      vec3 c=h>0.22?mix(mid,top,smoothstep(0.22,0.75,h)):mix(low,mid,smoothstep(-0.06,0.22,h));
+      gl_FragColor=vec4(c,1.0);}`}));
+sky.renderOrder=-2;
+scene.add(sky);
+
+/* sun disk */
+function radialTex(inner,outer){
+  const c=document.createElement('canvas');c.width=c.height=128;
+  const g=c.getContext('2d');
+  const gr=g.createRadialGradient(64,64,4,64,64,64);
+  gr.addColorStop(0,inner);gr.addColorStop(1,outer);
+  g.fillStyle=gr;g.fillRect(0,0,128,128);
+  return new THREE.CanvasTexture(c);
+}
+const sunSprite = new THREE.Sprite(new THREE.SpriteMaterial({
+  map:radialTex('rgba(255,244,210,1)','rgba(255,200,120,0)'),
+  blending:THREE.AdditiveBlending,depthWrite:false,fog:false}));
+sunSprite.scale.set(120,120,1);
+scene.add(sunSprite);
+
+/* ───────────────────────── the trail curve ─────────────────────────
+   P2/P5: one fixed ~300 m spine; walked at ~5 m/s ≈ 60 s. */
+const CP = [
+  [-92, 75],[-70, 60],[-50, 65],[-30, 50],[-15, 30],[-25,  5],
+  [-10,-15],[ 15,-10],[ 35,  5],[ 55,  0],[ 65,-25],[ 55,-50],[ 75,-70]
+].map(p=>new THREE.Vector3(p[0],0,p[1]));
+const curve = new THREE.CatmullRomCurve3(CP,false,'catmullrom',0.5);
+
+const PATH_N = 400;
+const pathPts = curve.getSpacedPoints(PATH_N);
+const PATH_XZ = new Float32Array(PATH_N*2+2);
+for(let i=0;i<pathPts.length;i++){PATH_XZ[i*2]=pathPts[i].x;PATH_XZ[i*2+1]=pathPts[i].z;}
+function pathDist(x,z){
+  let m=1e12;
+  for(let i=0;i<PATH_XZ.length;i+=2){
+    const dx=PATH_XZ[i]-x,dz=PATH_XZ[i+1]-z,d=dx*dx+dz*dz;
+    if(d<m)m=d;
+  }
+  return Math.sqrt(m);
+}
+function nearestPathIndex(x,z){
+  let m=1e12,idx=0;
+  for(let i=0;i<PATH_XZ.length;i+=2){
+    const dx=PATH_XZ[i]-x,dz=PATH_XZ[i+1]-z,d=dx*dx+dz*dz;
+    if(d<m){m=d;idx=i>>1;}
+  }
+  return idx;
+}
+
+/* stream & hollow anchors (used inside heightAt) */
+const STREAM_C = curve.getPoint(4/12);
+const sTan = curve.getTangent(4/12);
+const STREAM_D = new THREE.Vector3(-sTan.z,0,sTan.x).normalize();
+function hills(x,z){
+  return 2.2*Math.sin(x*0.018+1.3)*Math.cos(z*0.021)
+       + 1.4*Math.sin(x*0.045+0.5)*Math.sin(z*0.038+2.0)
+       + 0.5*Math.sin(x*0.11)*Math.cos(z*0.13+1.0);
+}
+const WATER_Y = hills(STREAM_C.x,STREAM_C.z)-0.55;
+const STREAM_BED = WATER_Y-0.7;
+const MUSH = curve.getPoint(6/12);
+
+function streamCoords(x,z){
+  const ax=x-STREAM_C.x, az=z-STREAM_C.z;
+  return {along: ax*STREAM_D.x+az*STREAM_D.z,
+          perp: Math.abs(ax*STREAM_D.z-az*STREAM_D.x)};
+}
+function heightAt(x,z){
+  let h = hills(x,z);
+  const r = Math.hypot(x,z);
+  h += smoothstep(130,170,r)*(r-130)*0.12;          // gentle valley rim
+  const sc = streamCoords(x,z);
+  const fade = 1-smoothstep(70,95,Math.abs(sc.along));
+  const chan = Math.exp(-(sc.perp*sc.perp)/(2*4.2*4.2))*fade;
+  h = h*(1-chan)+STREAM_BED*chan;                   // carved stream channel
+  const dm2=(x-MUSH.x)*(x-MUSH.x)+(z-MUSH.z)*(z-MUSH.z);
+  h -= 2.6*Math.exp(-dm2/(2*13*13));                // sunken glow-hollow
+  return h;
+}
+
+/* ───────────────────────── terrain ─────────────────────────
+   P5: the dirt ribbon is painted into the ground so the route reads at a
+   glance — a free path would unbound the minute and break the sequence. */
+const TSIZE=330, TSEG=210;
+const tGeo = new THREE.PlaneGeometry(TSIZE,TSIZE,TSEG,TSEG);
+tGeo.rotateX(-Math.PI/2);
+{
+  const pos=tGeo.attributes.position;
+  const colors=new Float32Array(pos.count*3);
+  const cGrassA=new THREE.Color(0x6f9a44),cGrassB=new THREE.Color(0x93b85c),
+        cDirt=new THREE.Color(0x9a7a52),cSand=new THREE.Color(0xc2a878),
+        cMoss=new THREE.Color(0x49724e),tmp=new THREE.Color();
+  for(let i=0;i<pos.count;i++){
+    const x=pos.getX(i),z=pos.getZ(i);
+    pos.setY(i,heightAt(x,z));
+    const n=0.5+0.5*Math.sin(x*0.13+Math.sin(z*0.17)*2.0)
+          +0.25*(Math.sin(x*1.7)*Math.sin(z*1.3));
+    tmp.copy(cGrassA).lerp(cGrassB,clamp(n,0,1));
+    const dm2=(x-MUSH.x)*(x-MUSH.x)+(z-MUSH.z)*(z-MUSH.z);
+    tmp.lerp(cMoss,Math.exp(-dm2/(2*12*12))*0.8);
+    const sc=streamCoords(x,z);
+    if(Math.abs(sc.along)<95)
+      tmp.lerp(cSand,(1-smoothstep(4,8,sc.perp))*(1-smoothstep(70,95,Math.abs(sc.along)))*0.85);
+    const dp=pathDist(x,z);
+    if(dp<4.5) tmp.lerp(cDirt,(1-smoothstep(2.1,4.5,dp))*(0.8+0.2*Math.sin(x*2.1+z*1.7)));
+    colors[i*3]=tmp.r;colors[i*3+1]=tmp.g;colors[i*3+2]=tmp.b;
+  }
+  tGeo.setAttribute('color',new THREE.BufferAttribute(colors,3));
+  tGeo.computeVertexNormals();
+}
+const terrain = new THREE.Mesh(tGeo,
+  new THREE.MeshLambertMaterial({vertexColors:true}));
+terrain.receiveShadow=true;
+scene.add(terrain);
+
+/* distant mountains + clouds (depth pegs for the spatial map) */
+{
+  const mMat=new THREE.MeshLambertMaterial({color:0x7d88a0});
+  for(let i=0;i<11;i++){
+    const a=i/11*Math.PI*2+rand(-0.15,0.15);
+    const m=new THREE.Mesh(new THREE.ConeGeometry(rand(28,55),rand(45,85),6),mMat);
+    m.position.set(Math.cos(a)*275,-12,Math.sin(a)*275);
+    m.rotation.y=rand(0,3); scene.add(m);
+  }
+  const cMat=new THREE.MeshLambertMaterial({color:0xffffff,emissive:0x666058});
+  for(let i=0;i<7;i++){
+    const g=new THREE.Group();
+    const n=3+Math.floor(rng()*3);
+    for(let j=0;j<n;j++){
+      const b=new THREE.Mesh(new THREE.IcosahedronGeometry(rand(6,12),1),cMat);
+      b.position.set(rand(-12,12),rand(-2,2),rand(-6,6));
+      b.scale.y=0.32; g.add(b);
+    }
+    const a=rng()*Math.PI*2,r=rand(120,240);
+    g.position.set(Math.cos(a)*r,rand(120,165),Math.sin(a)*r);
+    scene.add(g);
+  }
+}
+
+/* ───────────────────────── landmark plan ─────────────────────────
+   P3: eleven contrastive stations; P4: each adds sound/number/story. */
+const LANDMARKS=[
+  {u:0.015,name:'The Twin Red Gates', cue:'Two red posts and a white sun disk — the trail’s front door.'},
+  {u:0.21, name:'Birch Hall',         cue:'Paper-white trunks striped in black: the pale crowd.'},
+  {u:4/12, name:'The Singing Ford',   cue:'Five stepping stones; cold water sings over your feet.'},
+  {u:5/12, name:'The Spiral Stone',   cue:'The tribe’s ochre mark. Home wears this same sign.'},
+  {u:6/12, name:'Glowmold Hollow',    cue:'A sunken bowl of blue-green light and drifting fireflies.'},
+  {u:7/12, name:'The Burnt Watcher',  cue:'Lightning split it black; three crows still circle.'},
+  {u:8/12, name:'The Whale’s Throat', cue:'Walk through the fallen giant’s hollow trunk.'},
+  {u:9/12, name:'The Five Counters',  cue:'Five stone stacks, each crowned with a red cap.'},
+  {u:10/12,name:'Butterfly Meadow',   cue:'A riot of flower color; wings everywhere.'},
+  {u:11/12,name:'The Three Elders',   cue:'Carved faces watch you pass. Nod to them.'},
+  {u:0.992,name:'Hearth Cave',        cue:'Smoke, firelight, and the spiral over the door. You are home.'}
+];
+LANDMARKS.forEach(l=>{
+  l.pos=curve.getPoint(l.u); l.tan=curve.getTangent(l.u).normalize();
+  l.side=new THREE.Vector3(-l.tan.z,0,l.tan.x); l.visited=false;
+});
+const animators=[];   // (time, dt) => void
+const g0=(x,z)=>heightAt(x,z);
+const M=(c,e)=>new THREE.MeshLambertMaterial(Object.assign({color:c},e||{}));
+function shadowed(m){m.castShadow=true;return m;}
+
+/* 1 — Twin Red Gates */
+{
+  const L=LANDMARKS[0],red=M(0xb83a26);
+  for(const s of [-1,1]){
+    const p=L.pos.clone().addScaledVector(L.side,s*2.1);
+    const post=shadowed(new THREE.Mesh(new THREE.BoxGeometry(0.55,4.4,0.55),red));
+    post.position.set(p.x,g0(p.x,p.z)+2.0,p.z);
+    post.lookAt(post.position.clone().add(L.tan)); scene.add(post);
+  }
+  const barP=L.pos.clone();
+  const bar=shadowed(new THREE.Mesh(new THREE.BoxGeometry(5.7,0.45,0.6),red));
+  bar.position.set(barP.x,g0(barP.x,barP.z)+4.1,barP.z);
+  bar.lookAt(bar.position.clone().add(L.side)); scene.add(bar);
+  const disk=new THREE.Mesh(new THREE.CircleGeometry(0.62,24),
+    M(0xf5ead2,{emissive:0x665c40,side:THREE.DoubleSide}));
+  disk.position.set(barP.x,g0(barP.x,barP.z)+3.0,barP.z);
+  disk.lookAt(disk.position.clone().add(L.tan)); scene.add(disk);
+  animators.push(t=>{disk.rotation.z=Math.sin(t*0.8)*0.12;});
+}
+
+/* 2 — Birch Hall (white + black stripes: highest-contrast texture there is) */
+{
+  const L=LANDMARKS[1];
+  const c=document.createElement('canvas');c.width=64;c.height=256;
+  const ctx=c.getContext('2d');
+  ctx.fillStyle='#e9e4da';ctx.fillRect(0,0,64,256);
+  const tr=mulberry32(77);
+  for(let i=0;i<26;i++){
+    ctx.fillStyle='rgba(20,18,16,'+(0.5+tr()*0.5)+')';
+    ctx.fillRect(tr()*64,tr()*256,8+tr()*22,2+tr()*4);
+  }
+  const tex=new THREE.CanvasTexture(c);tex.wrapS=tex.wrapT=THREE.RepeatWrapping;
+  const bark=new THREE.MeshLambertMaterial({map:tex});
+  const leaf=M(0xc9d97a);
+  for(let i=0;i<14;i++){
+    const along=rand(-9,9),sideD=rand(2.6,8.5)*(i%2?1:-1);
+    const p=L.pos.clone().addScaledVector(L.tan,along).addScaledVector(L.side,sideD);
+    const h=rand(4.6,6.2),y=g0(p.x,p.z);
+    const tr2=shadowed(new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.23,h,8),bark));
+    tr2.position.set(p.x,y+h/2,p.z);tr2.rotation.z=rand(-0.05,0.05);scene.add(tr2);
+    const lv=shadowed(new THREE.Mesh(new THREE.IcosahedronGeometry(rand(1.1,1.6),1),leaf));
+    lv.position.set(p.x,y+h+0.4,p.z);lv.scale.y=0.75;scene.add(lv);
+  }
+}
+
+/* 3 — The Singing Ford (water + five stepping stones) */
+let waterMesh;
+{
+  const L=LANDMARKS[2];
+  const wGeo=new THREE.PlaneGeometry(9,170,6,80);
+  wGeo.rotateX(-Math.PI/2);
+  waterMesh=new THREE.Mesh(wGeo,new THREE.MeshPhongMaterial({
+    color:0x2f7e9a,transparent:true,opacity:0.78,shininess:90,specular:0xbfdfe8}));
+  waterMesh.rotation.y=Math.atan2(STREAM_D.x,STREAM_D.z);
+  waterMesh.position.set(STREAM_C.x,WATER_Y,STREAM_C.z);
+  scene.add(waterMesh);
+  const wBase=wGeo.attributes.position.array.slice();
+  animators.push(t=>{
+    const a=wGeo.attributes.position.array;
+    for(let i=1;i<a.length;i+=3) a[i]=wBase[i]+0.07*Math.sin(t*2.2+i*0.6);
+    wGeo.attributes.position.needsUpdate=true;
+  });
+  const stone=M(0x8d8d86);
+  for(let i=0;i<5;i++){
+    const p=L.pos.clone().addScaledVector(L.tan,(i-2)*1.65)
+                 .addScaledVector(L.side,Math.sin(i*2.1)*0.5);
+    const s=shadowed(new THREE.Mesh(new THREE.CylinderGeometry(rand(0.55,0.75),0.8,0.5,9),stone));
+    s.position.set(p.x,WATER_Y-0.1,p.z);s.rotation.y=rng()*3;scene.add(s);
+  }
+  const reed=M(0x5d7a35);
+  for(let i=0;i<14;i++){
+    const along=rand(-20,20),pr=rand(4.5,7)*(rng()<0.5?-1:1);
+    const p=STREAM_C.clone().addScaledVector(STREAM_D,along)
+      .addScaledVector(new THREE.Vector3(-STREAM_D.z,0,STREAM_D.x),pr);
+    const r=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.05,rand(1.2,2),5),reed);
+    r.position.set(p.x,g0(p.x,p.z)+0.7,p.z);r.rotation.z=rand(-0.15,0.15);scene.add(r);
+  }
+}
+
+/* 4 — The Spiral Stone (the tribe's sign; repeats at Home — P7 recognition) */
+function addSpiral(center,normal,scale,dots,sphereR){
+  const up=new THREE.Vector3(0,1,0);
+  const u=new THREE.Vector3().crossVectors(normal,up).normalize();
+  const mat=new THREE.MeshLambertMaterial({color:0x803c14,
+    emissive:0xff7a2a,emissiveIntensity:1.8});
+  const inst=new THREE.InstancedMesh(new THREE.SphereGeometry(0.09*scale,6,5),mat,dots);
+  const m4=new THREE.Matrix4();
+  for(let k=0;k<dots;k++){
+    const th=k*0.42,rad=(0.1+k*0.038)*scale;
+    // with sphereR set, drape the spiral over a sphere of that radius
+    const out=sphereR?Math.sqrt(Math.max(0,sphereR*sphereR-rad*rad)):0;
+    const p=center.clone().addScaledVector(u,Math.cos(th)*rad)
+      .addScaledVector(up,Math.sin(th)*rad)
+      .addScaledVector(normal,out);
+    m4.setPosition(p);inst.setMatrixAt(k,m4);
+  }
+  inst.instanceMatrix.needsUpdate=true;scene.add(inst);
+}
+{
+  const L=LANDMARKS[3];
+  const c=L.pos.clone().addScaledVector(L.side,4.6);
+  const y=g0(c.x,c.z);
+  const rock=shadowed(new THREE.Mesh(new THREE.IcosahedronGeometry(3.1,1),
+    M(0x9c968a,{flatShading:true,emissive:0x2a2620})));
+  rock.position.set(c.x,y+1.9,c.z);rock.rotation.y=0.7;scene.add(rock);
+  // face the spiral diagonally back up the trail so walkers meet it head-on,
+  // draped over the rock's surface so no dot drowns in the facets
+  const n=L.side.clone().multiplyScalar(-0.8).addScaledVector(L.tan,-0.6).normalize();
+  addSpiral(new THREE.Vector3(c.x,y+1.9,c.z),n,0.8,40,3.3);
+}
+
+/* 5 — Glowmold Hollow (color-opponent surprise: cool glow in warm light) */
+let fireflies;
+{
+  const stemMat=M(0xd8d2bd);
+  const capMat=new THREE.MeshLambertMaterial({color:0x0e4a44,
+    emissive:0x2bd9c8,emissiveIntensity:1.7});
+  const N=22;
+  const stems=new THREE.InstancedMesh(new THREE.CylinderGeometry(0.09,0.15,0.55,7),stemMat,N);
+  const caps=new THREE.InstancedMesh(new THREE.SphereGeometry(0.34,10,8),capMat,N);
+  const m4=new THREE.Matrix4(),q=new THREE.Quaternion(),s3=new THREE.Vector3();
+  for(let i=0;i<N;i++){
+    let x,z,tries=0;
+    do{const a=rng()*6.28,r=rand(2.5,10);
+       x=MUSH.x+Math.cos(a)*r;z=MUSH.z+Math.sin(a)*r;}
+    while(pathDist(x,z)<2.0&&++tries<20);
+    const y=g0(x,z),sc=rand(0.7,1.5);
+    s3.set(sc,sc,sc);
+    m4.compose(new THREE.Vector3(x,y+0.27*sc,z),q,s3);stems.setMatrixAt(i,m4);
+    s3.set(sc,sc*0.55,sc);
+    m4.compose(new THREE.Vector3(x,y+0.55*sc,z),q,s3);caps.setMatrixAt(i,m4);
+  }
+  stems.instanceMatrix.needsUpdate=caps.instanceMatrix.needsUpdate=true;
+  scene.add(stems,caps);
+  const glow=new THREE.PointLight(0x55ffe0,16,30,2);
+  glow.position.set(MUSH.x,g0(MUSH.x,MUSH.z)+2.5,MUSH.z);scene.add(glow);
+  animators.push(t=>{glow.intensity=15+Math.sin(t*2.1)*3+Math.sin(t*5.3)*1.5;});
+  const FN=60,base=new Float32Array(FN*3),arr=new Float32Array(FN*3);
+  for(let i=0;i<FN;i++){
+    const a=rng()*6.28,r=rand(1,11);
+    base[i*3]=MUSH.x+Math.cos(a)*r;
+    base[i*3+1]=g0(MUSH.x+Math.cos(a)*r,MUSH.z+Math.sin(a)*r)+rand(0.5,3);
+    base[i*3+2]=MUSH.z+Math.sin(a)*r;
+  }
+  const fg=new THREE.BufferGeometry();
+  fg.setAttribute('position',new THREE.BufferAttribute(arr,3));
+  fireflies=new THREE.Points(fg,new THREE.PointsMaterial({color:0xaaffd5,size:0.55,
+    map:radialTex('rgba(255,255,255,1)','rgba(255,255,255,0)'),
+    transparent:true,blending:THREE.AdditiveBlending,depthWrite:false}));
+  scene.add(fireflies);
+  animators.push(t=>{
+    for(let i=0;i<FN;i++){
+      arr[i*3]=base[i*3]+Math.sin(t*0.9+i*1.7)*0.9;
+      arr[i*3+1]=base[i*3+1]+Math.sin(t*1.3+i*2.3)*0.55;
+      arr[i*3+2]=base[i*3+2]+Math.cos(t*0.7+i)*0.9;
+    }
+    fg.attributes.position.needsUpdate=true;
+  });
+}
+
+/* 6 — The Burnt Watcher (mild threat = amygdala tag) + three crows */
+{
+  const L=LANDMARKS[5];
+  const c=L.pos.clone().addScaledVector(L.side,-3.6);
+  const y=g0(c.x,c.z),char=M(0x16100a);
+  const trunk=shadowed(new THREE.Mesh(new THREE.CylinderGeometry(0.42,0.85,5.6,9),char));
+  trunk.position.set(c.x,y+2.7,c.z);trunk.rotation.z=0.07;scene.add(trunk);
+  for(const s of[-1,1]){
+    const br=shadowed(new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.38,3.4,7),char));
+    br.position.set(c.x+s*0.9,y+5.6,c.z+s*0.3);
+    br.rotation.z=s*0.65;br.rotation.x=s*0.2;scene.add(br);
+  }
+  const crack=new THREE.Mesh(new THREE.BoxGeometry(0.1,2.6,0.12),
+    new THREE.MeshLambertMaterial({color:0x000000,emissive:0xff5a18,emissiveIntensity:1.3}));
+  crack.position.set(c.x-0.35,y+3.4,c.z+0.78);scene.add(crack);
+  animators.push(t=>{crack.material.emissiveIntensity=1.1+Math.sin(t*7)*0.35;});
+  const crowMat=M(0x0c0c10);
+  const crows=[];
+  for(let i=0;i<3;i++){
+    const cr=new THREE.Mesh(new THREE.ConeGeometry(0.2,0.75,6),crowMat);
+    scene.add(cr);crows.push({m:cr,ph:i*2.1,r:4.5+i*1.3,h:8.5+i*1.2});
+  }
+  const Y=new THREE.Vector3(0,1,0),dir=new THREE.Vector3();
+  animators.push(t=>{
+    for(const cw of crows){
+      const a=t*0.9+cw.ph;
+      cw.m.position.set(c.x+Math.cos(a)*cw.r,y+cw.h+Math.sin(a*2)*0.8,c.z+Math.sin(a)*cw.r);
+      dir.set(-Math.sin(a),0.15*Math.cos(a*2),Math.cos(a)).normalize();
+      cw.m.quaternion.setFromUnitVectors(Y,dir);
+    }
+  });
+}
+
+/* 7 — The Whale's Throat (a threshold you pass THROUGH — doorway effect) */
+{
+  const L=LANDMARKS[6];
+  const y=g0(L.pos.x,L.pos.z);
+  const log=new THREE.Mesh(
+    new THREE.CylinderGeometry(2.55,2.75,13,18,1,true),
+    new THREE.MeshLambertMaterial({color:0x5a4226,side:THREE.DoubleSide}));
+  log.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),L.tan);
+  log.position.set(L.pos.x,y+1.15,L.pos.z);
+  log.castShadow=true;scene.add(log);
+  const ringMat=M(0x3e2d18);
+  for(const s of[-1,1]){
+    const ring=new THREE.Mesh(new THREE.TorusGeometry(2.65,0.22,8,22),ringMat);
+    ring.position.copy(L.pos).addScaledVector(L.tan,s*6.5);
+    ring.position.y=y+1.15;
+    ring.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),L.tan);
+    scene.add(ring);
+  }
+  const mossMat=M(0x57803f);
+  for(let i=0;i<5;i++){
+    const p=L.pos.clone().addScaledVector(L.tan,rand(-5,5));
+    const mo=new THREE.Mesh(new THREE.SphereGeometry(rand(0.5,0.9),7,6),mossMat);
+    mo.position.set(p.x+rand(-0.8,0.8),y+3.5,p.z+rand(-0.8,0.8));
+    mo.scale.y=0.35;scene.add(mo);
+  }
+}
+
+/* 8 — The Five Counters (subitizable count + one red cap each = number sense) */
+{
+  const L=LANDMARKS[7];
+  const N=5,PER=6;
+  const inst=new THREE.InstancedMesh(new THREE.SphereGeometry(1,9,7),
+    new THREE.MeshLambertMaterial({color:0xffffff}),N*PER);
+  inst.castShadow=true;
+  const m4=new THREE.Matrix4(),q=new THREE.Quaternion(),s3=new THREE.Vector3();
+  const grey=new THREE.Color(0x8f8d85),red=new THREE.Color(0xc23b22);
+  let idx=0;
+  for(let i=0;i<N;i++){
+    const p=L.pos.clone().addScaledVector(L.tan,(i-2)*3.1)
+      .addScaledVector(L.side,(i%2?3.2:-3.2));
+    let yy=g0(p.x,p.z);
+    for(let j=0;j<PER;j++){
+      const w=lerp(0.85,0.28,j/(PER-1))*rand(0.9,1.1),h=w*0.62;
+      yy+=h*0.85;
+      s3.set(w,h,w);
+      m4.compose(new THREE.Vector3(p.x+rand(-0.05,0.05),yy,p.z+rand(-0.05,0.05)),q,s3);
+      inst.setMatrixAt(idx,m4);
+      inst.setColorAt(idx,j===PER-1?red:grey);
+      yy+=h*0.8;idx++;
+    }
+  }
+  inst.instanceMatrix.needsUpdate=true;
+  if(inst.instanceColor)inst.instanceColor.needsUpdate=true;
+  scene.add(inst);
+}
+
+/* 9 — Butterfly Meadow (motion + saturated color burst) */
+const butterflies=[];
+{
+  const L=LANDMARKS[8];
+  const palette=[0xe5483f,0xf2b32e,0x8e5bd9,0xffffff,0xe87bb2,0xf07d22,0x4f9fe0];
+  for(let i=0;i<12;i++){
+    const grp=new THREE.Group();
+    const mat=new THREE.MeshLambertMaterial({color:palette[i%palette.length],
+      side:THREE.DoubleSide,emissive:0x222222});
+    const wg=new THREE.PlaneGeometry(0.5,0.3);
+    wg.rotateX(-Math.PI/2);wg.translate(0.27,0,0);
+    const wl=new THREE.Mesh(wg,mat),wr=new THREE.Mesh(wg,mat);
+    wr.scale.x=-1;grp.add(wl,wr);
+    scene.add(grp);
+    butterflies.push({g:grp,wl,wr,ph:rng()*6,cx:L.pos.x+rand(-4,4),cz:L.pos.z+rand(-4,4)});
+  }
+  animators.push(t=>{
+    for(const b of butterflies){
+      const x=b.cx+Math.sin(t*0.5+b.ph)*7,z=b.cz+Math.sin(t*0.37+b.ph*2)*7;
+      const y=g0(x,z)+1.1+Math.sin(t*1.3+b.ph)*0.5;
+      b.g.position.set(x,y,z);
+      b.g.lookAt(b.cx+Math.sin((t+0.1)*0.5+b.ph)*7,y,b.cz+Math.sin((t+0.1)*0.37+b.ph*2)*7);
+      const f=Math.abs(Math.sin(t*11+b.ph))*1.05+0.1;
+      b.wl.rotation.z=f;b.wr.rotation.z=-f;
+    }
+  });
+}
+
+/* 10 — The Three Elders (faces: fusiform face area never forgets a watcher) */
+{
+  const L=LANDMARKS[9];
+  const bandCols=[0xc06a2e,0x3a3a3a,0x2e8a8a,0xd8cdb6];
+  const heights=[5,6,4];
+  for(let i=0;i<3;i++){
+    const p=L.pos.clone().addScaledVector(L.side,3.4).addScaledVector(L.tan,(i-1)*2.6);
+    const y=g0(p.x,p.z);
+    const pole=new THREE.Group();
+    let yy=0;
+    for(let j=0;j<heights[i];j++){
+      const seg=shadowed(new THREE.Mesh(new THREE.BoxGeometry(0.85,0.72,0.85),
+        M(bandCols[(i+j)%bandCols.length])));
+      seg.position.y=yy+0.36;pole.add(seg);yy+=0.74;
+    }
+    const eyeMat=M(0xf5efe0,{emissive:0x554c33});
+    for(const s of[-1,1]){
+      const eye=new THREE.Mesh(new THREE.SphereGeometry(0.09,7,6),eyeMat);
+      eye.position.set(s*0.2,yy-0.42,0.45);pole.add(eye);
+    }
+    const mouth=new THREE.Mesh(new THREE.BoxGeometry(0.3,0.07,0.06),M(0x1a1410));
+    mouth.position.set(0,yy-0.62,0.45);pole.add(mouth);
+    pole.position.set(p.x,y,p.z);
+    pole.lookAt(L.pos.x,y,L.pos.z);
+    scene.add(pole);
+  }
+}
+
+/* 11 — Hearth Cave (P7: redundant home cues — fire, smoke, crackle, spiral) */
+let firePos,flame1,flame2,fireLight,smokes=[];
+{
+  const L=LANDMARKS[10];
+  const caveC=curve.getPoint(1.0).addScaledVector(L.tan,9.5);
+  const cy=g0(caveC.x,caveC.z);
+  const dome=shadowed(new THREE.Mesh(
+    new THREE.SphereGeometry(5,20,12,0,Math.PI*2,0,Math.PI/2),
+    M(0x7d786c,{emissive:0x36322c})));
+  dome.position.set(caveC.x,cy,caveC.z);dome.scale.set(1.15,0.8,1.15);scene.add(dome);
+  const mouthP=caveC.clone().addScaledVector(L.tan,-5.45);
+  const mouth=new THREE.Mesh(new THREE.CircleGeometry(1.9,20),
+    new THREE.MeshBasicMaterial({color:0x050403}));
+  mouth.position.set(mouthP.x,cy+1.5,mouthP.z);
+  mouth.lookAt(mouth.position.clone().addScaledVector(L.tan,-1));scene.add(mouth);
+  addSpiral(new THREE.Vector3(mouthP.x,cy+3.6,mouthP.z).addScaledVector(L.tan,-0.45),
+    L.tan.clone().multiplyScalar(-1),0.55,28);
+  firePos=curve.getPoint(1.0).addScaledVector(L.tan,2.0);
+  const fy=g0(firePos.x,firePos.z);firePos.y=fy;
+  const logMat=M(0x4a331c);
+  for(let i=0;i<4;i++){
+    const lg=new THREE.Mesh(new THREE.CylinderGeometry(0.11,0.13,1.5,6),logMat);
+    lg.position.set(firePos.x,fy+0.18,firePos.z);
+    lg.rotation.z=Math.PI/2-0.35;lg.rotation.y=i*Math.PI/4;scene.add(lg);
+  }
+  const stMat=M(0x77736a);
+  for(let i=0;i<8;i++){
+    const a=i/8*Math.PI*2;
+    const st=new THREE.Mesh(new THREE.SphereGeometry(0.22,7,6),stMat);
+    st.position.set(firePos.x+Math.cos(a)*1.1,fy+0.1,firePos.z+Math.sin(a)*1.1);
+    st.scale.y=0.6;scene.add(st);
+  }
+  flame1=new THREE.Mesh(new THREE.ConeGeometry(0.55,1.5,8),
+    new THREE.MeshBasicMaterial({color:0xff7a18,transparent:true,opacity:0.9}));
+  flame1.position.set(firePos.x,fy+0.95,firePos.z);scene.add(flame1);
+  flame2=new THREE.Mesh(new THREE.ConeGeometry(0.3,1.0,8),
+    new THREE.MeshBasicMaterial({color:0xffd34d}));
+  flame2.position.set(firePos.x,fy+0.85,firePos.z);scene.add(flame2);
+  fireLight=new THREE.PointLight(0xff8a2a,28,35,2);
+  fireLight.position.set(firePos.x,fy+1.6,firePos.z);scene.add(fireLight);
+  const smokeTex=radialTex('rgba(200,195,185,0.55)','rgba(200,195,185,0)');
+  for(let i=0;i<10;i++){
+    const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:smokeTex,
+      transparent:true,depthWrite:false,opacity:0}));
+    scene.add(sp);smokes.push({s:sp,ph:i/10});
+  }
+  animators.push((t,dt)=>{
+    const f=1+Math.sin(t*11)*0.12+Math.sin(t*23+1)*0.08;
+    flame1.scale.set(f,1+Math.sin(t*13)*0.2,f);
+    flame2.scale.set(1,1+Math.sin(t*17+2)*0.25,1);
+    flame1.rotation.y+=dt*2;flame2.rotation.y-=dt*3;
+    fireLight.intensity=26+Math.sin(t*11)*4+Math.sin(t*29)*3;
+    for(const sm of smokes){
+      const h=(t*0.13+sm.ph)%1;
+      sm.s.position.set(firePos.x+Math.sin(h*9+sm.ph*7)*0.7*h,
+        firePos.y+0.9+h*9,firePos.z+Math.cos(h*7)*0.5*h);
+      const sc=0.8+h*3.2;sm.s.scale.set(sc,sc,1);
+      sm.s.material.opacity=smoothstep(0,0.12,h)*(1-h)*0.4;
+    }
+  });
+}
+const HOME_POS=firePos.clone();
+
+/* ───────────────────────── vegetation & rocks ───────────────────────── */
+function clearOfLandmarks(x,z,r){
+  for(const l of LANDMARKS){
+    const dx=l.pos.x-x,dz=l.pos.z-z;
+    if(dx*dx+dz*dz<r*r)return false;
+  }
+  return true;
+}
+function scatter(count,minPath,test){
+  const out=[];let guard=0;
+  while(out.length<count&&guard++<count*40){
+    const x=rand(-152,152),z=rand(-152,152);
+    if(Math.hypot(x,z)>152)continue;
+    const dp=pathDist(x,z);
+    if(dp<minPath)continue;
+    const sc=streamCoords(x,z);
+    if(sc.perp<7&&Math.abs(sc.along)<95)continue;
+    if(!clearOfLandmarks(x,z,12))continue;
+    if(dp>40&&rng()>0.35)continue;          // forest hugs the trail corridor
+    if(test&&!test(x,z,dp))continue;
+    out.push([x,z]);
+  }
+  return out;
+}
+{
+  /* pines */
+  const pines=scatter(130,8);
+  const pTrunk=new THREE.InstancedMesh(new THREE.CylinderGeometry(0.22,0.34,2.4,7),
+    M(0x6b4a2a),pines.length);
+  const pCone=new THREE.InstancedMesh(new THREE.ConeGeometry(1.9,3.4,8),
+    new THREE.MeshLambertMaterial({color:0xffffff}),pines.length*3);
+  pTrunk.castShadow=pCone.castShadow=true;
+  const m4=new THREE.Matrix4(),q=new THREE.Quaternion(),s3=new THREE.Vector3(1,1,1),
+        e=new THREE.Euler(),col=new THREE.Color();
+  pines.forEach(([x,z],i)=>{
+    const y=g0(x,z),s=rand(0.8,1.5);
+    e.set(0,rng()*6.28,0);q.setFromEuler(e);
+    s3.set(s,s,s);
+    m4.compose(new THREE.Vector3(x,y+1.2*s,z),q,s3);pTrunk.setMatrixAt(i,m4);
+    col.setHSL(0.32+rng()*0.05,0.45,0.21+rng()*0.09);
+    for(let j=0;j<3;j++){
+      const k=1-j*0.26;s3.set(s*k,s*k,s*k);
+      m4.compose(new THREE.Vector3(x,y+(2.2+j*1.5)*s,z),q,s3);
+      pCone.setMatrixAt(i*3+j,m4);pCone.setColorAt(i*3+j,col);
+    }
+  });
+  pTrunk.instanceMatrix.needsUpdate=pCone.instanceMatrix.needsUpdate=true;
+  if(pCone.instanceColor)pCone.instanceColor.needsUpdate=true;
+  scene.add(pTrunk,pCone);
+
+  /* broadleaf */
+  const oaks=scatter(80,9);
+  const oTrunk=new THREE.InstancedMesh(new THREE.CylinderGeometry(0.3,0.45,2.8,7),
+    M(0x7a5a36),oaks.length);
+  const oLeaf=new THREE.InstancedMesh(new THREE.IcosahedronGeometry(2.1,1),
+    new THREE.MeshLambertMaterial({color:0xffffff}),oaks.length);
+  oTrunk.castShadow=oLeaf.castShadow=true;
+  oaks.forEach(([x,z],i)=>{
+    const y=g0(x,z),s=rand(0.8,1.4);
+    e.set(0,rng()*6.28,0);q.setFromEuler(e);
+    s3.set(s,s,s);
+    m4.compose(new THREE.Vector3(x,y+1.4*s,z),q,s3);oTrunk.setMatrixAt(i,m4);
+    s3.set(s*1.1,s*0.85,s*1.1);
+    m4.compose(new THREE.Vector3(x,y+(3.4)*s,z),q,s3);oLeaf.setMatrixAt(i,m4);
+    col.setHSL(0.24+rng()*0.09,0.5,0.3+rng()*0.1);oLeaf.setColorAt(i,col);
+  });
+  oTrunk.instanceMatrix.needsUpdate=oLeaf.instanceMatrix.needsUpdate=true;
+  if(oLeaf.instanceColor)oLeaf.instanceColor.needsUpdate=true;
+  scene.add(oTrunk,oLeaf);
+
+  /* rocks */
+  const rocks=scatter(45,5);
+  const rInst=new THREE.InstancedMesh(new THREE.DodecahedronGeometry(0.7,0),
+    M(0x8d887c),rocks.length);
+  rInst.castShadow=true;
+  rocks.forEach(([x,z],i)=>{
+    const s=rand(0.4,1.6);e.set(rng(),rng()*6,rng());q.setFromEuler(e);
+    s3.set(s,s*rand(0.6,1),s);
+    m4.compose(new THREE.Vector3(x,g0(x,z)+0.25*s,z),q,s3);rInst.setMatrixAt(i,m4);
+  });
+  rInst.instanceMatrix.needsUpdate=true;scene.add(rInst);
+
+  /* grass tufts */
+  const tufts=scatter(700,2.4,(x,z,dp)=>dp<32);
+  const gInst=new THREE.InstancedMesh(new THREE.ConeGeometry(0.05,0.55,4),
+    new THREE.MeshLambertMaterial({color:0xffffff}),tufts.length);
+  tufts.forEach(([x,z],i)=>{
+    e.set(rand(-0.2,0.2),rng()*6,rand(-0.2,0.2));q.setFromEuler(e);
+    const s=rand(0.7,1.6);s3.set(s,s,s);
+    m4.compose(new THREE.Vector3(x,g0(x,z)+0.25*s,z),q,s3);gInst.setMatrixAt(i,m4);
+    col.setHSL(0.27+rng()*0.06,0.5,0.3+rng()*0.12);gInst.setColorAt(i,col);
+  });
+  gInst.instanceMatrix.needsUpdate=true;
+  if(gInst.instanceColor)gInst.instanceColor.needsUpdate=true;
+  scene.add(gInst);
+
+  /* flowers — dense at the meadow, sparse ribbons along the path edges */
+  const fPts=[];
+  const meadow=LANDMARKS[8].pos;
+  for(let i=0;i<300;i++){
+    const a=rng()*6.28,r=rand(2,13);
+    const x=meadow.x+Math.cos(a)*r,z=meadow.z+Math.sin(a)*r;
+    if(pathDist(x,z)>1.2)fPts.push([x,z]);
+  }
+  for(let i=0;i<160;i++){
+    const u=rng();const p=curve.getPoint(u),tn=curve.getTangent(u);
+    const sd=(rng()<0.5?-1:1)*rand(3,6.5);
+    fPts.push([p.x-tn.z*sd,p.z+tn.x*sd]);
+  }
+  const stems=new THREE.InstancedMesh(new THREE.CylinderGeometry(0.02,0.035,0.5,5),
+    M(0x4d7a33),fPts.length);
+  const heads=new THREE.InstancedMesh(new THREE.SphereGeometry(0.1,6,5),
+    new THREE.MeshLambertMaterial({color:0xffffff,emissive:0x1a1a1a}),fPts.length);
+  const palette=[0xe5483f,0xf2b32e,0x8e5bd9,0xffffff,0xe87bb2,0xf07d22,0x4f9fe0];
+  q.identity();
+  fPts.forEach(([x,z],i)=>{
+    const y=g0(x,z),s=rand(0.8,1.4);
+    s3.set(1,s,1);
+    m4.compose(new THREE.Vector3(x,y+0.25*s,z),q,s3);stems.setMatrixAt(i,m4);
+    s3.set(s,s*0.7,s);
+    m4.compose(new THREE.Vector3(x,y+0.52*s,z),q,s3);heads.setMatrixAt(i,m4);
+    col.set(palette[Math.floor(rng()*palette.length)]);heads.setColorAt(i,col);
+  });
+  stems.instanceMatrix.needsUpdate=heads.instanceMatrix.needsUpdate=true;
+  if(heads.instanceColor)heads.instanceColor.needsUpdate=true;
+  scene.add(stems,heads);
+}
+
+/* ───────────────────────── player ───────────────────────── */
+const EYE=1.7,WALK=5.2,SPRINT=7.6;
+const startP=curve.getPoint(0),startT=curve.getTangent(0);
+let yaw=Math.atan2(-startT.x,-startT.z),pitch=0;
+const player=new THREE.Vector3(startP.x-startT.x*4,0,startP.z-startT.z*4);
+camera.position.set(player.x,g0(player.x,player.z)+EYE,player.z);
+
+const keys={};
+let autoWalk=false,started=false,ended=false,bob=0,stepAcc=0;
+const IS_TOUCH=matchMedia('(pointer:coarse)').matches;
+
+addEventListener('keydown',e=>{
+  if(e.code==='KeyF'&&started){autoWalk=!autoWalk;}
+  if(e.code==='KeyM'){journalEl.classList.toggle('open');}
+  keys[e.code]=true;
+});
+addEventListener('keyup',e=>keys[e.code]=false);
+
+addEventListener('mousemove',e=>{
+  if(document.pointerLockElement!==renderer.domElement)return;
+  // Chrome fires one huge spurious delta when the lock engages — discard it
+  if(Math.abs(e.movementX)>180||Math.abs(e.movementY)>180)return;
+  yaw-=e.movementX*0.0022;
+  pitch=clamp(pitch-e.movementY*0.0022,-1.25,1.25);
+});
+let lastTouch=null;
+renderer.domElement.addEventListener('touchstart',e=>{lastTouch=e.touches[0];},{passive:true});
+renderer.domElement.addEventListener('touchmove',e=>{
+  const t=e.touches[0];
+  if(lastTouch){yaw-=(t.clientX-lastTouch.clientX)*0.005;
+    pitch=clamp(pitch-(t.clientY-lastTouch.clientY)*0.005,-1.25,1.25);}
+  lastTouch=t;
+},{passive:true});
+renderer.domElement.addEventListener('touchend',()=>lastTouch=null);
+
+/* ───────────────────────── audio ─────────────────────────
+   P4: silence would leave auditory memory unused. P6: chimes ascend a scale
+   so the EAR also knows how far along the trail you are. */
+const SCALE=[262,294,330,392,440,523,587,659,784,880,1047];
+let AC=null,master,streamGain,fireGain,nextChirp=0;
+function makeNoise(ctx){
+  const b=ctx.createBuffer(1,ctx.sampleRate*2,ctx.sampleRate);
+  const d=b.getChannelData(0);
+  for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
+  return b;
+}
+function initAudio(){
+  if(AC)return;
+  try{AC=new (window.AudioContext||window.webkitAudioContext)();}catch(e){return;}
+  master=AC.createGain();master.gain.value=0.85;master.connect(AC.destination);
+  const noise=makeNoise(AC);
+  function noiseLoop(filterType,freq,q,gain){
+    const src=AC.createBufferSource();src.buffer=noise;src.loop=true;
+    const f=AC.createBiquadFilter();f.type=filterType;
+    f.frequency.value=freq;f.Q.value=q;
+    const g=AC.createGain();g.gain.value=gain;
+    src.connect(f).connect(g).connect(master);src.start();
+    return g;
+  }
+  const windG=noiseLoop('lowpass',320,0.5,0.045);
+  const lfo=AC.createOscillator(),lfoG=AC.createGain();
+  lfo.frequency.value=0.07;lfoG.gain.value=0.025;
+  lfo.connect(lfoG).connect(windG.gain);lfo.start();
+  streamGain=noiseLoop('bandpass',950,0.8,0);
+  fireGain=noiseLoop('bandpass',2600,0.6,0);
+}
+function blip(freq,dur,gain,type){
+  if(!AC)return;
+  const o=AC.createOscillator(),g=AC.createGain();
+  o.type=type||'sine';o.frequency.value=freq;
+  g.gain.setValueAtTime(0,AC.currentTime);
+  g.gain.linearRampToValueAtTime(gain,AC.currentTime+0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+dur);
+  o.connect(g).connect(master);o.start();o.stop(AC.currentTime+dur+0.05);
+  return o;
+}
+function chime(i){
+  if(!AC)return;
+  blip(SCALE[i],1.5,0.22);
+  blip(SCALE[i]*2,1.0,0.07);
+  setTimeout(()=>blip(SCALE[i]*1.5,0.9,0.05),90);
+}
+function chirp(){
+  if(!AC)return;
+  const o=blip(rand(1900,2600),0.18,0.05);
+  if(o)o.frequency.exponentialRampToValueAtTime(rand(1200,1700),AC.currentTime+0.15);
+}
+function footstep(wading){
+  if(!AC)return;
+  const src=AC.createBufferSource();src.buffer=makeNoiseBufCache();
+  const f=AC.createBiquadFilter();
+  f.type=wading?'bandpass':'lowpass';
+  f.frequency.value=wading?1400:rand(500,800);
+  const g=AC.createGain();
+  const peak=wading?0.22:0.12,dur=wading?0.22:0.08;
+  g.gain.setValueAtTime(peak,AC.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+dur);
+  src.connect(f).connect(g).connect(master);
+  src.start(AC.currentTime,rand(0,1),dur+0.05);
+}
+let _nb=null;
+function makeNoiseBufCache(){if(!_nb)_nb=makeNoise(AC);return _nb;}
+
+/* ───────────────────────── HUD / overlays ───────────────────────── */
+const $=id=>document.getElementById(id);
+const journalEl=$('journal'),bannerEl=$('banner');
+const ROMAN=['I','II','III','IV','V','VI','VII','VIII','IX','X','XI'];
+$('journalList').innerHTML=LANDMARKS.map((l,i)=>
+  `<div class="it" id="j${i}">${i+1}. ${l.name}</div>`).join('');
+$('recapList').innerHTML=LANDMARKS.map(l=>
+  `<li><b>${l.name}</b> — ${l.cue}</li>`).join('');
+let bannerTimer=0;
+function showBanner(i){
+  const l=LANDMARKS[i];
+  bannerEl.querySelector('.num').textContent=`STATION ${ROMAN[i]} OF XI`;
+  bannerEl.querySelector('.name').textContent=l.name;
+  bannerEl.querySelector('.cue').textContent=l.cue;
+  bannerEl.classList.add('show');
+  clearTimeout(bannerTimer);
+  bannerTimer=setTimeout(()=>bannerEl.classList.remove('show'),4800);
+}
+function requestLock(){
+  if(!IS_TOUCH&&renderer.domElement.requestPointerLock)
+    renderer.domElement.requestPointerLock();
+}
+$('startBtn').addEventListener('click',()=>{
+  initAudio();if(AC&&AC.state==='suspended')AC.resume();
+  $('introOverlay').classList.add('hidden');
+  started=true;if(IS_TOUCH)autoWalk=true;
+  requestLock();
+});
+$('resumeBtn').addEventListener('click',()=>{
+  $('pauseOverlay').classList.add('hidden');requestLock();
+});
+$('againBtn').addEventListener('click',()=>{
+  player.set(startP.x-startT.x*4,0,startP.z-startT.z*4);
+  yaw=Math.atan2(-startT.x,-startT.z);pitch=0;
+  LANDMARKS.forEach((l,i)=>{l.visited=false;$('j'+i).classList.remove('seen');});
+  maxProg=0;ended=false;
+  $('endOverlay').classList.add('hidden');requestLock();
+});
+$('stayBtn').addEventListener('click',()=>{
+  $('endOverlay').classList.add('hidden');requestLock();
+});
+document.addEventListener('pointerlockchange',()=>{
+  if(document.pointerLockElement!==renderer.domElement&&started&&!ended
+     &&$('endOverlay').classList.contains('hidden')
+     &&$('introOverlay').classList.contains('hidden'))
+    $('pauseOverlay').classList.remove('hidden');
+  else $('pauseOverlay').classList.add('hidden');
+});
+renderer.domElement.addEventListener('click',()=>{
+  if(started&&!IS_TOUCH&&document.pointerLockElement!==renderer.domElement)requestLock();
+});
+
+/* ───────────────────────── main loop ───────────────────────── */
+let maxProg=0;
+const clock=new THREE.Clock();
+const fwd=new THREE.Vector3(),rgt=new THREE.Vector3(),move=new THREE.Vector3();
+function animate(){
+  requestAnimationFrame(animate);
+  const dt=Math.min(clock.getDelta(),0.05),t=clock.elapsedTime;
+  const paused=!$('pauseOverlay').classList.contains('hidden')
+            || !$('introOverlay').classList.contains('hidden');
+
+  if(started&&!paused){
+    fwd.set(-Math.sin(yaw),0,-Math.cos(yaw));
+    rgt.set(Math.cos(yaw),0,-Math.sin(yaw));
+    move.set(0,0,0);
+    if(keys.KeyW||keys.ArrowUp||autoWalk)move.add(fwd);
+    if(keys.KeyS||keys.ArrowDown)move.sub(fwd);
+    if(keys.KeyA||keys.ArrowLeft)move.sub(rgt);
+    if(keys.KeyD||keys.ArrowRight)move.add(rgt);
+    const moving=move.lengthSq()>0;
+    if(moving){
+      move.normalize();
+      let spd=(keys.ShiftLeft||keys.ShiftRight)?SPRINT:WALK;
+      const sc=streamCoords(player.x,player.z);
+      const wading=sc.perp<4.5&&Math.abs(sc.along)<90
+                   &&g0(player.x,player.z)<WATER_Y;
+      if(wading)spd*=0.6;
+      player.addScaledVector(move,spd*dt);
+      player.x=clamp(player.x,-150,150);player.z=clamp(player.z,-150,150);
+      bob+=dt*spd*1.9;
+      stepAcc+=spd*dt;
+      if(stepAcc>2.3){stepAcc=0;footstep(wading);}
+    }
+    const gy=g0(player.x,player.z);
+    const targetY=gy+EYE+(moving?Math.sin(bob)*0.055:0);
+    camera.position.x=player.x;camera.position.z=player.z;
+    camera.position.y=lerp(camera.position.y,targetY,1-Math.exp(-12*dt));
+    camera.rotation.set(0,0,0);
+    camera.rotateY(yaw);camera.rotateX(pitch);
+
+    /* progress + landmark visits */
+    const idx=nearestPathIndex(player.x,player.z);
+    maxProg=Math.max(maxProg,Math.min(1,idx/PATH_N));
+    $('progressBar').style.width=(maxProg*100).toFixed(1)+'%';
+    for(let i=0;i<LANDMARKS.length;i++){
+      const l=LANDMARKS[i];
+      if(l.visited)continue;
+      const dx=l.pos.x-player.x,dz=l.pos.z-player.z;
+      if(dx*dx+dz*dz<10.5*10.5){
+        l.visited=true;$('j'+i).classList.add('seen');
+        showBanner(i);chime(i);
+      }
+    }
+    if(!ended){
+      const dh=Math.hypot(HOME_POS.x-player.x,HOME_POS.z-player.z);
+      if(dh<6.5&&maxProg>0.9){
+        ended=true;
+        document.exitPointerLock&&document.exitPointerLock();
+        $('endOverlay').classList.remove('hidden');
+        if(AC)LANDMARKS.forEach((l,i)=>setTimeout(()=>blip(SCALE[i],0.5,0.12),i*130));
+      }
+    }
+
+    /* spatial audio */
+    if(AC){
+      const sc=streamCoords(player.x,player.z);
+      const ds=Math.max(Math.abs(sc.along)>90?(Math.abs(sc.along)-90):0,sc.perp);
+      streamGain.gain.value=0.5*Math.exp(-ds/14);
+      const dh=Math.hypot(HOME_POS.x-player.x,HOME_POS.z-player.z);
+      fireGain.gain.value=0.35*Math.exp(-dh/9);
+      if(t>nextChirp){chirp();nextChirp=t+rand(3,9);}
+    }
+  }
+
+  sun.position.copy(camera.position).addScaledVector(SUNDIR,90);
+  sun.target.position.copy(camera.position);
+  sunSprite.position.copy(camera.position).addScaledVector(SUNDIR,400);
+  sky.position.copy(camera.position);
+
+  for(const a of animators)a(t,dt);
+  renderer.render(scene,camera);
+}
+animate();
+
+window.__teleport=u=>{
+  const p=curve.getPoint(u),tn=curve.getTangent(u);
+  player.set(p.x,0,p.z);yaw=Math.atan2(-tn.x,-tn.z);pitch=0;
+  camera.position.set(p.x,g0(p.x,p.z)+EYE,p.z);
+};
+window.__trail=()=>({yaw,pitch,px:player.x,pz:player.z,
+  cx:camera.position.x,cy:camera.position.y,cz:camera.position.z,
+  gy:g0(player.x,player.z),prog:maxProg,started,
+  rot:[camera.rotation.x,camera.rotation.y,camera.rotation.z]});
+
+addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+});
+</script>
+</body>
+</html>

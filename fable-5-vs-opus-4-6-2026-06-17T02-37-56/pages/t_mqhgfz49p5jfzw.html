@@ -1,0 +1,1041 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>The Vivid Trail</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: Georgia, 'Times New Roman', serif; }
+  canvas { display: block; }
+  #overlay {
+    position: absolute; inset: 0; z-index: 10;
+    display: flex; align-items: center; justify-content: center; flex-direction: column;
+    background: radial-gradient(ellipse at center, rgba(40,30,20,0.88), rgba(8,4,0,0.97));
+    color: #f0e6d0; cursor: pointer; padding: 2rem; text-align: center;
+  }
+  #overlay h1 {
+    font-size: 3.2rem; margin-bottom: 1.4rem; letter-spacing: 0.25em;
+    color: #ffd47a; text-shadow: 0 0 24px #cc8833;
+  }
+  #overlay p { font-size: 1.05rem; line-height: 1.7; max-width: 600px; margin: 0.35rem 0; opacity: 0.85; }
+  #overlay .hint { margin-top: 2.2rem; font-size: 0.9rem; opacity: 0.55; font-style: italic; letter-spacing: 0.08em; }
+  #hud {
+    position: absolute; bottom: 14px; left: 14px; z-index: 5;
+    color: #fff; font-size: 0.8rem; opacity: 0.45; pointer-events: none;
+    text-shadow: 0 0 4px #000; font-style: italic;
+  }
+  #endscreen {
+    position: absolute; inset: 0; z-index: 20; display: none;
+    align-items: center; justify-content: center; flex-direction: column;
+    background: radial-gradient(ellipse at center, rgba(255,220,150,0.25), rgba(0,0,0,0.97));
+    color: #ffe2a0; padding: 2rem; text-align: center;
+  }
+  #endscreen.show { display: flex; animation: fadeIn 3.5s ease-in; }
+  #endscreen h1 {
+    font-size: 2.6rem; margin-bottom: 1.6rem; letter-spacing: 0.18em;
+    color: #ffd47a; text-shadow: 0 0 30px #ff9933;
+  }
+  #endscreen p { font-size: 1.05rem; max-width: 620px; line-height: 1.8; margin: 0.4rem 0; }
+  #endscreen .small { font-size: 0.85rem; opacity: 0.7; margin-top: 2rem; font-style: italic; letter-spacing: 0.06em; }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  #crosshair {
+    position: absolute; left: 50%; top: 50%; width: 4px; height: 4px;
+    background: rgba(255,255,255,0.35); border-radius: 50%;
+    transform: translate(-50%, -50%); pointer-events: none; z-index: 4;
+  }
+</style>
+</head>
+<body>
+
+<div id="overlay">
+  <h1>THE VIVID TRAIL</h1>
+  <p>Before maps, before words on paper, the path home was held in the body.</p>
+  <p>Each rock, each shape, each turn &mdash; a knot of memory.</p>
+  <p>Walk slowly. Look around. Carve this path into your mind.</p>
+  <p class="hint">[ click to begin &middot; WASD to walk &middot; mouse to look ]</p>
+</div>
+
+<div id="hud">walk to the sacred grove</div>
+
+<div id="endscreen">
+  <h1>YOU HAVE ARRIVED</h1>
+  <p>Close your eyes.</p>
+  <p>The standing stones. The red mushrooms. The bones above. The blue glow.</p>
+  <p>The stream. The cairn. The watcher. The black tree. The skulls. The grove.</p>
+  <p>Can you walk it again, in your mind?</p>
+  <p class="small">[ press R to walk again ]</p>
+</div>
+
+<div id="crosshair"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+
+// ============================================================
+// RENDERER, SCENE, CAMERA
+// ============================================================
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xa6cae0);
+scene.fog = new THREE.Fog(0xb4d0e0, 25, 110);
+
+const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.05, 500);
+camera.position.set(0, 1.7, 5);
+
+// ============================================================
+// LIGHTING
+// ============================================================
+const sun = new THREE.DirectionalLight(0xfff0d0, 1.5);
+sun.position.set(40, 70, 30);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.left = -60; sun.shadow.camera.right = 60;
+sun.shadow.camera.top = 60; sun.shadow.camera.bottom = -60;
+sun.shadow.camera.near = 1; sun.shadow.camera.far = 220;
+sun.shadow.bias = -0.0005;
+scene.add(sun);
+scene.add(new THREE.HemisphereLight(0xb8d8ff, 0x4a3520, 0.55));
+scene.add(new THREE.AmbientLight(0xffffff, 0.18));
+
+// ============================================================
+// PATH (Catmull-Rom curve through landmarks)
+// ============================================================
+const pathPoints = [
+  new THREE.Vector3(0, 0, 8),
+  new THREE.Vector3(0, 0, 0),
+  new THREE.Vector3(2, 0, -10),
+  new THREE.Vector3(-2, 0, -22),
+  new THREE.Vector3(5, 0, -36),
+  new THREE.Vector3(8, 0, -52),
+  new THREE.Vector3(3, 0, -68),
+  new THREE.Vector3(-5, 0, -82),
+  new THREE.Vector3(-10, 0, -98),
+  new THREE.Vector3(-4, 0, -118),
+  new THREE.Vector3(3, 0, -135),
+  new THREE.Vector3(-2, 0, -155),
+  new THREE.Vector3(0, 0, -175),
+  new THREE.Vector3(0, 0, -185),
+];
+const curve = new THREE.CatmullRomCurve3(pathPoints, false, 'catmullrom', 0.5);
+
+// ============================================================
+// GROUND (gently undulating)
+// ============================================================
+function buildGround() {
+  const geo = new THREE.PlaneGeometry(420, 420, 90, 90);
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const h = Math.sin(x * 0.05) * Math.cos(y * 0.04) * 0.45 +
+              Math.sin(x * 0.18 + 1.5) * 0.15 +
+              Math.cos(y * 0.21) * 0.1;
+    pos.setZ(i, h);
+  }
+  geo.computeVertexNormals();
+  const mat = new THREE.MeshLambertMaterial({ color: 0x4f7d3a });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.rotation.x = -Math.PI/2;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+scene.add(buildGround());
+
+// ============================================================
+// TRAIL RIBBON
+// ============================================================
+function buildTrail() {
+  const samples = 320;
+  const positions = [];
+  const indices = [];
+  const width = 1.7;
+  for (let i = 0; i <= samples; i++) {
+    const t = i / samples;
+    const p = curve.getPointAt(t);
+    const tan = curve.getTangentAt(t);
+    const right = new THREE.Vector3(-tan.z, 0, tan.x).normalize();
+    const l = p.clone().add(right.clone().multiplyScalar(-width/2));
+    const r = p.clone().add(right.clone().multiplyScalar(width/2));
+    positions.push(l.x, 0.05, l.z, r.x, 0.05, r.z);
+    if (i < samples) {
+      const a = i*2, b = i*2+1, c = i*2+2, d = i*2+3;
+      indices.push(a, c, b, b, c, d);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  const mat = new THREE.MeshLambertMaterial({ color: 0x7d5e3c });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.receiveShadow = true;
+  return mesh;
+}
+scene.add(buildTrail());
+
+// ============================================================
+// PLACEMENT HELPER
+// faceMode 'forward': group's -Z aligns with trail tangent
+// faceMode 'inward': group's -Z faces trail center (for side landmarks)
+// ============================================================
+function placeAt(t, group, sideOffset = 0, faceMode = 'forward') {
+  const pos = curve.getPointAt(t);
+  const tan = curve.getTangentAt(t);
+  const right = new THREE.Vector3(-tan.z, 0, tan.x).normalize();
+  group.position.copy(pos).add(right.clone().multiplyScalar(sideOffset));
+  if (faceMode === 'forward') {
+    group.lookAt(pos.x + tan.x, group.position.y, pos.z + tan.z);
+  } else {
+    group.lookAt(pos.x, group.position.y, pos.z);
+  }
+  scene.add(group);
+}
+
+// ============================================================
+// LANDMARK 1 — TWIN STANDING STONES (gateway)
+// ============================================================
+function landmark_stones() {
+  const g = new THREE.Group();
+  const stoneMat = new THREE.MeshLambertMaterial({ color: 0xa8a4a0 });
+  for (let i = 0; i < 2; i++) {
+    const s = i === 0 ? -1 : 1;
+    const stone = new THREE.Mesh(
+      new THREE.BoxGeometry(0.8 + Math.random()*0.3, 4 + Math.random()*0.6, 0.55),
+      stoneMat
+    );
+    stone.position.set(s * 2.3, 2 + Math.random()*0.2, 0);
+    stone.rotation.z = -s * (0.04 + Math.random() * 0.06);
+    stone.rotation.y = (Math.random()-0.5) * 0.2;
+    stone.castShadow = true;
+    g.add(stone);
+  }
+  // capstone optional — skip for clearer silhouette
+  // small base stones
+  for (let i = 0; i < 8; i++) {
+    const base = new THREE.Mesh(
+      new THREE.DodecahedronGeometry(0.25 + Math.random() * 0.3),
+      stoneMat
+    );
+    const ang = Math.random() * Math.PI * 2;
+    base.position.set(Math.cos(ang) * 3 * (0.6 + Math.random()*0.6), 0.2, Math.sin(ang) * 1.6);
+    base.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, 0);
+    g.add(base);
+  }
+  // a single white quartz at the threshold
+  const quartz = new THREE.Mesh(
+    new THREE.OctahedronGeometry(0.35),
+    new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.1, metalness: 0.2, roughness: 0.3 })
+  );
+  quartz.position.set(0, 0.35, 0);
+  g.add(quartz);
+  return g;
+}
+
+// ============================================================
+// LANDMARK 2 — RED MUSHROOM GROVE (color burst)
+// ============================================================
+function landmark_mushrooms() {
+  const g = new THREE.Group();
+  const stemMat = new THREE.MeshLambertMaterial({ color: 0xfaf2dc });
+  const capMat = new THREE.MeshLambertMaterial({ color: 0xd02a22 });
+  const spotMat = new THREE.MeshBasicMaterial({ color: 0xfffaf0 });
+  for (let i = 0; i < 16; i++) {
+    const m = new THREE.Group();
+    const scale = 0.5 + Math.random() * 1.7;
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.3, 1.6), stemMat);
+    stem.position.y = 0.8;
+    m.add(stem);
+    const cap = new THREE.Mesh(
+      new THREE.SphereGeometry(0.9, 18, 10, 0, Math.PI*2, 0, Math.PI/2),
+      capMat
+    );
+    cap.position.y = 1.6;
+    cap.scale.y = 0.55;
+    cap.castShadow = true;
+    m.add(cap);
+    for (let s = 0; s < 7; s++) {
+      const spot = new THREE.Mesh(new THREE.CircleGeometry(0.09 + Math.random()*0.06, 8), spotMat);
+      const ang = Math.random() * Math.PI * 2;
+      const ph = Math.random() * Math.PI/2.2;
+      const r = Math.cos(ph) * 0.85;
+      spot.position.set(Math.cos(ang) * r, 1.6 + Math.sin(ph) * 0.42, Math.sin(ang) * r);
+      spot.lookAt(spot.position.x * 3, spot.position.y * 1.5, spot.position.z * 3);
+      m.add(spot);
+    }
+    const ang = Math.random() * Math.PI * 2;
+    const r = 2.2 + Math.random() * 4;
+    m.position.set(Math.cos(ang) * r, 0, Math.sin(ang) * r);
+    m.scale.setScalar(scale);
+    m.rotation.y = Math.random() * Math.PI;
+    g.add(m);
+  }
+  return g;
+}
+
+// ============================================================
+// LANDMARK 3 — MAMMOTH BONE ARCH (walk through)
+// ============================================================
+function landmark_ribcage() {
+  const g = new THREE.Group();
+  const boneMat = new THREE.MeshLambertMaterial({ color: 0xeee0c0 });
+  // spine along Z (which becomes trail direction after lookAt 'forward')
+  const spine = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 7, 8), boneMat);
+  spine.rotation.x = Math.PI/2;
+  spine.position.y = 4.2;
+  spine.castShadow = true;
+  g.add(spine);
+  // ribs arching across X (perpendicular to trail)
+  for (let i = -2.5; i <= 2.5; i += 1) {
+    const rib = new THREE.Mesh(
+      new THREE.TorusGeometry(2.4, 0.16, 8, 28, Math.PI),
+      boneMat
+    );
+    rib.position.set(0, 4.2, i * 1.2);
+    rib.castShadow = true;
+    g.add(rib);
+  }
+  // skull at far end (in -tan direction = direction of travel)
+  const skullGroup = new THREE.Group();
+  const skull = new THREE.Mesh(new THREE.SphereGeometry(1.0, 18, 14), boneMat);
+  skull.scale.set(1.3, 1.0, 1.5);
+  skullGroup.add(skull);
+  for (let s of [-1, 1]) {
+    const socket = new THREE.Mesh(
+      new THREE.SphereGeometry(0.22, 10, 8),
+      new THREE.MeshBasicMaterial({ color: 0x000000 })
+    );
+    socket.position.set(s * 0.42, 0.22, -1.0);
+    skullGroup.add(socket);
+  }
+  // tusks
+  for (let s of [-1, 1]) {
+    const tusk = new THREE.Mesh(new THREE.ConeGeometry(0.13, 1.9, 8), boneMat);
+    tusk.position.set(s * 0.55, -0.5, -1.4);
+    tusk.rotation.x = -Math.PI/2 + 0.4;
+    tusk.rotation.z = s * 0.18;
+    skullGroup.add(tusk);
+  }
+  skullGroup.position.set(0, 4.2, -4.0);
+  skullGroup.castShadow = true;
+  g.add(skullGroup);
+  // four leg bones flanking the trail
+  for (let s of [-1, 1]) {
+    for (let z of [-2.0, 2.0]) {
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.28, 4.2), boneMat);
+      leg.position.set(s * 2.0, 2.1, z);
+      leg.rotation.z = s * 0.05;
+      leg.castShadow = true;
+      g.add(leg);
+    }
+  }
+  return g;
+}
+
+// ============================================================
+// LANDMARK 4 — GLOWING BLUE CRYSTAL CLUSTER
+// ============================================================
+function landmark_crystals() {
+  const g = new THREE.Group();
+  const base = new THREE.Mesh(
+    new THREE.DodecahedronGeometry(2.2),
+    new THREE.MeshLambertMaterial({ color: 0x2c3744 })
+  );
+  base.position.y = 0.4;
+  base.scale.y = 0.5;
+  base.castShadow = true;
+  g.add(base);
+  for (let i = 0; i < 22; i++) {
+    const h = 0.6 + Math.random() * 2.8;
+    const crystal = new THREE.Mesh(
+      new THREE.ConeGeometry(0.18 + Math.random() * 0.22, h, 5 + Math.floor(Math.random() * 3)),
+      new THREE.MeshStandardMaterial({
+        color: 0x88ddff,
+        emissive: 0x3399ff,
+        emissiveIntensity: 0.85,
+        metalness: 0.4,
+        roughness: 0.15,
+        transparent: true,
+        opacity: 0.88
+      })
+    );
+    const ang = Math.random() * Math.PI * 2;
+    const r = Math.random() * 1.9;
+    crystal.position.set(Math.cos(ang) * r, h/2 + 0.4, Math.sin(ang) * r);
+    crystal.rotation.set((Math.random()-0.5)*0.4, Math.random()*Math.PI, (Math.random()-0.5)*0.4);
+    g.add(crystal);
+  }
+  const light = new THREE.PointLight(0x66bbff, 5, 22, 1.4);
+  light.position.y = 2.5;
+  g.add(light);
+  return g;
+}
+
+// ============================================================
+// LANDMARK 5 — STREAM WITH STEPPING STONES
+// ============================================================
+function landmark_stream() {
+  const g = new THREE.Group();
+  const water = new THREE.Mesh(
+    new THREE.PlaneGeometry(22, 3.4),
+    new THREE.MeshStandardMaterial({
+      color: 0x4499dd,
+      transparent: true,
+      opacity: 0.78,
+      metalness: 0.7,
+      roughness: 0.18,
+      emissive: 0x113355,
+      emissiveIntensity: 0.25
+    })
+  );
+  water.rotation.x = -Math.PI/2;
+  water.position.y = 0.04;
+  g.add(water);
+  // bank stones
+  for (let i = 0; i < 16; i++) {
+    const stone = new THREE.Mesh(
+      new THREE.DodecahedronGeometry(0.3 + Math.random() * 0.35),
+      new THREE.MeshLambertMaterial({ color: 0x6b6055 })
+    );
+    const x = (Math.random() - 0.5) * 14;
+    if (Math.abs(x) < 1.5) continue;
+    const z = (Math.random() > 0.5 ? 1.7 : -1.7) + (Math.random() - 0.5) * 0.4;
+    stone.position.set(x, 0.22, z);
+    stone.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
+    g.add(stone);
+  }
+  // stepping stones across the trail
+  for (let i = -1; i <= 1; i++) {
+    const stone = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.55, 0.6, 0.3, 10),
+      new THREE.MeshLambertMaterial({ color: 0x8a8278 })
+    );
+    stone.position.set(0, 0.18, i * 0.75);
+    stone.castShadow = true;
+    g.add(stone);
+  }
+  // reeds at edges
+  for (let i = 0; i < 26; i++) {
+    const reed = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.025, 0.025, 1 + Math.random() * 0.6),
+      new THREE.MeshLambertMaterial({ color: 0x5a7a30 })
+    );
+    const x = (Math.random() - 0.5) * 16;
+    if (Math.abs(x) < 4) continue;
+    const z = (Math.random() - 0.5) * 2.4;
+    reed.position.set(x, 0.6, z);
+    reed.rotation.z = (Math.random() - 0.5) * 0.25;
+    g.add(reed);
+  }
+  // a few water lily-style discs
+  for (let i = 0; i < 4; i++) {
+    const lily = new THREE.Mesh(
+      new THREE.CircleGeometry(0.4, 8),
+      new THREE.MeshLambertMaterial({ color: 0x3a6630, side: THREE.DoubleSide })
+    );
+    lily.rotation.x = -Math.PI/2;
+    const x = (Math.random() > 0.5 ? 1 : -1) * (3 + Math.random() * 4);
+    lily.position.set(x, 0.07, (Math.random()-0.5)*1.8);
+    g.add(lily);
+    const flower = new THREE.Mesh(
+      new THREE.SphereGeometry(0.12, 8, 6),
+      new THREE.MeshBasicMaterial({ color: 0xffaadd })
+    );
+    flower.position.copy(lily.position);
+    flower.position.y += 0.05;
+    g.add(flower);
+  }
+  return g;
+}
+
+// ============================================================
+// LANDMARK 6 — SPIRAL STONE CAIRN
+// ============================================================
+function landmark_cairn() {
+  const g = new THREE.Group();
+  for (let i = 0; i < 15; i++) {
+    const r = 0.75 - i * 0.04;
+    const stone = new THREE.Mesh(
+      new THREE.SphereGeometry(r, 12, 8),
+      new THREE.MeshLambertMaterial({ color: 0x807060 })
+    );
+    stone.position.set(
+      Math.cos(i * 0.55) * 0.13,
+      i * 0.45 + 0.42,
+      Math.sin(i * 0.55) * 0.13
+    );
+    stone.scale.y = 0.55 + Math.random() * 0.1;
+    stone.rotation.y = Math.random() * Math.PI;
+    stone.castShadow = true;
+    g.add(stone);
+  }
+  // ring of small stones around base
+  for (let i = 0; i < 14; i++) {
+    const ang = (i / 14) * Math.PI * 2;
+    const stone = new THREE.Mesh(
+      new THREE.DodecahedronGeometry(0.22),
+      new THREE.MeshLambertMaterial({ color: 0x6b5e50 })
+    );
+    stone.position.set(Math.cos(ang) * 1.6, 0.18, Math.sin(ang) * 1.6);
+    stone.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
+    g.add(stone);
+  }
+  // tied feather/stick on top
+  const stick = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.04, 0.04, 0.6),
+    new THREE.MeshLambertMaterial({ color: 0x5a3a20 })
+  );
+  stick.position.y = 7.0;
+  stick.rotation.z = 0.4;
+  g.add(stick);
+  return g;
+}
+
+// ============================================================
+// LANDMARK 7 — WATCHER BOULDER (carved face, glowing eyes)
+// Built with face on -Z so 'inward' faceMode points it at the trail.
+// ============================================================
+function landmark_watcher() {
+  const g = new THREE.Group();
+  const boulder = new THREE.Mesh(
+    new THREE.SphereGeometry(2.3, 22, 16),
+    new THREE.MeshLambertMaterial({ color: 0x5a4f44 })
+  );
+  boulder.position.set(0, 1.7, 0);
+  boulder.scale.set(1.0, 1.35, 1.0);
+  boulder.castShadow = true;
+  g.add(boulder);
+  // eye sockets (face on -Z side)
+  for (let s of [-1, 1]) {
+    const socket = new THREE.Mesh(
+      new THREE.SphereGeometry(0.36, 14, 10),
+      new THREE.MeshBasicMaterial({ color: 0x000000 })
+    );
+    socket.position.set(s * 0.62, 2.15, -1.92);
+    g.add(socket);
+    const pupil = new THREE.Mesh(
+      new THREE.SphereGeometry(0.13, 10, 8),
+      new THREE.MeshBasicMaterial({ color: 0xff4422 })
+    );
+    pupil.position.set(s * 0.62, 2.15, -2.18);
+    g.add(pupil);
+  }
+  // brow ridge
+  const brow = new THREE.Mesh(
+    new THREE.BoxGeometry(1.7, 0.18, 0.25),
+    new THREE.MeshLambertMaterial({ color: 0x3d342c })
+  );
+  brow.position.set(0, 2.55, -1.95);
+  g.add(brow);
+  // mouth — jagged teeth
+  for (let i = 0; i < 5; i++) {
+    const tooth = new THREE.Mesh(
+      new THREE.ConeGeometry(0.09, 0.22, 4),
+      new THREE.MeshBasicMaterial({ color: 0xeee0c0 })
+    );
+    tooth.position.set((i - 2) * 0.2, 1.05, -2.0);
+    tooth.rotation.x = Math.PI;
+    g.add(tooth);
+  }
+  const mouthBack = new THREE.Mesh(
+    new THREE.BoxGeometry(1.1, 0.2, 0.3),
+    new THREE.MeshBasicMaterial({ color: 0x000000 })
+  );
+  mouthBack.position.set(0, 1.2, -1.92);
+  g.add(mouthBack);
+  // light from eyes
+  const eyeLight = new THREE.PointLight(0xff5522, 1.2, 9, 1.5);
+  eyeLight.position.set(0, 2.15, -2.6);
+  g.add(eyeLight);
+  return g;
+}
+
+// ============================================================
+// LANDMARK 8 — LIGHTNING-STRUCK TREE (split, scorched)
+// ============================================================
+function landmark_blacktree() {
+  const g = new THREE.Group();
+  const blackMat = new THREE.MeshLambertMaterial({ color: 0x1a1410 });
+  for (let i = 0; i < 2; i++) {
+    const sgn = i === 0 ? -1 : 1;
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.5, 6.5), blackMat);
+    trunk.position.set(sgn * 0.32, 3.2, 0);
+    trunk.rotation.z = sgn * 0.42;
+    trunk.castShadow = true;
+    g.add(trunk);
+    for (let b = 0; b < 6; b++) {
+      const br = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.04, 0.11, 1.4 + Math.random() * 1.3),
+        blackMat
+      );
+      br.position.set(sgn * 0.8, 4.2 + b * 0.4, (Math.random()-0.5)*0.6);
+      br.rotation.z = sgn * (0.85 + Math.random() * 0.6);
+      br.rotation.y = Math.random() * Math.PI;
+      g.add(br);
+    }
+  }
+  // jagged crack of light at the split
+  const crackMat = new THREE.MeshBasicMaterial({ color: 0xfff5cc });
+  for (let s of [-1, 1]) {
+    const crack = new THREE.Mesh(new THREE.PlaneGeometry(0.15, 5), crackMat);
+    crack.position.set(0, 3.3, s * 0.32);
+    g.add(crack);
+  }
+  // scorched ground
+  const scorch = new THREE.Mesh(
+    new THREE.CircleGeometry(3.6, 28),
+    new THREE.MeshLambertMaterial({ color: 0x1f1815 })
+  );
+  scorch.rotation.x = -Math.PI/2;
+  scorch.position.y = 0.06;
+  g.add(scorch);
+  // ash bones — thin black sticks scattered
+  for (let i = 0; i < 7; i++) {
+    const stick = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.04, 0.04, 0.6 + Math.random() * 0.6),
+      blackMat
+    );
+    const ang = Math.random() * Math.PI * 2;
+    const r = 1.5 + Math.random() * 1.6;
+    stick.position.set(Math.cos(ang) * r, 0.1, Math.sin(ang) * r);
+    stick.rotation.z = Math.PI/2;
+    stick.rotation.y = Math.random() * Math.PI;
+    g.add(stick);
+  }
+  return g;
+}
+
+// ============================================================
+// LANDMARK 9 — SKULL TOTEM (three skulls on a pole, feathers)
+// ============================================================
+function landmark_totem() {
+  const g = new THREE.Group();
+  const pole = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.13, 0.16, 4.8),
+    new THREE.MeshLambertMaterial({ color: 0x5a3a1a })
+  );
+  pole.position.y = 2.4;
+  pole.castShadow = true;
+  g.add(pole);
+  for (let i = 0; i < 3; i++) {
+    const skull = new THREE.Mesh(
+      new THREE.SphereGeometry(0.46, 16, 12),
+      new THREE.MeshLambertMaterial({ color: 0xeee5c8 })
+    );
+    skull.position.y = 1.5 + i * 1.15;
+    skull.scale.set(1.0, 1.1, 1.25);
+    skull.castShadow = true;
+    g.add(skull);
+    // jaw
+    const jaw = new THREE.Mesh(
+      new THREE.BoxGeometry(0.55, 0.18, 0.32),
+      new THREE.MeshLambertMaterial({ color: 0xeee5c8 })
+    );
+    jaw.position.set(0, 1.18 + i * 1.15, 0.3);
+    g.add(jaw);
+    // eye sockets
+    for (let s of [-1, 1]) {
+      const e = new THREE.Mesh(
+        new THREE.SphereGeometry(0.12, 8, 6),
+        new THREE.MeshBasicMaterial({ color: 0x000000 })
+      );
+      e.position.set(s * 0.18, 1.55 + i * 1.15, 0.4);
+      g.add(e);
+    }
+  }
+  // red and ochre feathers
+  for (let i = 0; i < 8; i++) {
+    const f = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.13, 0.75),
+      new THREE.MeshLambertMaterial({
+        color: i % 2 === 0 ? 0xcc2222 : 0xddaa22,
+        side: THREE.DoubleSide
+      })
+    );
+    const ang = (i / 8) * Math.PI * 2;
+    f.position.set(Math.cos(ang) * 0.28, 5.05, Math.sin(ang) * 0.28);
+    f.rotation.y = ang;
+    f.rotation.z = 0.2;
+    g.add(f);
+  }
+  // small carved sticks at base
+  for (let i = 0; i < 6; i++) {
+    const stick = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.04, 0.05, 0.7),
+      new THREE.MeshLambertMaterial({ color: 0x8a6a3a })
+    );
+    const ang = (i / 6) * Math.PI * 2;
+    stick.position.set(Math.cos(ang) * 0.55, 0.36, Math.sin(ang) * 0.55);
+    stick.rotation.z = (Math.random() - 0.5) * 0.4;
+    g.add(stick);
+  }
+  // a scatter of bones on the ground
+  for (let i = 0; i < 5; i++) {
+    const bone = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.05, 0.05, 0.5),
+      new THREE.MeshLambertMaterial({ color: 0xdcd0b0 })
+    );
+    const ang = Math.random() * Math.PI * 2;
+    const r = 1.0 + Math.random() * 0.9;
+    bone.position.set(Math.cos(ang) * r, 0.06, Math.sin(ang) * r);
+    bone.rotation.z = Math.PI / 2;
+    bone.rotation.y = Math.random() * Math.PI;
+    g.add(bone);
+  }
+  return g;
+}
+
+// ============================================================
+// LANDMARK 10 — SACRED GROVE (END, golden light beam, altar)
+// ============================================================
+function landmark_grove() {
+  const g = new THREE.Group();
+  const trunkMat = new THREE.MeshLambertMaterial({ color: 0xf2ecdb });
+  const stripeMat = new THREE.MeshBasicMaterial({ color: 0x222222 });
+  const leafMat = new THREE.MeshLambertMaterial({
+    color: 0xffe066,
+    emissive: 0x554422,
+    emissiveIntensity: 0.35
+  });
+  for (let i = 0; i < 9; i++) {
+    const ang = (i / 9) * Math.PI * 2;
+    const r = 5.5;
+    const cx = Math.cos(ang) * r;
+    const cz = Math.sin(ang) * r;
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.26, 6.5), trunkMat);
+    trunk.position.set(cx, 3.3, cz);
+    trunk.castShadow = true;
+    g.add(trunk);
+    for (let s = 0; s < 5; s++) {
+      const stripe = new THREE.Mesh(new THREE.TorusGeometry(0.21, 0.04, 6, 12), stripeMat);
+      stripe.position.set(cx, 1 + s * 1.3, cz);
+      stripe.rotation.x = Math.PI/2;
+      g.add(stripe);
+    }
+    const leaves = new THREE.Mesh(new THREE.SphereGeometry(2.0, 16, 12), leafMat);
+    leaves.position.set(cx, 7, cz);
+    leaves.scale.y = 0.85;
+    g.add(leaves);
+  }
+  // altar
+  const altar = new THREE.Mesh(
+    new THREE.CylinderGeometry(1.0, 1.25, 1.1, 10),
+    new THREE.MeshLambertMaterial({ color: 0xc8b888 })
+  );
+  altar.position.y = 0.55;
+  altar.castShadow = true;
+  g.add(altar);
+  // glowing orb
+  const orb = new THREE.Mesh(
+    new THREE.SphereGeometry(0.4, 20, 16),
+    new THREE.MeshBasicMaterial({ color: 0xfff4cc })
+  );
+  orb.position.y = 1.6;
+  g.add(orb);
+  // light beam shaft
+  const beam = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.6, 1.8, 35, 18, 1, true),
+    new THREE.MeshBasicMaterial({
+      color: 0xfff5cc,
+      transparent: true,
+      opacity: 0.16,
+      side: THREE.DoubleSide,
+      depthWrite: false
+    })
+  );
+  beam.position.y = 18;
+  g.add(beam);
+  const innerBeam = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.25, 0.7, 35, 18, 1, true),
+    new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.22,
+      side: THREE.DoubleSide,
+      depthWrite: false
+    })
+  );
+  innerBeam.position.y = 18;
+  g.add(innerBeam);
+  // golden point light
+  const pl = new THREE.PointLight(0xfff5aa, 6, 28, 1.4);
+  pl.position.y = 2.5;
+  g.add(pl);
+  // petal scatter
+  for (let i = 0; i < 70; i++) {
+    const c = i % 3 === 0 ? 0xffaaaa : i % 3 === 1 ? 0xffddaa : 0xffffff;
+    const petal = new THREE.Mesh(
+      new THREE.CircleGeometry(0.1 + Math.random() * 0.06, 5),
+      new THREE.MeshBasicMaterial({ color: c, side: THREE.DoubleSide })
+    );
+    const ang = Math.random() * Math.PI * 2;
+    const r = Math.random() * 4.5;
+    petal.position.set(Math.cos(ang) * r, 0.07, Math.sin(ang) * r);
+    petal.rotation.x = -Math.PI/2;
+    petal.rotation.z = Math.random() * Math.PI;
+    g.add(petal);
+  }
+  return g;
+}
+
+// ============================================================
+// PLACE LANDMARKS
+// ============================================================
+placeAt(0.03, landmark_stones());
+placeAt(0.11, landmark_mushrooms());
+placeAt(0.20, landmark_ribcage());
+placeAt(0.30, landmark_crystals(), 4);
+placeAt(0.40, landmark_stream());
+placeAt(0.50, landmark_cairn(), -3.8);
+placeAt(0.60, landmark_watcher(), 4.2, 'inward');
+placeAt(0.70, landmark_blacktree(), -4.8);
+placeAt(0.80, landmark_totem(), 3.2);
+placeAt(0.93, landmark_grove());
+
+// ============================================================
+// BACKGROUND TREES — scattered, kept off the path
+// ============================================================
+function makeBgTree() {
+  const g = new THREE.Group();
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.2, 0.38, 4 + Math.random() * 2.5),
+    new THREE.MeshLambertMaterial({ color: 0x4a3018 })
+  );
+  trunk.position.y = 2.5;
+  g.add(trunk);
+  const leaves = new THREE.Mesh(
+    new THREE.SphereGeometry(1.5 + Math.random() * 0.9, 12, 9),
+    new THREE.MeshLambertMaterial({
+      color: new THREE.Color().setHSL(0.22 + Math.random() * 0.12, 0.55, 0.28 + Math.random() * 0.15)
+    })
+  );
+  leaves.position.y = 5.2;
+  leaves.scale.y = 0.85 + Math.random() * 0.2;
+  g.add(leaves);
+  return g;
+}
+const curveSamples = [];
+for (let s = 0; s <= 60; s++) curveSamples.push(curve.getPointAt(s/60));
+function distToPath(x, z) {
+  let m = Infinity;
+  for (const p of curveSamples) {
+    const dx = p.x - x, dz = p.z - z;
+    const d = dx*dx + dz*dz;
+    if (d < m) m = d;
+  }
+  return Math.sqrt(m);
+}
+for (let i = 0; i < 110; i++) {
+  const x = (Math.random() - 0.5) * 90;
+  const z = -Math.random() * 210 + 12;
+  if (distToPath(x, z) < 7) continue;
+  const tree = makeBgTree();
+  tree.position.set(x, 0, z);
+  scene.add(tree);
+}
+
+// ============================================================
+// GRASS TUFTS along the path edges
+// ============================================================
+const grassMat = new THREE.MeshLambertMaterial({ color: 0x6a8a3a });
+for (let i = 0; i < 220; i++) {
+  const tuft = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.55, 4), grassMat);
+  const t = Math.random();
+  const cp = curve.getPointAt(t);
+  const tan = curve.getTangentAt(t);
+  const right = new THREE.Vector3(-tan.z, 0, tan.x);
+  const offset = (Math.random() > 0.5 ? 1 : -1) * (1.1 + Math.random() * 4);
+  tuft.position.copy(cp).add(right.multiplyScalar(offset));
+  tuft.position.y = 0.27;
+  scene.add(tuft);
+}
+
+// ============================================================
+// WILDFLOWERS scattered along the path
+// ============================================================
+const flowerColors = [0xff5577, 0xffee44, 0x9966ff, 0xffffff, 0xff8833, 0xddaaff];
+for (let i = 0; i < 180; i++) {
+  const flower = new THREE.Mesh(
+    new THREE.SphereGeometry(0.1, 6, 5),
+    new THREE.MeshLambertMaterial({
+      color: flowerColors[Math.floor(Math.random() * flowerColors.length)],
+      emissive: 0x111100,
+      emissiveIntensity: 0.15
+    })
+  );
+  const t = Math.random();
+  const cp = curve.getPointAt(t);
+  const tan = curve.getTangentAt(t);
+  const right = new THREE.Vector3(-tan.z, 0, tan.x);
+  const offset = (Math.random() > 0.5 ? 1 : -1) * (1.2 + Math.random() * 5);
+  flower.position.copy(cp).add(right.multiplyScalar(offset));
+  flower.position.y = 0.32;
+  scene.add(flower);
+}
+
+// ============================================================
+// FLOATING MOTES (dust / pollen)
+// ============================================================
+function makeMotes() {
+  const count = 240;
+  const positions = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    positions[i*3] = (Math.random() - 0.5) * 90;
+    positions[i*3+1] = 1 + Math.random() * 8;
+    positions[i*3+2] = -Math.random() * 200 + 5;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  const mat = new THREE.PointsMaterial({
+    color: 0xfff5cc,
+    size: 0.09,
+    transparent: true,
+    opacity: 0.55,
+    sizeAttenuation: true
+  });
+  return new THREE.Points(geo, mat);
+}
+const motes = makeMotes();
+scene.add(motes);
+
+// ============================================================
+// DISTANT BIRDS (V formation drifting overhead)
+// ============================================================
+const birds = new THREE.Group();
+for (let i = 0; i < 5; i++) {
+  const bird = new THREE.Mesh(
+    new THREE.ConeGeometry(0.35, 0.12, 4),
+    new THREE.MeshBasicMaterial({ color: 0x111111 })
+  );
+  bird.rotation.x = Math.PI/2;
+  bird.position.set(i * 1.8 - 4, 28 + i * 0.4, -60 - i * 2.5);
+  birds.add(bird);
+}
+scene.add(birds);
+
+// ============================================================
+// CLOUDS
+// ============================================================
+const cloudMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 });
+for (let c = 0; c < 8; c++) {
+  const cluster = new THREE.Group();
+  for (let p = 0; p < 5; p++) {
+    const puff = new THREE.Mesh(new THREE.SphereGeometry(3 + Math.random()*2, 10, 8), cloudMat);
+    puff.position.set((Math.random()-0.5)*8, (Math.random()-0.5)*1.5, (Math.random()-0.5)*4);
+    cluster.add(puff);
+  }
+  cluster.position.set(
+    (Math.random() - 0.5) * 250,
+    50 + Math.random() * 20,
+    -Math.random() * 250
+  );
+  scene.add(cluster);
+}
+
+// ============================================================
+// CONTROLS
+// ============================================================
+const controls = new PointerLockControls(camera, document.body);
+const overlay = document.getElementById('overlay');
+const endscreen = document.getElementById('endscreen');
+overlay.addEventListener('click', () => controls.lock());
+controls.addEventListener('lock', () => overlay.style.display = 'none');
+controls.addEventListener('unlock', () => {
+  if (!ended) overlay.style.display = 'flex';
+});
+
+const keys = {};
+addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (e.code === 'KeyR' && ended) location.reload();
+});
+addEventListener('keyup', e => keys[e.code] = false);
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ============================================================
+// END CONDITION
+// ============================================================
+let ended = false;
+const endZone = curve.getPointAt(0.96);
+
+// ============================================================
+// ANIMATE
+// ============================================================
+const clock = new THREE.Clock();
+let bobPhase = 0;
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const time = clock.elapsedTime;
+
+  if (controls.isLocked) {
+    let fwd = 0, str = 0;
+    if (keys['KeyW'] || keys['ArrowUp']) fwd += 1;
+    if (keys['KeyS'] || keys['ArrowDown']) fwd -= 1;
+    if (keys['KeyA'] || keys['ArrowLeft']) str -= 1;
+    if (keys['KeyD'] || keys['ArrowRight']) str += 1;
+    const mag = Math.hypot(fwd, str);
+    const speed = 3.6;
+    if (mag > 0) {
+      controls.moveForward(fwd / mag * speed * dt);
+      controls.moveRight(str / mag * speed * dt);
+      bobPhase += dt * 8.5;
+      camera.position.y = 1.7 + Math.abs(Math.sin(bobPhase)) * 0.07;
+    } else {
+      camera.position.y += (1.7 - camera.position.y) * 0.15;
+    }
+
+    if (!ended) {
+      const dx = camera.position.x - endZone.x;
+      const dz = camera.position.z - endZone.z;
+      if (Math.hypot(dx, dz) < 4.5) {
+        ended = true;
+        endscreen.classList.add('show');
+        controls.unlock();
+      }
+    }
+  }
+
+  // drift motes
+  const mp = motes.geometry.attributes.position;
+  for (let i = 0; i < mp.count; i++) {
+    const y = mp.getY(i) + Math.sin(time + i * 0.7) * 0.005;
+    const x = mp.getX(i) + Math.cos(time * 0.3 + i) * 0.003;
+    mp.setY(i, y);
+    mp.setX(i, x);
+  }
+  mp.needsUpdate = true;
+
+  // drift birds
+  birds.position.x = Math.sin(time * 0.1) * 6;
+  birds.position.z += dt * 1.8;
+  if (birds.position.z > 60) birds.position.z = -180;
+
+  renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>
